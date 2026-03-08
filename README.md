@@ -28,6 +28,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 
 ## Commands
 - `make db-init` initialize DB schema
+- `make db-init-docker` initialize DB schema using containerized `psql` (no local `psql` needed)
 - `make run-api` start local API service
 - `make ingest-location FILE=/path/to/location.json`
 - `make ingest-photos FILE=/path/to/takeout.zip`
@@ -38,6 +39,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 ## Local MVP Flow
 1. `docker compose up -d db`
 2. `make db-init`
+   - If `psql` is missing locally, use `make db-init-docker`
 3. Set home coordinates:
    - `make set-home LAT=38.9517 LON=-92.3341`
 4. Ingest files:

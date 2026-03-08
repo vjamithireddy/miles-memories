@@ -7,6 +7,10 @@ RADIUS ?= 16093
 db-init:
 	psql "$(DB_URL)" -f database/schema.sql
 
+.PHONY: db-init-docker
+db-init-docker:
+	cat database/schema.sql | docker compose exec -T db psql -U miles -d milesmemories
+
 run-api:
 	$(PYTHON) -m app.main
 
