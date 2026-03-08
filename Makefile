@@ -30,4 +30,4 @@ detect-trips:
 	PYTHONPATH=. $(PYTHON) scripts/detect_trips.py
 
 run-garmin-mcp:
-	PYTHONPATH=. $(PYTHON) scripts/run_garmin_mcp.py
+	@PYTHONPATH=. $(PYTHON) scripts/run_garmin_mcp.py
