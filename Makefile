@@ -2,7 +2,7 @@ PYTHON ?= python3
 DB_URL ?= postgresql://miles:milespass@localhost:5432/milesmemories
 RADIUS ?= 16093
 
-.PHONY: db-init run-api ingest-location ingest-photos ingest-garmin set-home detect-trips
+.PHONY: db-init run-api ingest-location ingest-photos ingest-garmin set-home detect-trips run-garmin-mcp
 
 db-init:
 	psql "$(DB_URL)" -f database/schema.sql
@@ -28,3 +28,6 @@ set-home:
 
 detect-trips:
 	PYTHONPATH=. $(PYTHON) scripts/detect_trips.py
+
+run-garmin-mcp:
+	PYTHONPATH=. $(PYTHON) scripts/run_garmin_mcp.py
