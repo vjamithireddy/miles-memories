@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import zipfile
@@ -9,6 +11,20 @@ from typing import Any
 from app.db import get_conn
 
 from ingestion.common import parse_ts
+
+MEDIA_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".heic",
+    ".heif",
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".avi",
+}
 
 
 @dataclass
@@ -84,6 +100,8 @@ def parse_takeout_zip(path: str) -> list[PhotoRecord]:
                     continue
                 if name.startswith("."):
                     continue
+                if os.path.splitext(name)[1].lower() not in MEDIA_EXTS:
+                    continue
                 sidecar = None
                 for candidate in _sidecar_candidates(full):
                     if os.path.exists(candidate):
@@ -107,7 +125,13 @@ def save_photo_records(import_id: int, records: list[PhotoRecord]) -> int:
                         media_type, captured_at, latitude, longitude, camera_make, camera_model,
                         visibility_status, raw_metadata_json
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'review', %s)
+                    SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'review', %s
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM photos
+                        WHERE import_id = %s
+                          AND source_photo_id = %s
+                    )
                     """,
                     (
                         import_id,
@@ -122,6 +146,8 @@ def save_photo_records(import_id: int, records: list[PhotoRecord]) -> int:
                         rec.camera_make,
                         rec.camera_model,
                         json.dumps(rec.raw_metadata),
+                        import_id,
+                        rec.original_filepath,
                     ),
                 )
     return len(records)

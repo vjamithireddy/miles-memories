@@ -12,19 +12,19 @@ db-init-docker:
 	cat database/schema.sql | docker compose exec -T db psql -U miles -d milesmemories
 
 run-api:
-	$(PYTHON) -m app.main
+	PYTHONPATH=. $(PYTHON) -m app.main
 
 ingest-location:
-	$(PYTHON) scripts/ingest_location.py --file "$(FILE)"
+	PYTHONPATH=. $(PYTHON) scripts/ingest_location.py --file "$(FILE)"
 
 ingest-photos:
-	$(PYTHON) scripts/ingest_photos.py --file "$(FILE)"
+	PYTHONPATH=. $(PYTHON) scripts/ingest_photos.py --file "$(FILE)"
 
 ingest-garmin:
-	$(PYTHON) scripts/ingest_garmin.py --file "$(FILE)"
+	PYTHONPATH=. $(PYTHON) scripts/ingest_garmin.py --file "$(FILE)"
 
 set-home:
-	$(PYTHON) scripts/set_home.py --lat "$(LAT)" --lon "$(LON)" --local-radius-meters "$(RADIUS)"
+	PYTHONPATH=. $(PYTHON) scripts/set_home.py --lat "$(LAT)" --lon "$(LON)" --local-radius-meters "$(RADIUS)"
 
 detect-trips:
-	$(PYTHON) scripts/detect_trips.py
+	PYTHONPATH=. $(PYTHON) scripts/detect_trips.py

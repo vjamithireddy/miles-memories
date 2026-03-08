@@ -1,4 +1,4 @@
-from psycopg import sql
+from __future__ import annotations
 
 from app.db import get_conn
 

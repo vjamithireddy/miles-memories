@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import os
 from datetime import datetime, timezone
@@ -25,6 +27,13 @@ def parse_ts(value: str | None) -> datetime | None:
     v = value.strip()
     if not v:
         return None
+    if v.isdigit():
+        try:
+            if len(v) > 10:
+                return datetime.fromtimestamp(int(v) / 1000, tz=timezone.utc)
+            return datetime.fromtimestamp(int(v), tz=timezone.utc)
+        except ValueError:
+            return None
     if v.endswith("Z"):
         v = v[:-1] + "+00:00"
     try:
