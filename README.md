@@ -32,7 +32,20 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 - `make ingest-location FILE=/path/to/location.json`
 - `make ingest-photos FILE=/path/to/takeout.zip`
 - `make ingest-garmin FILE=/path/to/activity.gpx`
-- `make detect-trips` run detection placeholder
+- `make set-home LAT=<home_lat> LON=<home_lon> RADIUS=16093`
+- `make detect-trips` run rules-based trip detection (v0)
+
+## Local MVP Flow
+1. `docker compose up -d db`
+2. `make db-init`
+3. Set home coordinates:
+   - `make set-home LAT=38.9517 LON=-92.3341`
+4. Ingest files:
+   - `make ingest-location FILE=/absolute/path/Location\ History.json`
+   - `make ingest-photos FILE=/absolute/path/google-photos-takeout.zip`
+   - `make ingest-garmin FILE=/absolute/path/activity.gpx`
+5. Detect trips:
+   - `make detect-trips`
 
 ## When You Need To Intervene
 - VPS provisioning and DNS changes

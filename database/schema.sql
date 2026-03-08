@@ -129,9 +129,19 @@ CREATE TABLE IF NOT EXISTS photos (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE trips
-    ADD CONSTRAINT fk_trips_cover_photo
-    FOREIGN KEY (cover_photo_id) REFERENCES photos(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_trips_cover_photo'
+    ) THEN
+        ALTER TABLE trips
+            ADD CONSTRAINT fk_trips_cover_photo
+            FOREIGN KEY (cover_photo_id) REFERENCES photos(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS photo_person_hints (
     id BIGSERIAL PRIMARY KEY,

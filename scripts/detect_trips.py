@@ -1,5 +1,9 @@
+from trip_engine.detector import detect_trips
+
+
 def main() -> None:
-    print("[TODO] run rules-based trip detection")
+    created, linked = detect_trips()
+    print(f"Trip detection complete: trips_created={created} linked_events={linked}")
 
 
 if __name__ == "__main__":
