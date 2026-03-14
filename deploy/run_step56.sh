@@ -22,7 +22,7 @@ if [ ! -d "$APP_DIR" ]; then
 fi
 
 if [ -z "${DB_PASS:-}" ]; then
-  DB_PASS="$(openssl rand -base64 24 | tr -d '\n')"
+  DB_PASS="$(openssl rand -hex 24)"
 fi
 
 if ! runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q 1; then
@@ -36,7 +36,7 @@ if ! runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_database WHERE datname 
 fi
 
 runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && cp deploy/env.production.example .env"
-runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && sed -i \"s/CHANGE_ME/${DB_PASS//\//\\/}/g\" .env"
+runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && sed -i \"s/CHANGE_ME/$DB_PASS/g\" .env"
 runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && set -a && source .env && set +a && psql \"\$DATABASE_URL\" -f database/schema.sql"
 
 cp "$APP_DIR/deploy/systemd/milesmemories.service" /etc/systemd/system/milesmemories.service
