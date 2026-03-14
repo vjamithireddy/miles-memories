@@ -1,0 +1,16 @@
+[Unit]
+Description=MilesMemories FastAPI service
+After=network.target
+
+[Service]
+Type=simple
+User=svc_miles
+Group=svc_miles
+WorkingDirectory=/opt/milesmemories/app
+EnvironmentFile=/opt/milesmemories/app/.env
+ExecStart=/opt/milesmemories/app/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
