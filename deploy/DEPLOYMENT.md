@@ -6,6 +6,7 @@ This deploy path assumes:
 - PostgreSQL running locally on the VPS
 - Nginx reverse proxy in front of the FastAPI app
 - application runtime user is `svc_miles`
+- Nginx is exposed on `8080` because `80/443` are already used by other services
 
 ## 1. Server packages
 
@@ -76,13 +77,12 @@ sudo systemctl reload nginx
 
 ## 7. SSL
 
-```bash
-sudo certbot --nginx -d travel.navi-services.com
-```
+SSL is not part of the current server setup because the working reverse proxy runs on `8080` only.
+Add HTTPS later only if you decide how `8443` should be managed and where certificates will be provisioned.
 
 ## 8. Smoke checks
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl https://travel.navi-services.com/health
+curl http://travel.navi-services.com:8080/health
 ```
