@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.main import get_admin_trip, list_admin_trips, review_trip, update_publish_ready
+from app.main import get_admin_trip, homepage, list_admin_trips, review_trip, update_publish_ready
 from app.schemas import PublishReadyRequest, TripReviewRequest
 
 
@@ -58,6 +58,14 @@ def _trip_detail() -> dict:
 
 
 class AppApiTests(unittest.TestCase):
+    def test_homepage_returns_html(self) -> None:
+        response = homepage()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.media_type)
+        self.assertIn(b"MilesMemories", response.body)
+        self.assertIn(b"/admin/trips", response.body)
+
     def test_list_trips_passes_filters(self) -> None:
         with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list:
             response = list_admin_trips(
