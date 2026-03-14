@@ -6,7 +6,14 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.main import get_admin_trip, homepage, list_admin_trips, review_trip, update_publish_ready
+from app.main import (
+    admin_homepage,
+    get_admin_trip,
+    homepage,
+    list_admin_trips,
+    review_trip,
+    update_publish_ready,
+)
 from app.schemas import PublishReadyRequest, TripReviewRequest
 
 
@@ -65,6 +72,26 @@ class AppApiTests(unittest.TestCase):
         self.assertIn("text/html", response.media_type)
         self.assertIn(b"MilesMemories", response.body)
         self.assertIn(b"/admin/trips", response.body)
+
+    def test_admin_homepage_renders_trips(self) -> None:
+        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list:
+            response = admin_homepage(
+                status="needs_review",
+                review_decision="pending",
+                include_private=True,
+                limit=24,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Trip review queue", response.body)
+        self.assertIn(b"Colorado Weekend", response.body)
+        self.assertIn(b"Raw JSON Feed", response.body)
+        mock_list.assert_called_once_with(
+            status="needs_review",
+            review_decision="pending",
+            include_private=True,
+            limit=24,
+        )
 
     def test_list_trips_passes_filters(self) -> None:
         with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list:

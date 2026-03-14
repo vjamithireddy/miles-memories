@@ -1,4 +1,6 @@
+from html import escape
 from typing import List, Optional
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -252,6 +254,361 @@ HOME_PAGE = """<!DOCTYPE html>
 @app.get("/", response_class=HTMLResponse)
 def homepage() -> HTMLResponse:
     return HTMLResponse(HOME_PAGE)
+
+
+def _trip_badge_class(value: str) -> str:
+    normalized = value.lower()
+    if normalized in {"confirmed", "published"}:
+        return "good"
+    if normalized in {"pending", "needs_review"}:
+        return "warn"
+    if normalized in {"ignored", "rejected"}:
+        return "muted"
+    return ""
+
+
+def _render_admin_page(
+    trips: List[dict],
+    *,
+    status: Optional[str],
+    review_decision: Optional[str],
+    include_private: bool,
+    limit: int,
+) -> str:
+    total = len(trips)
+    private_total = sum(1 for trip in trips if trip["is_private"])
+    ready_total = sum(1 for trip in trips if trip["publish_ready"])
+
+    def selected(current: Optional[str], expected: str) -> str:
+        return ' selected="selected"' if current == expected else ""
+
+    filter_query = urlencode(
+        {
+            "status": status or "",
+            "review_decision": review_decision or "",
+            "include_private": "true" if include_private else "false",
+            "limit": str(limit),
+        }
+    )
+
+    cards = []
+    for trip in trips:
+        title = escape(trip["trip_name"] or "Untitled trip")
+        destination = escape(trip["primary_destination_name"] or "Destination pending")
+        trip_type = escape(trip["trip_type"] or "untyped")
+        status_value = escape(trip["status"])
+        review_value = escape(trip["review_decision"])
+        score_value = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
+        privacy_value = "Private" if trip["is_private"] else "Visible"
+        ready_value = "Ready" if trip["publish_ready"] else "Not ready"
+        detail_href = f"/admin/trips/{trip['id']}"
+
+        cards.append(
+            f"""
+            <article class="trip-card">
+              <div class="trip-head">
+                <div>
+                  <h3>{title}</h3>
+                  <p class="trip-sub">{destination} · {trip_type}</p>
+                </div>
+                <div class="score">{score_value}</div>
+              </div>
+              <div class="meta-row">
+                <span class="badge {_trip_badge_class(trip['status'])}">{status_value}</span>
+                <span class="badge {_trip_badge_class(trip['review_decision'])}">{review_value}</span>
+                <span class="badge">{privacy_value}</span>
+                <span class="badge">{ready_value}</span>
+              </div>
+              <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
+              <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
+              <div class="card-actions">
+                <a href="{detail_href}">Open JSON Detail</a>
+              </div>
+            </article>
+            """
+        )
+
+    cards_html = "".join(cards) if cards else """
+      <article class="trip-card empty-state">
+        <h3>No trips match these filters.</h3>
+        <p>Adjust the filters or run trip detection after importing location and Garmin data.</p>
+      </article>
+    """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MilesMemories Admin</title>
+  <style>
+    :root {{
+      --bg: #f3efe7;
+      --panel: #fff9f0;
+      --line: #dcccb4;
+      --ink: #182233;
+      --muted: #657286;
+      --accent: #b85f35;
+      --good: #2e6a4b;
+      --warn: #9b641d;
+      --shadow: rgba(37, 28, 14, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(233, 206, 177, 0.8), rgba(243, 239, 231, 0.98) 28%),
+        linear-gradient(90deg, rgba(184, 95, 53, 0.08), transparent 22%, transparent 78%, rgba(42, 89, 81, 0.08));
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 18px 64px;
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 20px;
+    }}
+    .eyebrow {{
+      font-size: 0.82rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }}
+    h1 {{
+      margin: 8px 0 0;
+      font-size: clamp(2.1rem, 5vw, 4rem);
+      line-height: 0.95;
+    }}
+    .sub {{
+      max-width: 56ch;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .panel {{
+      background: rgba(255, 249, 240, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 22px;
+    }}
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }}
+    .stat strong {{
+      display: block;
+      font-size: 2rem;
+      margin-bottom: 6px;
+    }}
+    .stat span {{
+      color: var(--muted);
+    }}
+    .filters {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+      gap: 14px;
+      align-items: end;
+      margin-bottom: 22px;
+    }}
+    label {{
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }}
+    select, input[type="number"] {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fffdf8;
+      font: inherit;
+      color: var(--ink);
+    }}
+    .checkbox {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 10px;
+    }}
+    .checkbox input {{ width: 18px; height: 18px; }}
+    .button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 18px;
+    }}
+    .button.ghost {{
+      background: transparent;
+      color: var(--accent);
+    }}
+    .trips {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }}
+    .trip-card {{
+      background: rgba(255,255,255,0.62);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+    }}
+    .trip-head {{
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+      align-items: start;
+    }}
+    .trip-head h3 {{
+      margin: 0;
+      font-size: 1.55rem;
+    }}
+    .trip-sub, .trip-range, .trip-summary {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+    .score {{
+      min-width: 58px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      background: #f0e3d1;
+      border-radius: 14px;
+      padding: 10px 12px;
+    }}
+    .meta-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .badge {{
+      display: inline-block;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #efe7d9;
+      color: var(--ink);
+      font-size: 0.86rem;
+      text-transform: capitalize;
+    }}
+    .badge.good {{ background: rgba(46, 106, 75, 0.14); color: var(--good); }}
+    .badge.warn {{ background: rgba(155, 100, 29, 0.14); color: var(--warn); }}
+    .badge.muted {{ background: rgba(101, 114, 134, 0.14); color: var(--muted); }}
+    .card-actions a {{
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+    }}
+    .links {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }}
+    @media (max-width: 920px) {{
+      .stats, .filters, .trips {{
+        grid-template-columns: 1fr;
+      }}
+      .topbar {{
+        display: grid;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="topbar">
+      <div>
+        <div class="eyebrow">MilesMemories Admin</div>
+        <h1>Trip review queue</h1>
+        <p class="sub">Review detected trips, inspect status and destination signals, and use the JSON endpoints while the richer admin workflow is still being built.</p>
+      </div>
+      <div class="links">
+        <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
+        <a class="button ghost" href="/">Homepage</a>
+      </div>
+    </section>
+
+    <section class="stats">
+      <article class="panel stat"><strong>{total}</strong><span>Trips in current view</span></article>
+      <article class="panel stat"><strong>{ready_total}</strong><span>Marked publish-ready</span></article>
+      <article class="panel stat"><strong>{private_total}</strong><span>Still private</span></article>
+    </section>
+
+    <section class="panel">
+      <form method="get" action="/admin" class="filters">
+        <label>Status
+          <select name="status">
+            <option value="">Any status</option>
+            <option value="needs_review"{selected(status, "needs_review")}>needs_review</option>
+            <option value="confirmed"{selected(status, "confirmed")}>confirmed</option>
+            <option value="published"{selected(status, "published")}>published</option>
+            <option value="ignored"{selected(status, "ignored")}>ignored</option>
+          </select>
+        </label>
+        <label>Review
+          <select name="review_decision">
+            <option value="">Any decision</option>
+            <option value="pending"{selected(review_decision, "pending")}>pending</option>
+            <option value="confirmed"{selected(review_decision, "confirmed")}>confirmed</option>
+            <option value="ignored"{selected(review_decision, "ignored")}>ignored</option>
+            <option value="rejected"{selected(review_decision, "rejected")}>rejected</option>
+          </select>
+        </label>
+        <label>Limit
+          <input type="number" min="1" max="200" name="limit" value="{limit}">
+        </label>
+        <label class="checkbox">Include private
+          <input type="checkbox" name="include_private" value="true"{" checked" if include_private else ""}>
+        </label>
+        <button class="button" type="submit">Apply filters</button>
+      </form>
+
+      <div class="trips">
+        {cards_html}
+      </div>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_homepage(
+    status: Optional[str] = Query(default=None),
+    review_decision: Optional[str] = Query(default=None),
+    include_private: bool = Query(default=True),
+    limit: int = Query(default=24, ge=1, le=200),
+) -> HTMLResponse:
+    trips = trip_admin.list_trips(
+        status=status,
+        review_decision=review_decision,
+        include_private=include_private,
+        limit=limit,
+    )
+    return HTMLResponse(
+        _render_admin_page(
+            trips,
+            status=status,
+            review_decision=review_decision,
+            include_private=include_private,
+            limit=limit,
+        )
+    )
 
 
 @app.get("/health")
