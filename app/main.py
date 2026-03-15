@@ -1871,7 +1871,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       }}
       map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
 
-      document.querySelectorAll(".leg-map").forEach((node) => {{
+      const initLegMap = (node) => {{
+        if (!node || node.dataset.mapReady === "1") {{
+          if (node && node._leaflet_map_instance) {{
+            window.setTimeout(() => node._leaflet_map_instance.invalidateSize(), 0);
+          }}
+          return;
+        }}
         const startLat = parseFloat(node.dataset.startLat || "");
         const startLon = parseFloat(node.dataset.startLon || "");
         const endLat = parseFloat(node.dataset.endLat || "");
@@ -1885,6 +1891,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           return;
         }}
         const legMap = L.map(node, {{ scrollWheelZoom: false, zoomControl: false }});
+        node._leaflet_map_instance = legMap;
+        node.dataset.mapReady = "1";
         L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
           maxZoom: 18,
           attribution: "&copy; OpenStreetMap contributors"
@@ -1903,6 +1911,25 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           L.circleMarker(legEnd, {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
         }}
         legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
+        window.setTimeout(() => legMap.invalidateSize(), 0);
+      }};
+
+      document.querySelectorAll("details.leg-collapse").forEach((detailsNode) => {{
+        detailsNode.addEventListener("toggle", () => {{
+          const mapNode = detailsNode.querySelector(".leg-map");
+          if (!mapNode) {{
+            return;
+          }}
+          if (detailsNode.open) {{
+            initLegMap(mapNode);
+          }}
+        }});
+        if (detailsNode.open) {{
+          const mapNode = detailsNode.querySelector(".leg-map");
+          if (mapNode) {{
+            initLegMap(mapNode);
+          }}
+        }}
       }});
 
       document.querySelectorAll(".leg-summary-input").forEach((node) => {{
