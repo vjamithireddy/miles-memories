@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 import json
 import re
 from math import asin, cos, radians, sin, sqrt
+from time import monotonic, sleep
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from app.bootstrap import ensure_default_user, get_home_profile, get_work_profile
@@ -42,6 +44,18 @@ PRO_VENUE_PATTERNS = (
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 GENERIC_PLACE_TYPES = {"house", "residential", "road", "service", "address"}
 UNKNOWN_PLACE_NAMES = {"unknown destination", "unresolved destination"}
+NOMINATIM_MIN_INTERVAL_SECONDS = 1.1
+NOMINATIM_BACKOFF_SECONDS = 5.0
+
+_next_reverse_lookup_at = 0.0
+
+
+def _respect_nominatim_rate_limit(backoff_seconds: float = NOMINATIM_MIN_INTERVAL_SECONDS) -> None:
+    global _next_reverse_lookup_at
+    now = monotonic()
+    if _next_reverse_lookup_at > now:
+        sleep(_next_reverse_lookup_at - now)
+    _next_reverse_lookup_at = monotonic() + backoff_seconds
 
 
 @dataclass
@@ -145,8 +159,13 @@ def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, O
         headers={"User-Agent": "MilesMemories/0.1"},
     )
     try:
+        _respect_nominatim_rate_limit()
         with urlopen(request, timeout=5) as response:
             payload = json.load(response)
+    except HTTPError as exc:
+        if exc.code == 429:
+            _respect_nominatim_rate_limit(NOMINATIM_BACKOFF_SECONDS)
+        return {"name": None, "category": None, "display_name": None, "locality": None}
     except Exception:
         return {"name": None, "category": None, "display_name": None, "locality": None}
 
