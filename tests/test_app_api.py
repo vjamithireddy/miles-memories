@@ -129,6 +129,7 @@ class AppApiTests(unittest.TestCase):
     def test_admin_trip_detail_renders_map(self) -> None:
         with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
              patch("app.main.destination_overrides.list_overrides", return_value=[]), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"), \
              patch(
                  "app.main.trip_admin.get_trip_neighbors",
                  return_value={
@@ -148,6 +149,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Review saved.", response.body)
         self.assertIn(b"/admin/trip/8", response.body)
         self.assertIn(b"/admin/trip/6", response.body)
+        self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
         mock_get.assert_called_once_with(7)
         mock_neighbors.assert_called_once_with(7)
 

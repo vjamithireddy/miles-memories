@@ -1,12 +1,15 @@
+from datetime import datetime
 from html import escape
 import json
 from typing import List, Optional
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.bootstrap import get_user_timezone
 from app import destination_overrides, trip_admin
 from app.schemas import PublishReadyRequest, TripDetail, TripReviewRequest, TripSummary
 from app.settings import get_app_host, get_app_port, get_app_reload
@@ -601,6 +604,18 @@ def _parse_flag(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_local_zone() -> ZoneInfo:
+    try:
+        return ZoneInfo(get_user_timezone())
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("America/Chicago")
+
+
+def _format_local_datetime(value: datetime) -> str:
+    local_value = value.astimezone(_get_local_zone())
+    return local_value.strftime("%Y-%m-%d %I:%M %p %Z")
+
+
 def _matching_overrides_for_trip(trip: dict) -> list[dict]:
     destination_name = (trip.get("primary_destination_name") or "").lower()
     timeline_haystack = " ".join(
@@ -875,7 +890,7 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     timeline_items = "".join(
         f"""
         <li class="timeline-item">
-          <div class="timeline-time">{escape(str(item['event_time']))}</div>
+          <div class="timeline-time">{escape(_format_local_datetime(item['event_time']))}</div>
           <div>
             <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
             <p>{escape(item['event_type'])} · ref {escape(str(item['event_ref_id']))}{f" · {item['latitude']:.5f}, {item['longitude']:.5f}" if item.get('latitude') is not None and item.get('longitude') is not None else ""}</p>
@@ -1212,11 +1227,11 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
         <div class="detail-grid">
           <div class="detail-cell">
             <strong>Start</strong>
-            <span>{escape(str(trip['start_time']))}</span>
+            <span>{escape(_format_local_datetime(trip['start_time']))}</span>
           </div>
           <div class="detail-cell">
             <strong>End</strong>
-            <span>{escape(str(trip['end_time']))}</span>
+            <span>{escape(_format_local_datetime(trip['end_time']))}</span>
           </div>
           <div class="detail-cell">
             <strong>Trip type</strong>
