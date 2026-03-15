@@ -1840,36 +1840,37 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
   ></script>
   <script>
     (function () {{
+      if (!window.L) {{
+        return;
+      }}
       const mapNode = document.getElementById("trip-map");
-      if (!mapNode || !window.L) {{
-        return;
+      if (mapNode) {{
+        const points = JSON.parse(mapNode.dataset.points || "[]");
+        if (points.length) {{
+          const fallback = document.querySelector(".map-fallback");
+          if (fallback) {{
+            fallback.style.display = "none";
+          }}
+          const map = L.map(mapNode, {{ scrollWheelZoom: false }});
+          L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
+            maxZoom: 18,
+            attribution: "&copy; OpenStreetMap contributors"
+          }}).addTo(map);
+          const latlngs = points.map((point) => [point.lat, point.lon]);
+          const polyline = L.polyline(latlngs, {{
+            color: "#b85f35",
+            weight: 4,
+            opacity: 0.9
+          }}).addTo(map);
+          const start = points[0];
+          const end = points[points.length - 1];
+          L.marker([start.lat, start.lon]).addTo(map).bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
+          if (points.length > 1) {{
+            L.marker([end.lat, end.lon]).addTo(map).bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
+          }}
+          map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
+        }}
       }}
-      const points = JSON.parse(mapNode.dataset.points || "[]");
-      if (!points.length) {{
-        return;
-      }}
-      const fallback = document.querySelector(".map-fallback");
-      if (fallback) {{
-        fallback.style.display = "none";
-      }}
-      const map = L.map(mapNode, {{ scrollWheelZoom: false }});
-      L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
-        maxZoom: 18,
-        attribution: "&copy; OpenStreetMap contributors"
-      }}).addTo(map);
-      const latlngs = points.map((point) => [point.lat, point.lon]);
-      const polyline = L.polyline(latlngs, {{
-        color: "#b85f35",
-        weight: 4,
-        opacity: 0.9
-      }}).addTo(map);
-      const start = points[0];
-      const end = points[points.length - 1];
-      L.marker([start.lat, start.lon]).addTo(map).bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
-      if (points.length > 1) {{
-        L.marker([end.lat, end.lon]).addTo(map).bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
-      }}
-      map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
 
       const initLegMap = (node) => {{
         if (!node || node.dataset.mapReady === "1") {{
