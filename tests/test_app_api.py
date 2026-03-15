@@ -137,6 +137,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Review trip", response.body)
         self.assertIn(b"Destination context", response.body)
+        self.assertIn(b"Expand full timeline", response.body)
         mock_get.assert_called_once_with(7)
 
     def test_review_trip_from_form_uses_repository(self) -> None:

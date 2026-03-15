@@ -1132,6 +1132,28 @@ def _render_trip_detail_page(trip: dict) -> str:
       color: var(--accent);
       font-weight: 700;
     }}
+    details.timeline-collapse {{
+      margin-top: 6px;
+    }}
+    details.timeline-collapse > summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+      list-style: none;
+      margin-bottom: 14px;
+    }}
+    details.timeline-collapse > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    details.timeline-collapse > summary::after {{
+      content: "Show";
+      margin-left: 10px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }}
+    details.timeline-collapse[open] > summary::after {{
+      content: "Hide";
+    }}
     @media (max-width: 920px) {{
       .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
         grid-template-columns: 1fr;
@@ -1243,20 +1265,11 @@ def _render_trip_detail_page(trip: dict) -> str:
       </article>
     </section>
 
-    <section class="grid">
-      <article class="panel">
-        <h2>Linked events</h2>
-        <ul class="list">
-          {count_items}
-        </ul>
-      </article>
-
-      <article class="panel">
-        <h2>Timeline</h2>
-        <ul class="list">
-          {timeline_items}
-        </ul>
-      </article>
+    <section class="panel">
+      <h2>Linked events</h2>
+      <ul class="list">
+        {count_items}
+      </ul>
     </section>
 
     <section class="panel map-shell">
@@ -1273,6 +1286,16 @@ def _render_trip_detail_page(trip: dict) -> str:
       <ul class="list">
         {history_items}
       </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Timeline</h2>
+      <details class="timeline-collapse">
+        <summary>Expand full timeline ({len(trip["timeline"])} events)</summary>
+        <ul class="list">
+          {timeline_items}
+        </ul>
+      </details>
     </section>
   </main>
   <script
