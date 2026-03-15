@@ -189,11 +189,14 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"HIKING", response.body)
         self.assertIn(b"class=\"leg-map\"", response.body)
         self.assertIn(b"data-path=", response.body)
-        self.assertIn(b"South Kaibab hike", response.body)
+        self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
         self.assertIn(b"Inner canyon hiking", response.body)
         self.assertIn(b"class=\"leg-summary-input\"", response.body)
+        self.assertIn(b"class=\"leg-tag\"", response.body)
         self.assertIn(b"Save leg", response.body)
         self.assertIn(b"class=\"star-rating\"", response.body)
+        self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
+        self.assertIn(b"(3h 15m)", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Trip Overview", response.body)
@@ -209,7 +212,6 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b"Segment name", response.body)
         self.assertNotIn(b"Edit summary", response.body)
         self.assertIn(b'detail-cell wide', response.body)
-        self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
         mock_get.assert_called_once_with(7)
 
     def test_admin_trip_destination_page_renders_return_link(self) -> None:

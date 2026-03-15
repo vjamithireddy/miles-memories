@@ -320,6 +320,18 @@ def _travel_leg_comment(item: dict) -> str:
     return item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
 
 
+def _format_duration(start: datetime, end: datetime) -> str:
+    total_seconds = max(int((end - start).total_seconds()), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes = remainder // 60
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or not parts:
+        parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
 def _button_class(*names: str) -> str:
     classes = ["button", *names]
     return " ".join(part for part in classes if part)
@@ -1124,12 +1136,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           <details class="leg-collapse">
             <summary>
               <span class="leg-summary-copy">
-                <span class="leg-kind">{escape(item.get('segment_name') or item['label'])}</span>
+                <span class="leg-kind">{escape(_travel_leg_comment(item))}</span>
+                <span class="leg-tag">{escape(item['label'])}</span>
                 <span class="leg-summary-input-shell">
                   <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
                 </span>
               </span>
-              <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
+              <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</span>
             </summary>
             <div class="leg-body">
               <div class="leg-copy">
@@ -1513,6 +1526,20 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .leg-kind {{
       color: var(--ink);
+      font-size: 1.15rem;
+      line-height: 1.25;
+    }}
+    .leg-tag {{
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(184,95,53,0.12);
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
     }}
     .leg-summary-input-shell {{
       display: block;
@@ -1526,7 +1553,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border-radius: 0;
       background: transparent;
       color: var(--muted);
-      font-size: 0.98rem;
+      font-size: 0.92rem;
       line-height: 1.4;
       resize: none;
     }}
