@@ -156,6 +156,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Trip map", response.body)
         self.assertIn(b"Travel legs", response.body)
         self.assertIn(b"Air travel", response.body)
+        self.assertIn(b"class=\"leg-map\"", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Review trip", response.body)

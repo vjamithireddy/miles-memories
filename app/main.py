@@ -956,17 +956,28 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
 
     travel_leg_items = "".join(
         f"""
-        <li class="timeline-item">
-          <div class="timeline-time">{escape(_format_local_datetime(item['start_time']))}</div>
-          <div>
-            <strong>{escape(item['label'])}</strong>
-            <p>{escape(item['label'])} · until {escape(_format_local_datetime(item['end_time']))}</p>
-          </div>
+        <li class="leg-item">
+          <details class="leg-collapse">
+            <summary>
+              <span class="leg-kind">{escape(item['label'])}</span>
+              <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
+            </summary>
+            <div class="leg-body">
+              <p>{escape(item['label'])} leg · source {escape(item.get('source_event_id') or 'unknown')}</p>
+              <div
+                class="leg-map"
+                data-start-lat="{'' if item.get('start_latitude') is None else item['start_latitude']}"
+                data-start-lon="{'' if item.get('start_longitude') is None else item['start_longitude']}"
+                data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
+                data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
+              ></div>
+            </div>
+          </details>
         </li>
         """
         for item in travel_legs
     ) or """
-      <li class="timeline-item">
+      <li class="leg-item">
         <div>
           <strong>No travel legs inferred.</strong>
           <p>This trip currently only has raw location points linked.</p>
@@ -1125,6 +1136,12 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       padding: 14px 16px;
       background: rgba(255,255,255,0.5);
     }}
+    .leg-item {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.5);
+      overflow: hidden;
+    }}
     .count-item {{
       display: flex;
       justify-content: space-between;
@@ -1209,9 +1226,47 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     details.timeline-collapse[open] > summary::after {{
       content: "Hide";
     }}
+    details.leg-collapse > summary {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      padding: 12px 16px;
+      list-style: none;
+      font-weight: 700;
+    }}
+    details.leg-collapse > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .leg-kind {{
+      color: var(--ink);
+    }}
+    .leg-span {{
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 0.92rem;
+    }}
+    .leg-body {{
+      border-top: 1px solid var(--line);
+      padding: 12px 16px 16px;
+      display: grid;
+      gap: 10px;
+    }}
+    .leg-map {{
+      height: 180px;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #efe5d7;
+    }}
     @media (max-width: 920px) {{
       .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
         grid-template-columns: 1fr;
+      }}
+      details.leg-collapse > summary {{
+        flex-direction: column;
+        align-items: flex-start;
       }}
     }}
   </style>
@@ -1400,6 +1455,31 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
         L.marker([end.lat, end.lon]).addTo(map).bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
       }}
       map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
+
+      document.querySelectorAll(".leg-map").forEach((node) => {{
+        const startLat = parseFloat(node.dataset.startLat || "");
+        const startLon = parseFloat(node.dataset.startLon || "");
+        const endLat = parseFloat(node.dataset.endLat || "");
+        const endLon = parseFloat(node.dataset.endLon || "");
+        if ([startLat, startLon, endLat, endLon].some((value) => Number.isNaN(value))) {{
+          node.style.display = "none";
+          return;
+        }}
+        const legMap = L.map(node, {{ scrollWheelZoom: false, zoomControl: false }});
+        L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
+          maxZoom: 18,
+          attribution: "&copy; OpenStreetMap contributors"
+        }}).addTo(legMap);
+        const legLine = L.polyline([[startLat, startLon], [endLat, endLon]], {{
+          color: "#275d4f",
+          weight: 4,
+          opacity: 0.9,
+          dashArray: "8 6"
+        }}).addTo(legMap);
+        L.circleMarker([startLat, startLon], {{ radius: 6, color: "#b85f35" }}).addTo(legMap);
+        L.circleMarker([endLat, endLon], {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
+        legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
+      }});
     }})();
   </script>
 </body>
