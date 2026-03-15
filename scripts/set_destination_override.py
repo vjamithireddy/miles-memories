@@ -7,6 +7,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create or update a destination override rule")
     parser.add_argument("--name", required=True, help="Rule name")
     parser.add_argument("--classification", required=True, help="Classification label")
+    parser.add_argument("--keep-trip", action="store_true", help="Always keep matching trips")
     parser.add_argument("--ignore-trip", action="store_true", help="Ignore matching trips")
     parser.add_argument("--pattern", help="Case-insensitive name/display pattern to match")
     parser.add_argument("--lat", type=float, help="Latitude for coordinate-based match")
@@ -28,9 +29,9 @@ def main() -> None:
                 """
                 INSERT INTO destination_overrides (
                     rule_name, match_pattern, latitude, longitude, radius_meters,
-                    classification, ignore_trip, updated_at
+                    classification, keep_trip, ignore_trip, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 """,
                 (
                     args.name,
@@ -39,13 +40,14 @@ def main() -> None:
                     args.lon,
                     args.radius_meters,
                     args.classification,
+                    args.keep_trip,
                     args.ignore_trip,
                 ),
             )
 
     print(
         "Destination override saved: "
-        f"name={args.name} classification={args.classification} ignore_trip={args.ignore_trip}"
+        f"name={args.name} classification={args.classification} keep_trip={args.keep_trip} ignore_trip={args.ignore_trip}"
     )
 
 

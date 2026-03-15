@@ -186,7 +186,7 @@ def _apply_destination_override(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT match_pattern, latitude, longitude, radius_meters, classification, ignore_trip
+                SELECT match_pattern, latitude, longitude, radius_meters, classification, keep_trip, ignore_trip
                 FROM destination_overrides
                 ORDER BY id ASC
                 """
@@ -194,7 +194,7 @@ def _apply_destination_override(
             rows = cur.fetchall()
 
     for row in rows:
-        pattern, rule_lat, rule_lon, radius_meters, classification, ignore_trip = row
+        pattern, rule_lat, rule_lon, radius_meters, classification, keep_trip, ignore_trip = row
         matched = False
         if pattern and pattern.lower() in haystack:
             matched = True
@@ -204,10 +204,12 @@ def _apply_destination_override(
         if matched:
             updated = dict(profile)
             updated["classification"] = classification
+            updated["keep_trip"] = bool(keep_trip)
             updated["ignore_trip"] = bool(ignore_trip)
             return updated
 
     updated = dict(profile)
+    updated["keep_trip"] = False
     updated["ignore_trip"] = False
     return updated
 
@@ -313,12 +315,17 @@ def detect_trips() -> tuple[int, int]:
                 )
                 destination_class = destination_profile.get("classification")
                 if (
+                    not destination_profile.get("keep_trip")
+                    and (
                     trip.touched_work
                     and home_work_distance_km is not None
                     and trip.max_distance_km <= max(home_work_distance_km + 5.0, local_radius_km + 5.0)
+                    )
                 ):
                     continue
-                if destination_profile.get("ignore_trip") or destination_class == "amateur_sports_venue":
+                if not destination_profile.get("keep_trip") and (
+                    destination_profile.get("ignore_trip") or destination_class == "amateur_sports_venue"
+                ):
                     continue
                 duration = trip.end_time - trip.start_time
                 if trip.start_time.date() != trip.end_time.date():

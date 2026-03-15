@@ -62,7 +62,7 @@ class DetectorTests(unittest.TestCase):
     def test_destination_override_matches_pattern(self) -> None:
         cursor = FakeCursor()
         cursor.override_rows = [
-            ("rec plex", None, None, 1000, "amateur_sports_venue", True),
+            ("rec plex", None, None, 1000, "amateur_sports_venue", False, True),
         ]
 
         with patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
@@ -78,7 +78,30 @@ class DetectorTests(unittest.TestCase):
             )
 
         self.assertEqual(profile["classification"], "amateur_sports_venue")
+        self.assertIs(profile["keep_trip"], False)
         self.assertIs(profile["ignore_trip"], True)
+
+    def test_destination_override_can_keep_trip(self) -> None:
+        cursor = FakeCursor()
+        cursor.override_rows = [
+            ("enterprise center", None, None, 1000, "pro_sports_venue", True, False),
+        ]
+
+        with patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            profile = _apply_destination_override(
+                38.6268,
+                -90.2026,
+                {
+                    "name": "Enterprise Center",
+                    "category": "arena",
+                    "display_name": "Enterprise Center, St. Louis, Missouri",
+                    "classification": "amateur_sports_venue",
+                },
+            )
+
+        self.assertEqual(profile["classification"], "pro_sports_venue")
+        self.assertIs(profile["keep_trip"], True)
+        self.assertIs(profile["ignore_trip"], False)
 
     def test_detect_trips_skips_commute_like_work_trip(self) -> None:
         cursor = FakeCursor()
