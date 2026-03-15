@@ -174,6 +174,44 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
     }
 
 
+def _apply_destination_override(
+    latitude: float,
+    longitude: float,
+    profile: Dict[str, Optional[str]],
+) -> Dict[str, Optional[str]]:
+    haystack = " ".join(
+        part for part in (profile.get("name"), profile.get("category"), profile.get("display_name")) if part
+    ).lower()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT match_pattern, latitude, longitude, radius_meters, classification, ignore_trip
+                FROM destination_overrides
+                ORDER BY id ASC
+                """
+            )
+            rows = cur.fetchall()
+
+    for row in rows:
+        pattern, rule_lat, rule_lon, radius_meters, classification, ignore_trip = row
+        matched = False
+        if pattern and pattern.lower() in haystack:
+            matched = True
+        elif rule_lat is not None and rule_lon is not None:
+            if _haversine_km(latitude, longitude, float(rule_lat), float(rule_lon)) <= (int(radius_meters or 1000) / 1000.0):
+                matched = True
+        if matched:
+            updated = dict(profile)
+            updated["classification"] = classification
+            updated["ignore_trip"] = bool(ignore_trip)
+            return updated
+
+    updated = dict(profile)
+    updated["ignore_trip"] = False
+    return updated
+
+
 def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -268,6 +306,11 @@ def detect_trips() -> tuple[int, int]:
                     trip.destination_lat,
                     trip.destination_lon,
                 )
+                destination_profile = _apply_destination_override(
+                    trip.destination_lat,
+                    trip.destination_lon,
+                    destination_profile,
+                )
                 destination_class = destination_profile.get("classification")
                 if (
                     trip.touched_work
@@ -275,7 +318,7 @@ def detect_trips() -> tuple[int, int]:
                     and trip.max_distance_km <= max(home_work_distance_km + 5.0, local_radius_km + 5.0)
                 ):
                     continue
-                if destination_class == "amateur_sports_venue":
+                if destination_profile.get("ignore_trip") or destination_class == "amateur_sports_venue":
                     continue
                 duration = trip.end_time - trip.start_time
                 if trip.start_time.date() != trip.end_time.date():

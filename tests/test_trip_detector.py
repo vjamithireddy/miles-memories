@@ -4,19 +4,22 @@ from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
-from trip_engine.detector import SimpleTrip, _haversine_km, detect_trips
+from trip_engine.detector import _apply_destination_override, _haversine_km, detect_trips
 
 
 class FakeCursor:
     def __init__(self) -> None:
         self.fetchone_results = [(1,), None]
         self.inserted_trip_params = []
+        self.override_rows = []
         self._last_fetchall = []
 
     def execute(self, query: str, params=None) -> None:
         compact = " ".join(query.split())
         if "INSERT INTO trips" in compact:
             self.inserted_trip_params.append(params)
+        elif "FROM destination_overrides" in compact:
+            self._last_fetchall = self.override_rows
         elif "SELECT id, event_timestamp FROM location_events" in compact:
             self._last_fetchall = [(10, datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc))]
         else:
@@ -55,6 +58,27 @@ class DetectorTests(unittest.TestCase):
     def test_haversine_is_reasonable_for_home_to_work(self) -> None:
         distance = _haversine_km(38.7504884, -90.6877536, 38.757, -90.465)
         self.assertGreater(distance, 15)
+
+    def test_destination_override_matches_pattern(self) -> None:
+        cursor = FakeCursor()
+        cursor.override_rows = [
+            ("rec plex", None, None, 1000, "amateur_sports_venue", True),
+        ]
+
+        with patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            profile = _apply_destination_override(
+                38.8,
+                -90.4,
+                {
+                    "name": "St Peters Rec Plex",
+                    "category": "sports_centre",
+                    "display_name": "St Peters Rec Plex, Missouri",
+                    "classification": None,
+                },
+            )
+
+        self.assertEqual(profile["classification"], "amateur_sports_venue")
+        self.assertIs(profile["ignore_trip"], True)
 
     def test_detect_trips_skips_commute_like_work_trip(self) -> None:
         cursor = FakeCursor()

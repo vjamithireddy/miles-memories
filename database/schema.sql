@@ -259,6 +259,19 @@ CREATE TABLE IF NOT EXISTS publish_records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS destination_overrides (
+    id BIGSERIAL PRIMARY KEY,
+    rule_name TEXT NOT NULL,
+    match_pattern TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    radius_meters INTEGER DEFAULT 1000,
+    classification TEXT NOT NULL,
+    ignore_trip BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_location_events_timestamp ON location_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_location_events_lat_lon ON location_events(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_photos_captured_at ON photos(captured_at);
