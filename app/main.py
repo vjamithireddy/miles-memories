@@ -1082,7 +1082,7 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       margin-bottom: 6px;
       color: var(--good);
     }}
-    .button {{
+    .button, button {{
       display: inline-block;
       text-decoration: none;
       border-radius: 999px;
@@ -1091,10 +1091,19 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       color: white;
       background: var(--accent);
       font-weight: 700;
+      font: inherit;
+      cursor: pointer;
     }}
     .button.ghost {{
       background: transparent;
       color: var(--accent);
+    }}
+    button:hover, .button:hover {{
+      filter: brightness(0.98);
+    }}
+    button:focus-visible, .button:focus-visible, details > summary:focus-visible {{
+      outline: 2px solid rgba(184, 95, 53, 0.35);
+      outline-offset: 3px;
     }}
     .grid {{
       display: grid;
@@ -1213,6 +1222,7 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       color: var(--accent);
       list-style: none;
       margin-bottom: 14px;
+      display: inline-block;
     }}
     details.timeline-collapse > summary::-webkit-details-marker {{
       display: none;
@@ -1235,6 +1245,7 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       padding: 12px 16px;
       list-style: none;
       font-weight: 700;
+      background: rgba(255,255,255,0.22);
     }}
     details.leg-collapse > summary::-webkit-details-marker {{
       display: none;
