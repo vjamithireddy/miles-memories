@@ -41,10 +41,54 @@ LEG_LABELS = {
 }
 
 
-def _leg_default_summary(leg: dict[str, Any]) -> str:
+def _is_placeholder_segment_summary(value: str | None) -> bool:
+    if not value:
+        return True
+    normalized = value.strip().lower()
+    return normalized.endswith("inferred from timeline activity data.")
+
+
+def _leg_default_summary(
+    leg: dict[str, Any],
+    *,
+    origin_name: str | None = None,
+    destination_name: str | None = None,
+    previous_leg_type: str | None = None,
+    next_leg_type: str | None = None,
+) -> str:
     label = leg["label"]
     start_name = leg.get("start_place_name")
     end_name = leg.get("end_place_name")
+    leg_type = leg["leg_type"]
+
+    if leg_type == "air":
+        if origin_name and destination_name and origin_name != destination_name:
+            return f"Flight from {origin_name} to {destination_name}."
+        if destination_name:
+            return f"Flight to {destination_name}."
+        return "Flight segment inferred from timeline activity data."
+
+    if leg_type == "car":
+        if next_leg_type == "air":
+            return "Drive to airport."
+        if previous_leg_type == "air":
+            if destination_name:
+                return f"Drive from airport toward {destination_name}."
+            return "Drive from airport."
+        if destination_name:
+            return f"Drive near {destination_name}."
+        if origin_name:
+            return f"Drive from {origin_name}."
+
+    if leg_type in {"walk", "hike", "run"}:
+        verb = {"walk": "Walk", "hike": "Hike", "run": "Run"}[leg_type]
+        if destination_name:
+            return f"{verb} near {destination_name}."
+        if end_name:
+            return f"{verb} toward {end_name}."
+        if start_name:
+            return f"{verb} from {start_name}."
+
     if start_name and end_name:
         return f"{label} from {start_name} to {end_name}."
     if end_name:
@@ -143,7 +187,12 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _sync_trip_segments(
-    cur: Any, trip_id: int, legs: list[dict[str, Any]]
+    cur: Any,
+    trip_id: int,
+    legs: list[dict[str, Any]],
+    *,
+    origin_name: str | None = None,
+    destination_name: str | None = None,
 ) -> list[dict[str, Any]]:
     cur.execute(
         """
@@ -174,7 +223,7 @@ def _sync_trip_segments(
         existing_by_key[key] = row
 
     synced = []
-    for leg in legs:
+    for index, leg in enumerate(legs):
         key = (
             leg["leg_type"],
             leg["start_time"],
@@ -182,7 +231,15 @@ def _sync_trip_segments(
             leg.get("source_event_id"),
         )
         persisted = existing_by_key.get(key)
-        default_summary = _leg_default_summary(leg)
+        previous_leg_type = legs[index - 1]["leg_type"] if index > 0 else None
+        next_leg_type = legs[index + 1]["leg_type"] if index + 1 < len(legs) else None
+        default_summary = _leg_default_summary(
+            leg,
+            origin_name=origin_name,
+            destination_name=destination_name,
+            previous_leg_type=previous_leg_type,
+            next_leg_type=next_leg_type,
+        )
         if not persisted:
             cur.execute(
                 """
@@ -213,6 +270,18 @@ def _sync_trip_segments(
                     None,
                     leg.get("source_event_id"),
                 ),
+            )
+            persisted = cur.fetchone()
+        elif _is_placeholder_segment_summary(persisted.get("notes")):
+            cur.execute(
+                """
+                UPDATE trip_segments
+                SET notes = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, segment_name, notes, rating
+                """,
+                (default_summary, persisted["id"]),
             )
             persisted = cur.fetchone()
         leg["segment_id"] = int(persisted["id"])
@@ -380,7 +449,13 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                 """,
                 (trip_id,),
             )
-            trip["travel_legs"] = _sync_trip_segments(cur, trip_id, _build_travel_legs(cur.fetchall()))
+            trip["travel_legs"] = _sync_trip_segments(
+                cur,
+                trip_id,
+                _build_travel_legs(cur.fetchall()),
+                origin_name=trip.get("origin_place_name"),
+                destination_name=trip.get("primary_destination_name"),
+            )
 
             cur.execute(
                 """
