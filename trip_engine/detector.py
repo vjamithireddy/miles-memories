@@ -44,6 +44,20 @@ PRO_VENUE_PATTERNS = (
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 GENERIC_PLACE_TYPES = {"house", "residential", "road", "service", "address"}
 UNKNOWN_PLACE_NAMES = {"unknown destination", "unresolved destination"}
+DOWNRANKED_DESTINATION_KEYWORDS = (
+    "county",
+    "road",
+    "boulevard",
+    "avenue",
+    "street",
+    "drive",
+    "lane",
+    "highway",
+    "freeway",
+    "parkway",
+    "route",
+    "lot",
+)
 NOMINATIM_MIN_INTERVAL_SECONDS = 1.1
 NOMINATIM_BACKOFF_SECONDS = 5.0
 
@@ -110,6 +124,15 @@ def _meaningful_locality(value: Optional[str]) -> Optional[str]:
     if not text or text.lower() in UNKNOWN_PLACE_NAMES:
         return None
     return text
+
+
+def _is_downranked_destination_name(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    text = value.strip().lower()
+    if not text:
+        return False
+    return any(re.search(rf"\b{re.escape(keyword)}\b", text) for keyword in DOWNRANKED_DESTINATION_KEYWORDS)
 
 
 def _is_stale_cached_place(
@@ -316,10 +339,17 @@ def _destination_title(profile: Dict[str, Optional[str]]) -> Optional[str]:
     locality = _meaningful_locality(profile.get("locality"))
     category = _normalize_text(profile.get("category"))
 
-    if name and not _is_address_like(name) and category not in GENERIC_PLACE_TYPES:
+    if (
+        name
+        and not _is_address_like(name)
+        and not _is_downranked_destination_name(name)
+        and category not in GENERIC_PLACE_TYPES
+    ):
         return name.strip()
     if locality:
         return locality.strip()
+    if name and not _is_address_like(name) and not _is_downranked_destination_name(name):
+        return name.strip()
     if name and not _is_address_like(name):
         return name.strip()
     return None

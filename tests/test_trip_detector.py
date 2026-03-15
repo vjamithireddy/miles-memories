@@ -101,6 +101,51 @@ class DetectorTests(unittest.TestCase):
 
         self.assertEqual(trip_name, "Busch Stadium Day Trip")
 
+    def test_generate_trip_name_downranks_county_in_favor_of_locality(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "Saint Louis County",
+                "locality": "Saint Louis",
+                "category": "administrative",
+                "classification": None,
+            },
+            "day_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Saint Louis Day Trip")
+
+    def test_generate_trip_name_downranks_road_in_favor_of_locality(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "Olive Boulevard",
+                "locality": "Chesterfield",
+                "category": "road",
+                "classification": None,
+            },
+            "overnight_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 8, 10, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Chesterfield Weekend")
+
+    def test_generate_trip_name_downranks_lot_in_favor_of_locality(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "Ted Drewes West Lot",
+                "locality": "Saint Louis",
+                "category": "parking",
+                "classification": None,
+            },
+            "day_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Saint Louis Day Trip")
+
     def test_generate_trip_name_ignores_unknown_destination_placeholder(self) -> None:
         trip_name = _generate_trip_name(
             {
