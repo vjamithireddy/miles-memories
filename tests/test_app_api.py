@@ -69,6 +69,19 @@ def _trip_detail() -> dict:
             "reviewed_at": datetime(2026, 3, 3, 11, 0, tzinfo=timezone.utc),
         }
     ]
+    trip["travel_legs"] = [
+        {
+            "leg_type": "air",
+            "label": "Air travel",
+            "start_time": datetime(2026, 3, 1, 8, 30, tzinfo=timezone.utc),
+            "end_time": datetime(2026, 3, 1, 11, 45, tzinfo=timezone.utc),
+            "start_latitude": 38.7416,
+            "start_longitude": -90.3619,
+            "end_latitude": 36.0866,
+            "end_longitude": -115.1385,
+            "source_event_id": "FLYING",
+        }
+    ]
     return trip
 
 
@@ -141,6 +154,8 @@ class AppApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Trip map", response.body)
+        self.assertIn(b"Travel legs", response.body)
+        self.assertIn(b"Air travel", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Review trip", response.body)

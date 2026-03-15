@@ -29,6 +29,18 @@ class TripReviewHistoryItem(BaseModel):
     reviewed_at: datetime
 
 
+class TripTravelLeg(BaseModel):
+    leg_type: str
+    label: str
+    start_time: datetime
+    end_time: datetime
+    start_latitude: Optional[float] = None
+    start_longitude: Optional[float] = None
+    end_latitude: Optional[float] = None
+    end_longitude: Optional[float] = None
+    source_event_id: Optional[str] = None
+
+
 class TripSummary(BaseModel):
     id: int
     trip_name: Optional[str] = None
@@ -54,6 +66,7 @@ class TripDetail(TripSummary):
     event_counts: List[TripEventCount] = Field(default_factory=list)
     timeline: List[TripTimelineEvent] = Field(default_factory=list)
     review_history: List[TripReviewHistoryItem] = Field(default_factory=list)
+    travel_legs: List[TripTravelLeg] = Field(default_factory=list)
 
 
 class TripReviewRequest(BaseModel):

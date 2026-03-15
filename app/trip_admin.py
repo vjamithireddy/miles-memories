@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -29,6 +30,77 @@ def _normalize_trip(row: dict[str, Any]) -> dict[str, Any]:
         "published_at": row["published_at"],
         "updated_at": row["updated_at"],
     }
+
+
+LEG_LABELS = {
+    "FLYING": ("air", "Air travel"),
+    "IN_PASSENGER_VEHICLE": ("car", "Car travel"),
+    "WALKING": ("walk", "Walking"),
+    "RUNNING": ("run", "Running"),
+    "HIKING": ("hike", "Hiking"),
+}
+
+
+def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_segment: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        raw_payload = row["raw_payload_json"]
+        if isinstance(raw_payload, str):
+            try:
+                raw_payload = json.loads(raw_payload)
+            except json.JSONDecodeError:
+                raw_payload = None
+        if not isinstance(raw_payload, dict):
+            continue
+        activity = raw_payload.get("activity")
+        segment_index = raw_payload.get("semanticSegmentIndex")
+        if not isinstance(activity, dict) or segment_index is None:
+            continue
+        top_candidate = activity.get("topCandidate") or {}
+        movement_type = top_candidate.get("type") or row["source_event_id"]
+        if movement_type not in LEG_LABELS:
+            continue
+        label_type, label = LEG_LABELS[movement_type]
+        start = activity.get("start") or {}
+        end = activity.get("end") or {}
+        existing = by_segment.get(int(segment_index))
+        if existing:
+            if row["event_time"] < existing["start_time"]:
+                existing["start_time"] = row["event_time"]
+            if row["event_time"] > existing["end_time"]:
+                existing["end_time"] = row["event_time"]
+            continue
+        by_segment[int(segment_index)] = {
+            "leg_type": label_type,
+            "label": label,
+            "start_time": row["event_time"],
+            "end_time": row["event_time"],
+            "start_latitude": None,
+            "start_longitude": None,
+            "end_latitude": None,
+            "end_longitude": None,
+            "source_event_id": movement_type,
+        }
+        if start.get("latLng"):
+            lat, lon = start["latLng"].replace("°", "").split(",")
+            by_segment[int(segment_index)]["start_latitude"] = float(lat.strip())
+            by_segment[int(segment_index)]["start_longitude"] = float(lon.strip())
+        if end.get("latLng"):
+            lat, lon = end["latLng"].replace("°", "").split(",")
+            by_segment[int(segment_index)]["end_latitude"] = float(lat.strip())
+            by_segment[int(segment_index)]["end_longitude"] = float(lon.strip())
+        start_time = activity.get("startTime")
+        end_time = activity.get("endTime")
+        if start_time:
+            by_segment[int(segment_index)]["start_time"] = datetime.fromisoformat(
+                start_time.replace("Z", "+00:00")
+            )
+        if end_time:
+            by_segment[int(segment_index)]["end_time"] = datetime.fromisoformat(
+                end_time.replace("Z", "+00:00")
+            )
+
+    return [by_segment[key] for key in sorted(by_segment)]
 
 
 def list_trips(
@@ -145,7 +217,9 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                     te.day_index,
                     te.timeline_label,
                     le.latitude,
-                    le.longitude
+                    le.longitude,
+                    le.source_event_id,
+                    le.raw_payload_json
                 FROM trip_events te
                 LEFT JOIN location_events le
                     ON te.event_type = 'location_event'
@@ -169,6 +243,22 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                 }
                 for item in cur.fetchall()
             ]
+            cur.execute(
+                """
+                SELECT
+                    te.event_time,
+                    le.source_event_id,
+                    le.raw_payload_json
+                FROM trip_events te
+                JOIN location_events le
+                    ON te.event_type = 'location_event'
+                   AND le.id = te.event_ref_id
+                WHERE te.trip_id = %s
+                ORDER BY te.event_time ASC, te.id ASC
+                """,
+                (trip_id,),
+            )
+            trip["travel_legs"] = _build_travel_legs(cur.fetchall())
 
             cur.execute(
                 """

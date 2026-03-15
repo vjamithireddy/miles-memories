@@ -886,6 +886,7 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     neighbors = trip.get("neighbors") or {}
     previous_trip = neighbors.get("previous")
     next_trip = neighbors.get("next")
+    travel_legs = trip.get("travel_legs", [])
 
     timeline_items = "".join(
         f"""
@@ -950,6 +951,26 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       <li class="count-item">
         <strong>No matching overrides</strong>
         <span>auto only</span>
+      </li>
+    """
+
+    travel_leg_items = "".join(
+        f"""
+        <li class="timeline-item">
+          <div class="timeline-time">{escape(_format_local_datetime(item['start_time']))}</div>
+          <div>
+            <strong>{escape(item['label'])}</strong>
+            <p>{escape(item['label'])} · until {escape(_format_local_datetime(item['end_time']))}</p>
+          </div>
+        </li>
+        """
+        for item in travel_legs
+    ) or """
+      <li class="timeline-item">
+        <div>
+          <strong>No travel legs inferred.</strong>
+          <p>This trip currently only has raw location points linked.</p>
+        </div>
       </li>
     """
 
@@ -1306,6 +1327,13 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       <h2>Linked events</h2>
       <ul class="list">
         {count_items}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Travel legs</h2>
+      <ul class="list">
+        {travel_leg_items}
       </ul>
     </section>
 
