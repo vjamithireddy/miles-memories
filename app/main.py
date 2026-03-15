@@ -1879,40 +1879,62 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           }}
           return;
         }}
-        const startLat = parseFloat(node.dataset.startLat || "");
-        const startLon = parseFloat(node.dataset.startLon || "");
-        const endLat = parseFloat(node.dataset.endLat || "");
-        const endLon = parseFloat(node.dataset.endLon || "");
-        const path = JSON.parse(node.dataset.path || "[]");
-        const pathPoints = path
-          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
-          .map((point) => [point.lat, point.lon]);
-        if (!pathPoints.length && [startLat, startLon, endLat, endLon].some((value) => Number.isNaN(value))) {{
+        try {{
+          const startLat = parseFloat(node.dataset.startLat || "");
+          const startLon = parseFloat(node.dataset.startLon || "");
+          const endLat = parseFloat(node.dataset.endLat || "");
+          const endLon = parseFloat(node.dataset.endLon || "");
+          const path = JSON.parse(node.dataset.path || "[]");
+          const pathPoints = path
+            .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+            .map((point) => [point.lat, point.lon]);
+          const boundaryPoints = [];
+          if (!Number.isNaN(startLat) && !Number.isNaN(startLon)) {{
+            boundaryPoints.push([startLat, startLon]);
+          }}
+          if (!Number.isNaN(endLat) && !Number.isNaN(endLon)) {{
+            const endPoint = [endLat, endLon];
+            if (
+              !boundaryPoints.length ||
+              boundaryPoints[boundaryPoints.length - 1][0] !== endPoint[0] ||
+              boundaryPoints[boundaryPoints.length - 1][1] !== endPoint[1]
+            ) {{
+              boundaryPoints.push(endPoint);
+            }}
+          }}
+          const legLatLngs = pathPoints.length > 1 ? pathPoints : boundaryPoints;
+          if (!legLatLngs.length) {{
+            node.style.display = "none";
+            return;
+          }}
+          const legMap = L.map(node, {{ scrollWheelZoom: false, zoomControl: false }});
+          node._leaflet_map_instance = legMap;
+          node.dataset.mapReady = "1";
+          L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
+            maxZoom: 18,
+            attribution: "&copy; OpenStreetMap contributors"
+          }}).addTo(legMap);
+          const legStart = legLatLngs[0];
+          const legEnd = legLatLngs[legLatLngs.length - 1];
+          if (legLatLngs.length > 1) {{
+            const legLine = L.polyline(legLatLngs, {{
+              color: "#275d4f",
+              weight: 4,
+              opacity: 0.9,
+              dashArray: pathPoints.length > 2 ? null : "8 6"
+            }}).addTo(legMap);
+            L.circleMarker(legStart, {{ radius: 6, color: "#b85f35" }}).addTo(legMap);
+            L.circleMarker(legEnd, {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
+            legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
+          }} else {{
+            L.circleMarker(legStart, {{ radius: 7, color: "#275d4f" }}).addTo(legMap);
+            legMap.setView(legStart, 13);
+          }}
+          window.setTimeout(() => legMap.invalidateSize(), 0);
+        }} catch (error) {{
           node.style.display = "none";
-          return;
+          console.error(error);
         }}
-        const legMap = L.map(node, {{ scrollWheelZoom: false, zoomControl: false }});
-        node._leaflet_map_instance = legMap;
-        node.dataset.mapReady = "1";
-        L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
-          maxZoom: 18,
-          attribution: "&copy; OpenStreetMap contributors"
-        }}).addTo(legMap);
-        const legLatLngs = pathPoints.length ? pathPoints : [[startLat, startLon], [endLat, endLon]];
-        const legLine = L.polyline(legLatLngs, {{
-          color: "#275d4f",
-          weight: 4,
-          opacity: 0.9,
-          dashArray: pathPoints.length > 2 ? null : "8 6"
-        }}).addTo(legMap);
-        const legStart = legLatLngs[0];
-        const legEnd = legLatLngs[legLatLngs.length - 1];
-        L.circleMarker(legStart, {{ radius: 6, color: "#b85f35" }}).addTo(legMap);
-        if (legLatLngs.length > 1) {{
-          L.circleMarker(legEnd, {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
-        }}
-        legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
-        window.setTimeout(() => legMap.invalidateSize(), 0);
       }};
 
       document.querySelectorAll("details.leg-collapse").forEach((detailsNode) => {{
