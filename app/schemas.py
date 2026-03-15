@@ -18,6 +18,8 @@ class TripTimelineEvent(BaseModel):
     sort_order: Optional[int] = None
     day_index: Optional[int] = None
     timeline_label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class TripReviewHistoryItem(BaseModel):

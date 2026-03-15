@@ -1,4 +1,5 @@
 from html import escape
+import json
 from typing import List, Optional
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
@@ -600,6 +601,20 @@ def _parse_flag(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _matching_overrides_for_trip(trip: dict) -> list[dict]:
+    destination_name = (trip.get("primary_destination_name") or "").lower()
+    timeline_haystack = " ".join(
+        (item.get("timeline_label") or item.get("event_type") or "").lower()
+        for item in trip.get("timeline", [])
+    )
+    matches = []
+    for override in destination_overrides.list_overrides():
+        pattern = (override.get("match_pattern") or "").strip().lower()
+        if pattern and (pattern in destination_name or pattern in timeline_haystack):
+            matches.append(override)
+    return matches
+
+
 def _render_overrides_page(overrides: List[dict]) -> str:
     rows = "".join(
         f"""
@@ -841,6 +856,18 @@ def _render_trip_detail_page(trip: dict) -> str:
     summary = escape(trip["summary_text"] or "No summary yet for this trip.")
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
     published = escape(str(trip["published_at"] or "not published"))
+    map_points = [
+        {
+            "lat": item["latitude"],
+            "lon": item["longitude"],
+            "label": item["timeline_label"] or item["event_type"],
+            "time": str(item["event_time"]),
+        }
+        for item in trip["timeline"]
+        if item.get("latitude") is not None and item.get("longitude") is not None
+    ]
+    map_payload = escape(json.dumps(map_points))
+    matching_overrides = trip.get("matching_overrides", [])
 
     timeline_items = "".join(
         f"""
@@ -848,7 +875,7 @@ def _render_trip_detail_page(trip: dict) -> str:
           <div class="timeline-time">{escape(str(item['event_time']))}</div>
           <div>
             <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
-            <p>{escape(item['event_type'])} · ref {escape(str(item['event_ref_id']))}</p>
+            <p>{escape(item['event_type'])} · ref {escape(str(item['event_ref_id']))}{f" · {item['latitude']:.5f}, {item['longitude']:.5f}" if item.get('latitude') is not None and item.get('longitude') is not None else ""}</p>
           </div>
         </li>
         """
@@ -893,12 +920,33 @@ def _render_trip_detail_page(trip: dict) -> str:
       </li>
     """
 
+    override_items = "".join(
+        f"""
+        <li class="count-item">
+          <strong>{escape(item['rule_name'])}</strong>
+          <span>{'keep' if item['keep_trip'] else 'ignore' if item['ignore_trip'] else escape(item['classification'])}</span>
+        </li>
+        """
+        for item in matching_overrides
+    ) or """
+      <li class="count-item">
+        <strong>No matching overrides</strong>
+        <span>auto only</span>
+      </li>
+    """
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} · MilesMemories</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
   <style>
     :root {{
       --bg: #f2eee6;
@@ -987,6 +1035,28 @@ def _render_trip_detail_page(trip: dict) -> str:
       grid-template-columns: 0.85fr 1.15fr;
       gap: 18px;
     }}
+    .two-up {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }}
+    .map-shell {{
+      overflow: hidden;
+      padding: 0;
+    }}
+    .map-copy {{
+      padding: 24px 24px 0;
+    }}
+    #trip-map {{
+      height: 360px;
+      width: 100%;
+      border-top: 1px solid var(--line);
+      background: #efe5d7;
+    }}
+    .map-fallback {{
+      padding: 18px 24px 24px;
+      color: var(--muted);
+    }}
     .list {{
       list-style: none;
       padding: 0;
@@ -1005,17 +1075,65 @@ def _render_trip_detail_page(trip: dict) -> str:
       justify-content: space-between;
       align-items: center;
     }}
+    .detail-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .detail-grid strong {{
+      display: block;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }}
+    .detail-cell {{
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.5);
+    }}
     .timeline-item {{
       display: grid;
       grid-template-columns: 220px 1fr;
       gap: 14px;
+    }}
+    .review-form {{
+      display: grid;
+      gap: 14px;
+    }}
+    .review-form-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    label {{
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
+    input, textarea, select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fffdf8;
+      font: inherit;
+      color: var(--ink);
+    }}
+    textarea {{
+      min-height: 120px;
+      resize: vertical;
     }}
     .timeline-time {{
       color: var(--accent);
       font-weight: 700;
     }}
     @media (max-width: 920px) {{
-      .hero, .grid, .timeline-item {{
+      .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
         grid-template-columns: 1fr;
       }}
     }}
@@ -1047,7 +1165,82 @@ def _render_trip_detail_page(trip: dict) -> str:
           <span class="badge">Published {published}</span>
           <span class="badge">Date range {escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
         </div>
+        <div class="detail-grid">
+          <div class="detail-cell">
+            <strong>Start</strong>
+            <span>{escape(str(trip['start_time']))}</span>
+          </div>
+          <div class="detail-cell">
+            <strong>End</strong>
+            <span>{escape(str(trip['end_time']))}</span>
+          </div>
+          <div class="detail-cell">
+            <strong>Trip type</strong>
+            <span>{trip_type}</span>
+          </div>
+          <div class="detail-cell">
+            <strong>Generated destination</strong>
+            <span>{destination}</span>
+          </div>
+        </div>
       </aside>
+    </section>
+
+    <section class="two-up">
+      <article class="panel">
+        <h2>Destination context</h2>
+        <ul class="list">
+          <li class="count-item">
+            <strong>Primary destination</strong>
+            <span>{destination}</span>
+          </li>
+          <li class="count-item">
+            <strong>Matching overrides</strong>
+            <span>{len(matching_overrides)}</span>
+          </li>
+        </ul>
+        <ul class="list" style="margin-top: 12px;">
+          {override_items}
+        </ul>
+        <div class="actions">
+          <a class="button ghost" href="/admin/overrides">Manage overrides</a>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Review trip</h2>
+        <form class="review-form" method="post" action="/admin/trip/{trip['id']}/review">
+          <div class="review-form-grid">
+            <label>Action
+              <select name="action">
+                <option value="confirm">confirm</option>
+                <option value="ignore">ignore</option>
+                <option value="publish">publish</option>
+                <option value="mark_private">mark_private</option>
+                <option value="reject">reject</option>
+              </select>
+            </label>
+            <label>Reviewer name
+              <input type="text" name="reviewer_name" value="Venkat">
+            </label>
+            <label>Trip name
+              <input type="text" name="trip_name" value="{title}">
+            </label>
+            <label>Destination name
+              <input type="text" name="primary_destination_name" value="{destination}">
+            </label>
+          </div>
+          <label>Summary
+            <textarea name="summary_text">{escape(trip['summary_text'] or '')}</textarea>
+          </label>
+          <label>Review notes
+            <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
+          </label>
+          <div class="actions">
+            <button type="submit">Save review</button>
+          </div>
+        </form>
+      </article>
     </section>
 
     <section class="grid">
@@ -1066,6 +1259,15 @@ def _render_trip_detail_page(trip: dict) -> str:
       </article>
     </section>
 
+    <section class="panel map-shell">
+      <div class="map-copy">
+        <h2>Trip map</h2>
+        <p>Linked trip coordinates are plotted in order so you can review the route shape and destination cluster.</p>
+      </div>
+      <div id="trip-map" data-points="{map_payload}"></div>
+      <div class="map-fallback">Map points appear here when linked location events include coordinates.</div>
+    </section>
+
     <section class="panel">
       <h2>Review history</h2>
       <ul class="list">
@@ -1073,6 +1275,45 @@ def _render_trip_detail_page(trip: dict) -> str:
       </ul>
     </section>
   </main>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    (function () {{
+      const mapNode = document.getElementById("trip-map");
+      if (!mapNode || !window.L) {{
+        return;
+      }}
+      const points = JSON.parse(mapNode.dataset.points || "[]");
+      if (!points.length) {{
+        return;
+      }}
+      const fallback = document.querySelector(".map-fallback");
+      if (fallback) {{
+        fallback.style.display = "none";
+      }}
+      const map = L.map(mapNode, {{ scrollWheelZoom: false }});
+      L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
+        maxZoom: 18,
+        attribution: "&copy; OpenStreetMap contributors"
+      }}).addTo(map);
+      const latlngs = points.map((point) => [point.lat, point.lon]);
+      const polyline = L.polyline(latlngs, {{
+        color: "#b85f35",
+        weight: 4,
+        opacity: 0.9
+      }}).addTo(map);
+      const start = points[0];
+      const end = points[points.length - 1];
+      L.marker([start.lat, start.lon]).addTo(map).bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
+      if (points.length > 1) {{
+        L.marker([end.lat, end.lon]).addTo(map).bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
+      }}
+      map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -1155,7 +1396,34 @@ def admin_trip_detail_page(trip_id: int) -> HTMLResponse:
     trip = trip_admin.get_trip(trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+    trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     return HTMLResponse(_render_trip_detail_page(trip))
+
+
+@app.post("/admin/trip/{trip_id}/review")
+async def review_trip_from_form(trip_id: int, request: Request) -> RedirectResponse:
+    payload = parse_qs((await request.body()).decode("utf-8"))
+    action = (payload.get("action") or ["confirm"])[0].strip()
+    reviewer_name = (payload.get("reviewer_name") or [""])[0].strip() or None
+    review_notes = (payload.get("review_notes") or [""])[0].strip() or None
+    trip_name = (payload.get("trip_name") or [""])[0].strip() or None
+    summary_text = (payload.get("summary_text") or [""])[0].strip() or None
+    primary_destination_name = (payload.get("primary_destination_name") or [""])[0].strip() or None
+
+    updated = trip_admin.record_review(
+        trip_id,
+        action=action,
+        reviewer_name=reviewer_name,
+        review_notes=review_notes,
+        trip_name=trip_name,
+        summary_text=summary_text,
+        primary_destination_name=primary_destination_name,
+        is_private=None,
+        publish_ready=None,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return RedirectResponse(url=f"/admin/trip/{trip_id}", status_code=303)
 
 
 @app.get("/health")

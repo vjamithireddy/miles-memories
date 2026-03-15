@@ -10,11 +10,13 @@ from fastapi import HTTPException
 from app.main import (
     admin_homepage,
     admin_overrides_page,
+    admin_trip_detail_page,
     create_destination_override,
     delete_destination_override,
     get_admin_trip,
     homepage,
     list_admin_trips,
+    review_trip_from_form,
     review_trip,
     update_publish_ready,
 )
@@ -55,6 +57,8 @@ def _trip_detail() -> dict:
             "sort_order": 1,
             "day_index": 0,
             "timeline_label": "Left home",
+            "latitude": 38.6270,
+            "longitude": -90.1994,
         }
     ]
     trip["review_history"] = [
@@ -120,6 +124,45 @@ class AppApiTests(unittest.TestCase):
             review_decision="pending",
             include_private=True,
             limit=24,
+        )
+
+    def test_admin_trip_detail_renders_map(self) -> None:
+        with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
+             patch("app.main.destination_overrides.list_overrides", return_value=[]):
+            response = admin_trip_detail_page(7)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Trip map", response.body)
+        self.assertIn(b"id=\"trip-map\"", response.body)
+        self.assertIn(b"38.62700, -90.19940", response.body)
+        self.assertIn(b"Review trip", response.body)
+        self.assertIn(b"Destination context", response.body)
+        mock_get.assert_called_once_with(7)
+
+    def test_review_trip_from_form_uses_repository(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return (
+                    b"action=confirm&reviewer_name=Venkat&trip_name=Colorado+Weekend"
+                    b"&summary_text=Late+winter+trip.&primary_destination_name=Denver"
+                    b"&review_notes=Looks+good"
+                )
+
+        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+            response = asyncio.run(review_trip_from_form(7, FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/trip/7")
+        mock_review.assert_called_once_with(
+            7,
+            action="confirm",
+            reviewer_name="Venkat",
+            review_notes="Looks good",
+            trip_name="Colorado Weekend",
+            summary_text="Late winter trip.",
+            primary_destination_name="Denver",
+            is_private=None,
+            publish_ready=None,
         )
 
     def test_list_trips_passes_filters(self) -> None:

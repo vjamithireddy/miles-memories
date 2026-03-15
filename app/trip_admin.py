@@ -138,15 +138,20 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
             cur.execute(
                 """
                 SELECT
-                    event_type,
-                    event_ref_id,
-                    event_time,
-                    sort_order,
-                    day_index,
-                    timeline_label
+                    te.event_type,
+                    te.event_ref_id,
+                    te.event_time,
+                    te.sort_order,
+                    te.day_index,
+                    te.timeline_label,
+                    le.latitude,
+                    le.longitude
                 FROM trip_events
-                WHERE trip_id = %s
-                ORDER BY sort_order ASC NULLS LAST, event_time ASC, id ASC
+                LEFT JOIN location_events le
+                    ON te.event_type = 'location_event'
+                   AND le.id = te.event_ref_id
+                WHERE te.trip_id = %s
+                ORDER BY te.sort_order ASC NULLS LAST, te.event_time ASC, te.id ASC
                 LIMIT 200
                 """,
                 (trip_id,),
@@ -159,6 +164,8 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                     "sort_order": item["sort_order"],
                     "day_index": item["day_index"],
                     "timeline_label": item["timeline_label"],
+                    "latitude": float(item["latitude"]) if item["latitude"] is not None else None,
+                    "longitude": float(item["longitude"]) if item["longitude"] is not None else None,
                 }
                 for item in cur.fetchall()
             ]
