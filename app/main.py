@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap import get_user_timezone
 from app import destination_overrides, trip_admin
@@ -15,6 +16,7 @@ from app.schemas import PublishReadyRequest, TripDetail, TripReviewRequest, Trip
 from app.settings import get_app_host, get_app_port, get_app_reload
 
 app = FastAPI(title="MilesMemories API", version="0.1.0")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 def _html_response(content: str) -> HTMLResponse:
@@ -1204,12 +1206,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} · MilesMemories</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  >
+  <link rel="stylesheet" href="/static/leaflet/leaflet.css">
   <style>
     :root {{
       --bg: #f2eee6;
@@ -1833,11 +1830,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       </ul>
     </section>
   </main>
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
+  <script src="/static/leaflet/leaflet.js"></script>
   <script>
     (function () {{
       if (!window.L) {{
@@ -1864,9 +1857,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           }}).addTo(map);
           const start = points[0];
           const end = points[points.length - 1];
-          L.marker([start.lat, start.lon]).addTo(map).bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
+          L.circleMarker([start.lat, start.lon], {{ radius: 7, color: "#b85f35" }})
+            .addTo(map)
+            .bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
           if (points.length > 1) {{
-            L.marker([end.lat, end.lon]).addTo(map).bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
+            L.circleMarker([end.lat, end.lon], {{ radius: 7, color: "#275d4f" }})
+              .addTo(map)
+              .bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
           }}
           map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
         }}
