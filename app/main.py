@@ -16,6 +16,16 @@ from app.settings import get_app_host, get_app_port, get_app_reload
 
 app = FastAPI(title="MilesMemories API", version="0.1.0")
 
+
+def _html_response(content: str) -> HTMLResponse:
+    return HTMLResponse(
+        content,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
 HOME_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -258,7 +268,7 @@ HOME_PAGE = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def homepage() -> HTMLResponse:
-    return HTMLResponse(HOME_PAGE)
+    return _html_response(HOME_PAGE)
 
 
 def _trip_badge_class(value: str) -> str:
@@ -1778,7 +1788,7 @@ def admin_homepage(
         include_private=include_private,
         limit=limit,
     )
-    return HTMLResponse(
+    return _html_response(
         _render_admin_page(
             trips,
             status=status,
@@ -1792,7 +1802,7 @@ def admin_homepage(
 @app.get("/admin/overrides", response_class=HTMLResponse)
 def admin_overrides_page(return_to: str = Query(default="")) -> HTMLResponse:
     overrides = destination_overrides.list_overrides()
-    return HTMLResponse(_render_overrides_page(overrides, return_to=_query_text(return_to)))
+    return _html_response(_render_overrides_page(overrides, return_to=_query_text(return_to)))
 
 
 @app.post("/admin/overrides/create")
@@ -1859,7 +1869,7 @@ def admin_trip_destination_page(
         raise HTTPException(status_code=404, detail="Trip not found")
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     normalized_return_to = _query_text(return_to)
-    return HTMLResponse(
+    return _html_response(
         _render_trip_destination_page(
             trip, return_to=normalized_return_to or f"/admin/trip/{trip_id}"
         )
@@ -1873,7 +1883,7 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
         raise HTTPException(status_code=404, detail="Trip not found")
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
-    return HTMLResponse(_render_trip_detail_page(trip, saved=saved))
+    return _html_response(_render_trip_detail_page(trip, saved=saved))
 
 
 @app.post("/admin/trip/{trip_id}/review")
