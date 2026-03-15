@@ -188,6 +188,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Travel legs", response.body)
         self.assertIn(b"HIKING", response.body)
         self.assertIn(b"class=\"leg-map\"", response.body)
+        self.assertIn(b"class=\"leg-map-svg\"", response.body)
         self.assertIn(b"data-path=", response.body)
         self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
         self.assertIn(b"Inner canyon hiking", response.body)

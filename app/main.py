@@ -335,6 +335,67 @@ def _format_duration(start: datetime, end: datetime) -> str:
     return " ".join(parts)
 
 
+def _render_leg_map_preview(item: dict) -> str:
+    raw_points = item.get("path_points") or []
+    points: list[tuple[float, float]] = []
+    for point in raw_points:
+        lat = point.get("lat")
+        lon = point.get("lon")
+        if lat is None or lon is None:
+            continue
+        points.append((float(lat), float(lon)))
+    if not points:
+        start_lat = item.get("start_latitude")
+        start_lon = item.get("start_longitude")
+        end_lat = item.get("end_latitude")
+        end_lon = item.get("end_longitude")
+        if start_lat is not None and start_lon is not None:
+            points.append((float(start_lat), float(start_lon)))
+        if end_lat is not None and end_lon is not None:
+            end_point = (float(end_lat), float(end_lon))
+            if not points or points[-1] != end_point:
+                points.append(end_point)
+    if not points:
+        return '<div class="leg-map-empty">No route preview available.</div>'
+
+    width = 640.0
+    height = 360.0
+    padding = 26.0
+    lats = [point[0] for point in points]
+    lons = [point[1] for point in points]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    lat_span = max(max_lat - min_lat, 0.0001)
+    lon_span = max(max_lon - min_lon, 0.0001)
+
+    def scale(point: tuple[float, float]) -> tuple[float, float]:
+        lat, lon = point
+        x = padding + ((lon - min_lon) / lon_span) * (width - (padding * 2))
+        y = height - padding - ((lat - min_lat) / lat_span) * (height - (padding * 2))
+        return round(x, 2), round(y, 2)
+
+    scaled = [scale(point) for point in points]
+    path_d = " ".join(
+        f"{'M' if index == 0 else 'L'} {x} {y}" for index, (x, y) in enumerate(scaled)
+    )
+    start_x, start_y = scaled[0]
+    end_x, end_y = scaled[-1]
+    return f"""
+    <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}" role="img" aria-label="Travel leg route preview">
+      <defs>
+        <linearGradient id="legMapBg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#f7efdf" />
+          <stop offset="100%" stop-color="#efe3cd" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="url(#legMapBg)" />
+      <path d="{path_d}" fill="none" stroke="#275d4f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#b85f35" stroke-width="6" />
+      <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#275d4f" stroke-width="6" />
+    </svg>
+    """
+
+
 def _button_class(*names: str) -> str:
     classes = ["button", *names]
     return " ".join(part for part in classes if part)
@@ -1178,7 +1239,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                   data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
                   data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
                   data-path="{escape(json.dumps(item.get('path_points') or []))}"
-                ></div>
+                >{_render_leg_map_preview(item)}</div>
               </div>
             </div>
           </details>
@@ -1602,10 +1663,24 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border: 1px solid var(--line);
       border-radius: 16px;
       background: #efe5d7;
+      overflow: hidden;
+      position: relative;
     }}
     .leg-map-panel {{
       display: flex;
       min-height: 320px;
+    }}
+    .leg-map-svg {{
+      width: 100%;
+      height: 100%;
+      display: block;
+    }}
+    .leg-map-empty {{
+      display: grid;
+      place-items: center;
+      height: 100%;
+      color: var(--muted);
+      font-weight: 600;
     }}
     .leg-form[data-save-state="saving"] .leg-collapse[open] {{
       box-shadow: inset 0 0 0 1px rgba(39,93,79,0.2), 0 14px 26px rgba(50, 33, 15, 0.08);
