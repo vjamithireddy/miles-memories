@@ -19,6 +19,7 @@ from app.main import (
     list_admin_trips,
     review_trip_from_form,
     review_trip,
+    update_trip_segment_from_form,
     update_publish_ready,
 )
 from app.schemas import PublishReadyRequest, TripReviewRequest
@@ -81,6 +82,10 @@ def _trip_detail() -> dict:
             "end_latitude": 36.0866,
             "end_longitude": -115.1385,
             "source_event_id": "FLYING",
+            "segment_id": 41,
+            "segment_name": "Flight to Las Vegas",
+            "segment_summary": "Flight from St. Louis to Las Vegas.",
+            "segment_rating": 4,
             "path_points": [
                 {"lat": 38.7416, "lon": -90.3619},
                 {"lat": 37.1000, "lon": -96.2000},
@@ -162,6 +167,8 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Air travel", response.body)
         self.assertIn(b"class=\"leg-map\"", response.body)
         self.assertIn(b"data-path=", response.body)
+        self.assertIn(b"Flight to Las Vegas", response.body)
+        self.assertIn(b"Save leg", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Review trip", response.body)
@@ -234,6 +241,24 @@ class AppApiTests(unittest.TestCase):
             primary_destination_name=None,
             is_private=False,
             publish_ready=True,
+        )
+
+    def test_update_trip_segment_from_form_uses_repository(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return b"segment_name=Flight+to+Vegas&summary_text=Trail+walk&rating=5"
+
+        with patch("app.main.trip_admin.update_trip_segment", return_value=_trip_detail()) as mock_update:
+            response = asyncio.run(update_trip_segment_from_form(7, 41, FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=segment")
+        mock_update.assert_called_once_with(
+            7,
+            41,
+            segment_name="Flight to Vegas",
+            summary_text="Trail walk",
+            rating=5,
         )
 
     def test_list_trips_passes_filters(self) -> None:

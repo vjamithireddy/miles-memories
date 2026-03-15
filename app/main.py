@@ -296,6 +296,7 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
         "review": "Review saved.",
         "published": "Trip published and marked ready.",
         "privacy": "Trip visibility updated.",
+        "segment": "Travel leg saved.",
     }
     message = messages.get(saved_key, "Update saved.")
     return f"""
@@ -306,16 +307,7 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
 
 
 def _travel_leg_comment(item: dict) -> str:
-    label = item["label"]
-    start_name = item.get("start_place_name")
-    end_name = item.get("end_place_name")
-    if start_name and end_name:
-        return f"{label} from {start_name} to {end_name}."
-    if end_name:
-        return f"{label} toward {end_name}."
-    if start_name:
-        return f"{label} leaving {start_name}."
-    return f"{label} inferred from timeline activity data."
+    return item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
 
 
 def _button_class(*names: str) -> str:
@@ -1124,13 +1116,31 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
             </summary>
             <div class="leg-body">
-              <div class="leg-copy">
+                <div class="leg-copy">
                 <div class="leg-meta">
-                  <strong>{escape(item['label'])}</strong>
+                  <strong>{escape(item.get('segment_name') or item['label'])}</strong>
                   <span>{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
                 </div>
-                <p class="leg-comment">{escape(_travel_leg_comment(item))}</p>
-                <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+                <form class="segment-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}">
+                  <label>Segment name
+                    <input type="text" name="segment_name" value="{escape(item.get('segment_name') or item['label'])}">
+                  </label>
+                  <label>Generated summary
+                    <textarea name="summary_text">{escape(_travel_leg_comment(item))}</textarea>
+                  </label>
+                  <label>Rating
+                    <select name="rating">
+                      <option value=""{" selected" if item.get('segment_rating') is None else ""}>Unrated</option>
+                      <option value="1"{" selected" if item.get('segment_rating') == 1 else ""}>1</option>
+                      <option value="2"{" selected" if item.get('segment_rating') == 2 else ""}>2</option>
+                      <option value="3"{" selected" if item.get('segment_rating') == 3 else ""}>3</option>
+                      <option value="4"{" selected" if item.get('segment_rating') == 4 else ""}>4</option>
+                      <option value="5"{" selected" if item.get('segment_rating') == 5 else ""}>5</option>
+                    </select>
+                  </label>
+                  <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+                  <button class="primary button-sm" type="submit">Save leg</button>
+                </form>
               </div>
               <div
                 class="leg-map"
@@ -1444,15 +1454,19 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .leg-meta span, .leg-source, .leg-comment {{
       color: var(--muted);
     }}
-    .leg-comment {{
-      margin-bottom: 8px;
-    }}
     .leg-map {{
       height: 180px;
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 16px;
       background: #efe5d7;
+    }}
+    .segment-form {{
+      display: grid;
+      gap: 10px;
+    }}
+    .segment-form textarea {{
+      min-height: 90px;
     }}
     .toast {{
       position: fixed;
@@ -1862,6 +1876,29 @@ async def review_trip_from_form(trip_id: int, request: Request) -> RedirectRespo
     elif action == "mark_private":
         saved_key = "privacy"
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved={saved_key}", status_code=303)
+
+
+@app.post("/admin/trip/{trip_id}/segments/{segment_id}")
+async def update_trip_segment_from_form(
+    trip_id: int,
+    segment_id: int,
+    request: Request,
+) -> RedirectResponse:
+    payload = parse_qs((await request.body()).decode("utf-8"))
+    segment_name = (payload.get("segment_name") or [""])[0].strip() or None
+    summary_text = (payload.get("summary_text") or [""])[0].strip() or None
+    rating_text = (payload.get("rating") or [""])[0].strip()
+    rating = int(rating_text) if rating_text else None
+    updated = trip_admin.update_trip_segment(
+        trip_id,
+        segment_id,
+        segment_name=segment_name,
+        summary_text=summary_text,
+        rating=rating,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Trip segment not found")
+    return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=segment", status_code=303)
 
 
 @app.get("/health")

@@ -41,6 +41,19 @@ LEG_LABELS = {
 }
 
 
+def _leg_default_summary(leg: dict[str, Any]) -> str:
+    label = leg["label"]
+    start_name = leg.get("start_place_name")
+    end_name = leg.get("end_place_name")
+    if start_name and end_name:
+        return f"{label} from {start_name} to {end_name}."
+    if end_name:
+        return f"{label} toward {end_name}."
+    if start_name:
+        return f"{label} leaving {start_name}."
+    return f"{label} inferred from timeline activity data."
+
+
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_segment: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -127,6 +140,87 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     leg["path_points"].append(end_point)
         legs.append(leg)
     return legs
+
+
+def _sync_trip_segments(
+    cur: Any, trip_id: int, legs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT
+            id,
+            segment_type,
+            start_time,
+            end_time,
+            segment_name,
+            notes,
+            rating,
+            source_event_id
+        FROM trip_segments
+        WHERE trip_id = %s
+        ORDER BY start_time ASC, id ASC
+        """,
+        (trip_id,),
+    )
+    existing_rows = cur.fetchall()
+    existing_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in existing_rows:
+        key = (
+            row["segment_type"],
+            row["start_time"],
+            row["end_time"],
+            row.get("source_event_id"),
+        )
+        existing_by_key[key] = row
+
+    synced = []
+    for leg in legs:
+        key = (
+            leg["leg_type"],
+            leg["start_time"],
+            leg["end_time"],
+            leg.get("source_event_id"),
+        )
+        persisted = existing_by_key.get(key)
+        default_summary = _leg_default_summary(leg)
+        if not persisted:
+            cur.execute(
+                """
+                INSERT INTO trip_segments (
+                    trip_id,
+                    segment_type,
+                    start_time,
+                    end_time,
+                    start_place_name,
+                    end_place_name,
+                    notes,
+                    segment_name,
+                    rating,
+                    source_event_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, segment_name, notes, rating
+                """,
+                (
+                    trip_id,
+                    leg["leg_type"],
+                    leg["start_time"],
+                    leg["end_time"],
+                    leg.get("start_place_name"),
+                    leg.get("end_place_name"),
+                    default_summary,
+                    leg["label"],
+                    None,
+                    leg.get("source_event_id"),
+                ),
+            )
+            persisted = cur.fetchone()
+        leg["segment_id"] = int(persisted["id"])
+        leg["segment_name"] = persisted.get("segment_name") or leg["label"]
+        leg["segment_summary"] = persisted.get("notes") or default_summary
+        leg["segment_rating"] = persisted.get("rating")
+        synced.append(leg)
+    return synced
 
 
 def list_trips(
@@ -286,7 +380,7 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                 """,
                 (trip_id,),
             )
-            trip["travel_legs"] = _build_travel_legs(cur.fetchall())
+            trip["travel_legs"] = _sync_trip_segments(cur, trip_id, _build_travel_legs(cur.fetchall()))
 
             cur.execute(
                 """
@@ -477,4 +571,32 @@ def set_publish_ready(
             if cur.rowcount == 0:
                 return None
 
+    return get_trip(trip_id)
+
+
+def update_trip_segment(
+    trip_id: int,
+    segment_id: int,
+    *,
+    segment_name: str | None,
+    summary_text: str | None,
+    rating: int | None,
+) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                UPDATE trip_segments
+                SET segment_name = COALESCE(%s, segment_name),
+                    notes = COALESCE(%s, notes),
+                    rating = %s,
+                    updated_at = NOW()
+                WHERE id = %s AND trip_id = %s
+                RETURNING id
+                """,
+                (segment_name, summary_text, rating, segment_id, trip_id),
+            )
+            updated = cur.fetchone()
+            if not updated:
+                return None
     return get_trip(trip_id)
