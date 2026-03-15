@@ -62,6 +62,18 @@ NOMINATIM_MIN_INTERVAL_SECONDS = 1.1
 NOMINATIM_BACKOFF_SECONDS = 5.0
 
 _next_reverse_lookup_at = 0.0
+LOCALITY_ADDRESS_FIELDS = (
+    "city",
+    "town",
+    "village",
+    "municipality",
+    "hamlet",
+    "suburb",
+    "city_district",
+    "borough",
+    "neighbourhood",
+)
+REGIONAL_ADDRESS_FIELDS = ("county", "state")
 
 
 def _respect_nominatim_rate_limit(backoff_seconds: float = NOMINATIM_MIN_INTERVAL_SECONDS) -> None:
@@ -124,6 +136,18 @@ def _meaningful_locality(value: Optional[str]) -> Optional[str]:
     if not text or text.lower() in UNKNOWN_PLACE_NAMES:
         return None
     return text
+
+
+def _select_locality(address: Dict[str, Any]) -> Optional[str]:
+    for field in LOCALITY_ADDRESS_FIELDS:
+        locality = _meaningful_locality(address.get(field))
+        if locality:
+            return locality
+    for field in REGIONAL_ADDRESS_FIELDS:
+        locality = _meaningful_locality(address.get(field))
+        if locality:
+            return locality
+    return None
 
 
 def _is_downranked_destination_name(value: Optional[str]) -> bool:
@@ -203,14 +227,7 @@ def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, O
         or address.get("tourism")
     )
     category = payload.get("type") or payload.get("category")
-    locality = (
-        address.get("city")
-        or address.get("town")
-        or address.get("village")
-        or address.get("municipality")
-        or address.get("county")
-        or address.get("state")
-    )
+    locality = _select_locality(address)
     return {
         "name": name,
         "category": category,

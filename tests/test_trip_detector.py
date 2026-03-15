@@ -9,6 +9,7 @@ from trip_engine.detector import (
     _generate_trip_name,
     _haversine_km,
     _resolve_destination_profile,
+    _select_locality,
     detect_trips,
 )
 
@@ -145,6 +146,17 @@ class DetectorTests(unittest.TestCase):
         )
 
         self.assertEqual(trip_name, "Saint Louis Day Trip")
+
+    def test_select_locality_prefers_city_like_fields_over_county(self) -> None:
+        locality = _select_locality(
+            {
+                "suburb": "Chesterfield",
+                "county": "Saint Louis County",
+                "state": "Missouri",
+            }
+        )
+
+        self.assertEqual(locality, "Chesterfield")
 
     def test_generate_trip_name_ignores_unknown_destination_placeholder(self) -> None:
         trip_name = _generate_trip_name(
