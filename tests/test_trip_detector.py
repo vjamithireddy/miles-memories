@@ -4,7 +4,12 @@ from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
-from trip_engine.detector import _apply_destination_override, _haversine_km, detect_trips
+from trip_engine.detector import (
+    _apply_destination_override,
+    _generate_trip_name,
+    _haversine_km,
+    detect_trips,
+)
 
 
 class FakeCursor:
@@ -58,6 +63,36 @@ class DetectorTests(unittest.TestCase):
     def test_haversine_is_reasonable_for_home_to_work(self) -> None:
         distance = _haversine_km(38.7504884, -90.6877536, 38.757, -90.465)
         self.assertGreater(distance, 15)
+
+    def test_generate_trip_name_uses_locality_when_name_is_address_like(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "13736 Riverport Drive",
+                "locality": "Maryland Heights",
+                "category": "house",
+                "classification": None,
+            },
+            "day_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Maryland Heights Day Trip")
+
+    def test_generate_trip_name_prefers_pro_venue(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "Busch Stadium",
+                "locality": "St. Louis",
+                "category": "stadium",
+                "classification": "pro_sports_venue",
+            },
+            "day_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Busch Stadium Day Trip")
 
     def test_destination_override_matches_pattern(self) -> None:
         cursor = FakeCursor()

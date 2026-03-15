@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
+import re
 from math import asin, cos, radians, sin, sqrt
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
@@ -39,6 +40,7 @@ PRO_VENUE_PATTERNS = (
 )
 
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+GENERIC_PLACE_TYPES = {"house", "residential", "road", "service", "address"}
 
 
 @dataclass
@@ -62,6 +64,17 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _normalize_text(value: Optional[str]) -> str:
     return (value or "").strip().lower()
+
+
+def _is_address_like(value: Optional[str]) -> bool:
+    if not value:
+        return True
+    text = value.strip()
+    if not text:
+        return True
+    if re.match(r"^\d+", text):
+        return True
+    return False
 
 
 def _classify_destination(
@@ -110,10 +123,19 @@ def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, O
         or address.get("tourism")
     )
     category = payload.get("type") or payload.get("category")
+    locality = (
+        address.get("city")
+        or address.get("town")
+        or address.get("village")
+        or address.get("municipality")
+        or address.get("county")
+        or address.get("state")
+    )
     return {
         "name": name,
         "category": category,
         "display_name": payload.get("display_name"),
+        "locality": locality,
     }
 
 
@@ -137,6 +159,7 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
                     "name": row[0],
                     "category": row[1],
                     "display_name": row[3],
+                    "locality": row[3],
                     "classification": row[2],
                 }
 
@@ -157,8 +180,8 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
                 VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    profile.get("name") or "Unknown destination",
-                    profile.get("display_name"),
+                    profile.get("name") or profile.get("locality") or "Unknown destination",
+                    profile.get("locality") or profile.get("display_name"),
                     latitude,
                     longitude,
                     profile.get("category"),
@@ -170,6 +193,7 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
         "name": profile.get("name"),
         "category": profile.get("category"),
         "display_name": profile.get("display_name"),
+        "locality": profile.get("locality"),
         "classification": classification,
     }
 
@@ -212,6 +236,46 @@ def _apply_destination_override(
     updated["keep_trip"] = False
     updated["ignore_trip"] = False
     return updated
+
+
+def _destination_title(profile: Dict[str, Optional[str]]) -> Optional[str]:
+    name = profile.get("name")
+    locality = profile.get("locality")
+    category = _normalize_text(profile.get("category"))
+
+    if name and not _is_address_like(name) and category not in GENERIC_PLACE_TYPES:
+        return name.strip()
+    if locality:
+        return locality.strip()
+    if name and not _is_address_like(name):
+        return name.strip()
+    return None
+
+
+def _generate_trip_name(
+    profile: Dict[str, Optional[str]],
+    trip_type: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> str:
+    destination = _destination_title(profile)
+    classification = profile.get("classification")
+
+    if not destination:
+        return f"Trip on {start_time.date()}"
+
+    if classification == "pro_sports_venue":
+        if trip_type == "day_trip":
+            return f"{destination} Day Trip"
+        return f"{destination} Trip"
+
+    if trip_type == "day_trip":
+        return f"{destination} Day Trip"
+    if trip_type == "overnight_trip":
+        if start_time.weekday() in {4, 5} and (end_time.date() - start_time.date()).days <= 2:
+            return f"{destination} Weekend"
+        return f"{destination} Overnight"
+    return destination
 
 
 def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
@@ -339,7 +403,12 @@ def detect_trips() -> tuple[int, int]:
                     trip_type = "multi_day_trip"
                 score = min(100, int(40 + min(trip.max_distance_km, 400) / 5))
                 slug = f"detected-{trip.start_time.date()}-{idx}"
-                title = f"Detected Trip {trip.start_time.date()}"
+                title = _generate_trip_name(
+                    destination_profile,
+                    trip_type,
+                    trip.start_time,
+                    trip.end_time,
+                )
 
                 cur.execute(
                     """
@@ -362,7 +431,7 @@ def detect_trips() -> tuple[int, int]:
                         trip.end_time,
                         trip.start_time.date(),
                         trip.end_time.date(),
-                        destination_profile.get("name"),
+                        _destination_title(destination_profile),
                         score,
                     ),
                 )
