@@ -1,11 +1,12 @@
 from html import escape
 from typing import List, Optional
+from urllib.parse import parse_qs
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import trip_admin
+from app import destination_overrides, trip_admin
 from app.schemas import PublishReadyRequest, TripDetail, TripReviewRequest, TripSummary
 from app.settings import get_app_host, get_app_port, get_app_reload
 
@@ -301,7 +302,8 @@ def _render_admin_page(
         score_value = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
         privacy_value = "Private" if trip["is_private"] else "Visible"
         ready_value = "Ready" if trip["publish_ready"] else "Not ready"
-        detail_href = f"/admin/trips/{trip['id']}"
+        detail_href = f"/admin/trip/{trip['id']}"
+        json_href = f"/admin/trips/{trip['id']}"
 
         cards.append(
             f"""
@@ -322,7 +324,8 @@ def _render_admin_page(
               <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
               <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
               <div class="card-actions">
-                <a href="{detail_href}">Open JSON Detail</a>
+                <a href="{detail_href}">Open detail page</a>
+                <a href="{json_href}">JSON</a>
               </div>
             </article>
             """
@@ -508,6 +511,11 @@ def _render_admin_page(
     .badge.good {{ background: rgba(46, 106, 75, 0.14); color: var(--good); }}
     .badge.warn {{ background: rgba(155, 100, 29, 0.14); color: var(--warn); }}
     .badge.muted {{ background: rgba(101, 114, 134, 0.14); color: var(--muted); }}
+    .card-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }}
     .card-actions a {{
       color: var(--accent);
       text-decoration: none;
@@ -539,6 +547,7 @@ def _render_admin_page(
       </div>
       <div class="links">
         <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
+        <a class="button ghost" href="/admin/overrides">Destination overrides</a>
         <a class="button ghost" href="/">Homepage</a>
       </div>
     </section>
@@ -587,6 +596,487 @@ def _render_admin_page(
 </html>"""
 
 
+def _parse_flag(value: Optional[str]) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _render_overrides_page(overrides: List[dict]) -> str:
+    rows = "".join(
+        f"""
+        <tr>
+          <td>{escape(item['rule_name'])}</td>
+          <td>{escape(item['classification'])}</td>
+          <td>{'keep' if item['keep_trip'] else 'ignore' if item['ignore_trip'] else 'classify'}</td>
+          <td>{escape(item['match_pattern'] or '')}</td>
+          <td>{'' if item['latitude'] is None else escape(f"{item['latitude']:.5f}, {item['longitude']:.5f}")}</td>
+          <td>{escape(str(item['radius_meters']))}</td>
+          <td>
+            <form method="post" action="/admin/overrides/delete">
+              <input type="hidden" name="override_id" value="{item['id']}">
+              <button class="danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        """
+        for item in overrides
+    ) or """
+      <tr>
+        <td colspan="7">No overrides yet. Add one only when the automatic flow gets a destination wrong.</td>
+      </tr>
+    """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Destination Overrides · MilesMemories</title>
+  <style>
+    :root {{
+      --bg: #f3efe7;
+      --panel: #fff9f0;
+      --line: #dcccb4;
+      --ink: #182233;
+      --muted: #657286;
+      --accent: #b85f35;
+      --danger: #962f24;
+      --shadow: rgba(37, 28, 14, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #e8d6c0, #f3efe7 28%, #faf7f1 100%);
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 18px 64px;
+      display: grid;
+      gap: 18px;
+    }}
+    .panel {{
+      background: rgba(255, 249, 240, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 24px;
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+    }}
+    .eyebrow {{
+      color: var(--accent);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      margin-bottom: 10px;
+    }}
+    h1, h2 {{ margin: 0 0 12px; }}
+    p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
+    .links {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .button, button {{
+      border-radius: 999px;
+      padding: 12px 16px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }}
+    .ghost {{
+      background: transparent;
+      color: var(--accent);
+    }}
+    .danger {{
+      background: transparent;
+      color: var(--danger);
+      border-color: var(--danger);
+    }}
+    .form-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      align-items: end;
+    }}
+    label {{
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }}
+    input, select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fffdf8;
+      font: inherit;
+      color: var(--ink);
+    }}
+    .checks {{
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      padding-bottom: 10px;
+    }}
+    .checks label {{
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+    th, td {{
+      border-top: 1px solid var(--line);
+      padding: 14px 10px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }}
+    form.inline {{ display: inline; }}
+    @media (max-width: 920px) {{
+      .topbar, .form-grid {{ grid-template-columns: 1fr; display: grid; }}
+      table, thead, tbody, th, td, tr {{ display: block; }}
+      thead {{ display: none; }}
+      td {{ border-top: 0; padding: 8px 0; }}
+      tr {{ border-top: 1px solid var(--line); padding: 12px 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel topbar">
+      <div>
+        <div class="eyebrow">Destination Overrides</div>
+        <h1>Automation first, intervention when needed.</h1>
+        <p>Use overrides sparingly. Add ignore rules for recurring amateur venues the detector misses, or keep rules for destinations that should never be suppressed.</p>
+      </div>
+      <div class="links">
+        <a class="button ghost" href="/admin">Back to trip queue</a>
+        <a class="button ghost" href="/">Homepage</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Add override</h2>
+      <form method="post" action="/admin/overrides/create" class="form-grid">
+        <label>Rule name
+          <input type="text" name="rule_name" required>
+        </label>
+        <label>Classification
+          <select name="classification">
+            <option value="amateur_sports_venue">amateur_sports_venue</option>
+            <option value="pro_sports_venue">pro_sports_venue</option>
+            <option value="custom_destination">custom_destination</option>
+          </select>
+        </label>
+        <label>Match pattern
+          <input type="text" name="match_pattern" placeholder="rec plex">
+        </label>
+        <label>Latitude
+          <input type="text" name="latitude" placeholder="38.7548">
+        </label>
+        <label>Longitude
+          <input type="text" name="longitude" placeholder="-90.4668">
+        </label>
+        <label>Radius meters
+          <input type="number" name="radius_meters" min="1" value="1000">
+        </label>
+        <div class="checks">
+          <label><input type="checkbox" name="keep_trip" value="true"> Keep trip</label>
+          <label><input type="checkbox" name="ignore_trip" value="true"> Ignore trip</label>
+        </div>
+        <div>
+          <button type="submit">Save override</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Current rules</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Classification</th>
+            <th>Effect</th>
+            <th>Pattern</th>
+            <th>Coordinates</th>
+            <th>Radius</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+def _render_trip_detail_page(trip: dict) -> str:
+    title = escape(trip["trip_name"] or "Untitled trip")
+    destination = escape(trip["primary_destination_name"] or "Destination pending")
+    trip_type = escape(trip["trip_type"] or "untyped")
+    summary = escape(trip["summary_text"] or "No summary yet for this trip.")
+    confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
+    published = escape(str(trip["published_at"] or "not published"))
+
+    timeline_items = "".join(
+        f"""
+        <li class="timeline-item">
+          <div class="timeline-time">{escape(str(item['event_time']))}</div>
+          <div>
+            <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
+            <p>{escape(item['event_type'])} · ref {escape(str(item['event_ref_id']))}</p>
+          </div>
+        </li>
+        """
+        for item in trip["timeline"]
+    ) or """
+      <li class="timeline-item">
+        <div>
+          <strong>No timeline events yet.</strong>
+          <p>Run trip detection and inspect linked events once source data is available.</p>
+        </div>
+      </li>
+    """
+
+    history_items = "".join(
+        f"""
+        <li class="history-item">
+          <strong>{escape(item['review_action'])}</strong>
+          <p>{escape(item['reviewer_name'] or 'Unknown reviewer')} · {escape(str(item['reviewed_at']))}</p>
+          <p>{escape(item['review_notes'] or 'No notes recorded.')}</p>
+        </li>
+        """
+        for item in trip["review_history"]
+    ) or """
+      <li class="history-item">
+        <strong>No review history yet.</strong>
+        <p>This trip has not been reviewed.</p>
+      </li>
+    """
+
+    count_items = "".join(
+        f"""
+        <li class="count-item">
+          <strong>{escape(item['event_type'])}</strong>
+          <span>{escape(str(item['total']))}</span>
+        </li>
+        """
+        for item in trip["event_counts"]
+    ) or """
+      <li class="count-item">
+        <strong>No linked event counts</strong>
+        <span>0</span>
+      </li>
+    """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} · MilesMemories</title>
+  <style>
+    :root {{
+      --bg: #f2eee6;
+      --panel: #fff8ef;
+      --line: #dbcab1;
+      --ink: #1b2433;
+      --muted: #647084;
+      --accent: #b85f35;
+      --shadow: rgba(37, 28, 14, 0.12);
+      --good: #2e6a4b;
+      --warn: #9b641d;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(184,95,53,0.14), transparent 26%),
+        linear-gradient(180deg, #e7d3bc, var(--bg) 30%, #faf7f1 100%);
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 18px 64px;
+    }}
+    .stack {{
+      display: grid;
+      gap: 18px;
+    }}
+    .hero {{
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 18px;
+    }}
+    .panel {{
+      background: rgba(255, 248, 239, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 24px;
+    }}
+    .eyebrow {{
+      color: var(--accent);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      margin-bottom: 10px;
+    }}
+    h1, h2, h3 {{ margin: 0 0 12px; }}
+    h1 {{ font-size: clamp(2.2rem, 5vw, 4.4rem); line-height: 0.98; }}
+    p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
+    .meta-row, .actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }}
+    .badge {{
+      display: inline-block;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #eee4d6;
+      font-size: 0.86rem;
+      text-transform: capitalize;
+    }}
+    .badge.good {{ background: rgba(46,106,75,0.14); color: var(--good); }}
+    .badge.warn {{ background: rgba(155,100,29,0.14); color: var(--warn); }}
+    .badge.muted {{ background: rgba(100,112,132,0.14); color: var(--muted); }}
+    .button {{
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 12px 16px;
+      border: 1px solid var(--accent);
+      color: white;
+      background: var(--accent);
+      font-weight: 700;
+    }}
+    .button.ghost {{
+      background: transparent;
+      color: var(--accent);
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 0.85fr 1.15fr;
+      gap: 18px;
+    }}
+    .list {{
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 12px;
+    }}
+    .count-item, .timeline-item, .history-item {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.5);
+    }}
+    .count-item {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }}
+    .timeline-item {{
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 14px;
+    }}
+    .timeline-time {{
+      color: var(--accent);
+      font-weight: 700;
+    }}
+    @media (max-width: 920px) {{
+      .hero, .grid, .timeline-item {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="stack">
+    <section class="hero">
+      <article class="panel">
+        <div class="eyebrow">Trip Detail</div>
+        <h1>{title}</h1>
+        <p>{destination} · {trip_type}</p>
+        <div class="meta-row">
+          <span class="badge {_trip_badge_class(trip['status'])}">{escape(trip['status'])}</span>
+          <span class="badge {_trip_badge_class(trip['review_decision'])}">{escape(trip['review_decision'])}</span>
+          <span class="badge">{'Private' if trip['is_private'] else 'Visible'}</span>
+          <span class="badge">{'Ready' if trip['publish_ready'] else 'Not ready'}</span>
+        </div>
+        <div class="actions">
+          <a class="button" href="/admin">Back to queue</a>
+          <a class="button ghost" href="/admin/trips/{trip['id']}">Open JSON</a>
+        </div>
+      </article>
+      <aside class="panel">
+        <h2>Trip summary</h2>
+        <p>{summary}</p>
+        <div class="meta-row">
+          <span class="badge">Confidence {confidence}</span>
+          <span class="badge">Published {published}</span>
+          <span class="badge">Date range {escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
+        </div>
+      </aside>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Linked events</h2>
+        <ul class="list">
+          {count_items}
+        </ul>
+      </article>
+
+      <article class="panel">
+        <h2>Timeline</h2>
+        <ul class="list">
+          {timeline_items}
+        </ul>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Review history</h2>
+      <ul class="list">
+        {history_items}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_homepage(
     status: Optional[str] = Query(default=None),
@@ -609,6 +1099,63 @@ def admin_homepage(
             limit=limit,
         )
     )
+
+
+@app.get("/admin/overrides", response_class=HTMLResponse)
+def admin_overrides_page() -> HTMLResponse:
+    overrides = destination_overrides.list_overrides()
+    return HTMLResponse(_render_overrides_page(overrides))
+
+
+@app.post("/admin/overrides/create")
+async def create_destination_override(request: Request) -> RedirectResponse:
+    payload = parse_qs((await request.body()).decode("utf-8"))
+    rule_name = (payload.get("rule_name") or [""])[0].strip()
+    classification = (payload.get("classification") or ["custom_destination"])[0].strip()
+    match_pattern = (payload.get("match_pattern") or [""])[0].strip() or None
+    latitude_text = (payload.get("latitude") or [""])[0].strip()
+    longitude_text = (payload.get("longitude") or [""])[0].strip()
+    radius_text = (payload.get("radius_meters") or ["1000"])[0].strip()
+    latitude = float(latitude_text) if latitude_text else None
+    longitude = float(longitude_text) if longitude_text else None
+    radius_meters = int(radius_text or "1000")
+    keep_trip = _parse_flag((payload.get("keep_trip") or [""])[0])
+    ignore_trip = _parse_flag((payload.get("ignore_trip") or [""])[0])
+
+    if not rule_name:
+        raise HTTPException(status_code=400, detail="Rule name is required")
+    if not match_pattern and (latitude is None or longitude is None):
+        raise HTTPException(status_code=400, detail="Provide a pattern or coordinates")
+
+    destination_overrides.create_override(
+        rule_name=rule_name,
+        classification=classification,
+        keep_trip=keep_trip,
+        ignore_trip=ignore_trip,
+        match_pattern=match_pattern,
+        latitude=latitude,
+        longitude=longitude,
+        radius_meters=radius_meters,
+    )
+    return RedirectResponse(url="/admin/overrides", status_code=303)
+
+
+@app.post("/admin/overrides/delete")
+async def delete_destination_override(request: Request) -> RedirectResponse:
+    payload = parse_qs((await request.body()).decode("utf-8"))
+    override_id_text = (payload.get("override_id") or [""])[0].strip()
+    if not override_id_text:
+        raise HTTPException(status_code=400, detail="override_id is required")
+    destination_overrides.delete_override(int(override_id_text))
+    return RedirectResponse(url="/admin/overrides", status_code=303)
+
+
+@app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
+def admin_trip_detail_page(trip_id: int) -> HTMLResponse:
+    trip = trip_admin.get_trip(trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return HTMLResponse(_render_trip_detail_page(trip))
 
 
 @app.get("/health")

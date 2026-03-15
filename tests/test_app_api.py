@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timezone
 import unittest
 from unittest.mock import patch
@@ -8,6 +9,9 @@ from fastapi import HTTPException
 
 from app.main import (
     admin_homepage,
+    admin_overrides_page,
+    create_destination_override,
+    delete_destination_override,
     get_admin_trip,
     homepage,
     list_admin_trips,
@@ -65,6 +69,31 @@ def _trip_detail() -> dict:
 
 
 class AppApiTests(unittest.TestCase):
+    def test_admin_overrides_page_renders_rules(self) -> None:
+        with patch(
+            "app.main.destination_overrides.list_overrides",
+            return_value=[
+                {
+                    "id": 5,
+                    "rule_name": "Enterprise Center keep",
+                    "match_pattern": "enterprise center",
+                    "latitude": None,
+                    "longitude": None,
+                    "radius_meters": 1000,
+                    "classification": "pro_sports_venue",
+                    "keep_trip": True,
+                    "ignore_trip": False,
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],
+        ):
+            response = admin_overrides_page()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Destination Overrides", response.body)
+        self.assertIn(b"Enterprise Center keep", response.body)
+
     def test_homepage_returns_html(self) -> None:
         response = homepage()
 
@@ -155,6 +184,42 @@ class AppApiTests(unittest.TestCase):
 
         self.assertIs(response["publish_ready"], True)
         mock_publish.assert_called_once_with(7, publish_ready=True)
+
+    def test_create_destination_override_uses_repository(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return (
+                    b"rule_name=Rec+Plex+ignore&classification=amateur_sports_venue"
+                    b"&match_pattern=rec+plex&radius_meters=1200&ignore_trip=true"
+                )
+
+        with patch("app.main.destination_overrides.create_override") as mock_create:
+            response = asyncio.run(create_destination_override(FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/overrides")
+        mock_create.assert_called_once_with(
+            rule_name="Rec Plex ignore",
+            classification="amateur_sports_venue",
+            keep_trip=False,
+            ignore_trip=True,
+            match_pattern="rec plex",
+            latitude=None,
+            longitude=None,
+            radius_meters=1200,
+        )
+
+    def test_delete_destination_override_uses_repository(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return b"override_id=9"
+
+        with patch("app.main.destination_overrides.delete_override") as mock_delete:
+            response = asyncio.run(delete_destination_override(FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/overrides")
+        mock_delete.assert_called_once_with(9)
 
 
 if __name__ == "__main__":
