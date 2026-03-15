@@ -196,6 +196,32 @@ def _leg_default_summary(
     return f"{label} inferred from timeline activity data."
 
 
+def _should_refresh_segment_summary(
+    existing_summary: str | None,
+    *,
+    leg: dict[str, Any],
+    trip_name: str | None = None,
+    destination_name: str | None = None,
+) -> bool:
+    if _is_placeholder_segment_summary(existing_summary):
+        return True
+    if not existing_summary:
+        return True
+    normalized_existing = existing_summary.strip()
+    trip_context = _trip_context_name(trip_name)
+    cleaned_destination = _preferred_segment_place(
+        destination_name,
+        leg.get("end_place_name"),
+        leg.get("start_place_name"),
+        fallback_trip_name=trip_context,
+    )
+    if leg.get("leg_type") == "air" and trip_context and cleaned_destination:
+        legacy_summary = f"Flight from {trip_context} to {cleaned_destination}."
+        if normalized_existing == legacy_summary:
+            return True
+    return False
+
+
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_segment: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -380,7 +406,12 @@ def _sync_trip_segments(
                 ),
             )
             persisted = cur.fetchone()
-        elif _is_placeholder_segment_summary(persisted.get("notes")):
+        elif _should_refresh_segment_summary(
+            persisted.get("notes"),
+            leg=leg,
+            trip_name=trip_name,
+            destination_name=destination_name,
+        ):
             cur.execute(
                 """
                 UPDATE trip_segments

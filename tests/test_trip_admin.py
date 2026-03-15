@@ -2,13 +2,27 @@ from __future__ import annotations
 
 import unittest
 
-from app.trip_admin import _is_placeholder_segment_summary, _leg_default_summary
+from app.trip_admin import (
+    _is_placeholder_segment_summary,
+    _leg_default_summary,
+    _should_refresh_segment_summary,
+)
 
 
 class TripAdminTests(unittest.TestCase):
     def test_placeholder_segment_summary_flags_low_quality_airport_text(self) -> None:
         self.assertTrue(
             _is_placeholder_segment_summary("Drive near Harry Reid Airport Rental Car Facility.")
+        )
+
+    def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
+        self.assertTrue(
+            _should_refresh_segment_summary(
+                "Flight from Grand Canyon - NPS to Harry Reid Airport.",
+                leg={"leg_type": "air"},
+                trip_name="Grand Canyon - NPS",
+                destination_name="Harry Reid Airport Rental Car Facility",
+            )
         )
 
     def test_leg_default_summary_cleans_rental_car_facility_for_flight(self) -> None:
