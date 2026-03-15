@@ -1120,37 +1120,37 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     travel_leg_items = "".join(
         f"""
         <li class="leg-item">
+          <form class="segment-form leg-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}">
           <details class="leg-collapse">
             <summary>
               <span class="leg-summary-copy">
                 <span class="leg-kind">{escape(item.get('segment_name') or item['label'])}</span>
-                <span class="leg-comment-preview">{escape(_travel_leg_comment(item))}</span>
+                <span class="leg-summary-input-shell">
+                  <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
+                </span>
               </span>
               <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
             </summary>
             <div class="leg-body">
               <div class="leg-copy">
-                <div class="leg-meta">
-                  <strong>{escape(item['label'])}</strong>
-                  <span>{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
-                </div>
-                <form class="segment-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}">
-                  <label>Edit summary
-                    <textarea name="summary_text">{escape(_travel_leg_comment(item))}</textarea>
-                  </label>
-                  <label>Rating
-                    <select name="rating">
-                      <option value=""{" selected" if item.get('segment_rating') is None else ""}>Unrated</option>
-                      <option value="1"{" selected" if item.get('segment_rating') == 1 else ""}>1</option>
-                      <option value="2"{" selected" if item.get('segment_rating') == 2 else ""}>2</option>
-                      <option value="3"{" selected" if item.get('segment_rating') == 3 else ""}>3</option>
-                      <option value="4"{" selected" if item.get('segment_rating') == 4 else ""}>4</option>
-                      <option value="5"{" selected" if item.get('segment_rating') == 5 else ""}>5</option>
-                    </select>
-                  </label>
-                  <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
-                  <button class="primary button-sm" type="submit">Save leg</button>
-                </form>
+                <label class="star-rating-field">
+                  <span>Rating</span>
+                  <span class="star-rating" aria-label="Rating">
+                    <input type="radio" id="segment-{item['segment_id']}-star-5" name="rating" value="5"{" checked" if item.get('segment_rating') == 5 else ""}>
+                    <label for="segment-{item['segment_id']}-star-5" title="5 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-4" name="rating" value="4"{" checked" if item.get('segment_rating') == 4 else ""}>
+                    <label for="segment-{item['segment_id']}-star-4" title="4 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-3" name="rating" value="3"{" checked" if item.get('segment_rating') == 3 else ""}>
+                    <label for="segment-{item['segment_id']}-star-3" title="3 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-2" name="rating" value="2"{" checked" if item.get('segment_rating') == 2 else ""}>
+                    <label for="segment-{item['segment_id']}-star-2" title="2 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-1" name="rating" value="1"{" checked" if item.get('segment_rating') == 1 else ""}>
+                    <label for="segment-{item['segment_id']}-star-1" title="1 star">★</label>
+                    <input class="star-rating-clear" type="radio" id="segment-{item['segment_id']}-star-0" name="rating" value=""{" checked" if item.get('segment_rating') is None else ""}>
+                  </span>
+                </label>
+                <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+                <button class="primary button-sm" type="submit">Save leg</button>
               </div>
               <div class="leg-map-panel">
                 <div
@@ -1164,6 +1164,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               </div>
             </div>
           </details>
+          </form>
         </li>
         """
         for item in travel_legs
@@ -1228,6 +1229,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       grid-template-columns: 1.15fr 0.85fr;
       gap: 18px;
     }}
+    .hero.single-panel {{
+      grid-template-columns: 1fr;
+    }}
     .panel {{
       background: rgba(255, 248, 239, 0.94);
       border: 1px solid var(--line);
@@ -1241,6 +1245,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       text-transform: uppercase;
       font-size: 0.8rem;
       margin-bottom: 10px;
+    }}
+    .sr-only {{
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }}
     h1, h2, h3 {{ margin: 0 0 12px; }}
     h1 {{ font-size: clamp(2.2rem, 5vw, 4.4rem); line-height: 0.98; }}
@@ -1371,6 +1386,37 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       display: grid;
       gap: 14px;
     }}
+    .trip-overview-form {{
+      display: grid;
+      gap: 18px;
+    }}
+    .hero-title-field,
+    .hero-summary-field {{
+      gap: 0;
+    }}
+    .hero-title-input {{
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      font-size: clamp(2.8rem, 5vw, 5.8rem);
+      line-height: 0.95;
+      font-weight: 700;
+      color: var(--ink);
+      box-shadow: none;
+    }}
+    .hero-summary-field textarea {{
+      min-height: 80px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+      box-shadow: none;
+      resize: vertical;
+    }}
     .quick-actions {{
       display: flex;
       flex-wrap: wrap;
@@ -1449,6 +1495,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     details.leg-collapse > summary::-webkit-details-marker {{
       display: none;
     }}
+    .leg-form {{
+      margin: 0;
+    }}
     details.leg-collapse[open] {{
       background: rgba(255,255,255,0.72);
       box-shadow: inset 0 0 0 1px rgba(200,100,59,0.14), 0 14px 26px rgba(50, 33, 15, 0.08);
@@ -1465,11 +1514,21 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .leg-kind {{
       color: var(--ink);
     }}
-    .leg-comment-preview {{
+    .leg-summary-input-shell {{
+      display: block;
+      max-width: 100%;
+    }}
+    .leg-summary-input {{
+      width: 100%;
+      min-height: 58px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
       color: var(--muted);
-      font-weight: 400;
       font-size: 0.98rem;
       line-height: 1.4;
+      resize: none;
     }}
     .leg-span {{
       color: var(--muted);
@@ -1486,13 +1545,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .leg-copy {{
       min-width: 0;
-    }}
-    .leg-meta {{
       display: grid;
-      gap: 4px;
-      margin-bottom: 10px;
+      align-content: start;
+      gap: 16px;
     }}
-    .leg-meta span, .leg-source, .leg-comment {{
+    .leg-source, .leg-comment {{
       color: var(--muted);
     }}
     .leg-map {{
@@ -1524,8 +1581,38 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       display: grid;
       gap: 10px;
     }}
-    .segment-form textarea {{
-      min-height: 90px;
+    .star-rating-field {{
+      gap: 10px;
+    }}
+    .star-rating {{
+      display: inline-flex;
+      flex-direction: row-reverse;
+      justify-content: flex-end;
+      gap: 2px;
+    }}
+    .star-rating input {{
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }}
+    .star-rating label {{
+      display: inline-block;
+      gap: 0;
+      font-size: 1.8rem;
+      line-height: 1;
+      color: #d8c9b3;
+      cursor: pointer;
+      width: auto;
+    }}
+    .star-rating label:hover,
+    .star-rating label:hover ~ label,
+    .star-rating input:checked ~ label {{
+      color: var(--accent);
+    }}
+    .star-rating-clear {{
+      display: none;
     }}
     .toast {{
       position: fixed;
@@ -1571,6 +1658,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       .leg-body {{
         grid-template-columns: 1fr;
       }}
+      .leg-summary-input {{
+        min-height: 70px;
+      }}
       .leg-map-panel {{
         min-height: 260px;
       }}
@@ -1580,78 +1670,49 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 <body>
   <main class="stack">
     {toast_markup}
-    <section class="hero">
+    <section class="hero single-panel">
       <article class="panel">
-        <div class="eyebrow">Trip Detail</div>
-        <h1>{title}</h1>
-        <p>{summary}</p>
-        <div class="meta-row">
-          {detail_badges}
-          <span class="badge">Confidence {confidence}</span>
-          <span class="badge">Date range {escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
-        </div>
-        <div class="detail-grid">
-          <div class="detail-cell wide">
-            <strong>Trip timing</strong>
-            <div class="detail-pair">
-              <div class="detail-pair-item">
-                <strong>Start</strong>
-                <span class="detail-value-lg">{escape(_format_local_datetime(trip['start_time']))}</span>
-              </div>
-              <div class="detail-pair-item">
-                <strong>End</strong>
-                <span class="detail-value-lg">{escape(_format_local_datetime(trip['end_time']))}</span>
-              </div>
+        <div class="eyebrow">Trip Overview</div>
+        <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review">
+          <label class="hero-title-field">
+            <span class="sr-only">Trip name</span>
+            <input class="hero-title-input" type="text" name="trip_name" value="{title}">
+          </label>
+          <label class="hero-summary-field">
+            <span class="sr-only">Summary</span>
+            <textarea name="summary_text">{escape(trip['summary_text'] or '')}</textarea>
+          </label>
+          <div class="meta-row">
+            {detail_badges}
+            <span class="badge">Confidence {confidence}</span>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-cell wide">
+              <strong>Trip timing</strong>
+              <span class="detail-value-lg">{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}</span>
             </div>
-          </div>
-          <div class="detail-cell">
-            <strong>Trip type</strong>
-            <span>{trip_type}</span>
-          </div>
-          <div class="detail-cell wide">
-            <strong>Generated destination</strong>
-            <span class="detail-value-lg">{destination}</span>
-          </div>
-          <div class="detail-cell">
-            <strong>Visibility</strong>
-            <span>{'Private' if trip['is_private'] else 'Visible to publish flow'}</span>
-          </div>
-          <div class="detail-cell">
-            <strong>Publish state</strong>
-            <span>{'Ready to publish' if trip['publish_ready'] else 'Not publish-ready yet'}</span>
-          </div>
-        </div>
-        <div class="actions">
-          <a class="button" href="/admin">Back to queue</a>
-          <a class="button" href="{destination_href}">Destination context</a>
-          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
-        </div>
-      </article>
-      <aside class="panel">
-        <h2>Review trip</h2>
-        <div class="quick-actions">
-          <form method="post" action="/admin/trip/{trip['id']}/review">
-            <input type="hidden" name="action" value="confirm">
-            <input type="hidden" name="reviewer_name" value="Venkat">
-            <button class="button" type="submit">Confirm</button>
-          </form>
-          <form method="post" action="/admin/trip/{trip['id']}/review">
-            <input type="hidden" name="action" value="publish">
-            <input type="hidden" name="reviewer_name" value="Venkat">
-            <input type="hidden" name="is_private" value="false">
-            <input type="hidden" name="publish_ready" value="true">
-            <button class="button" type="submit">Publish</button>
-          </form>
-          <form method="post" action="/admin/trip/{trip['id']}/review">
-            <input type="hidden" name="action" value="mark_private">
-            <input type="hidden" name="reviewer_name" value="Venkat">
-            <input type="hidden" name="is_private" value="true">
-            <button class="button" type="submit">Make private</button>
-          </form>
-        </div>
-        <form class="review-form" method="post" action="/admin/trip/{trip['id']}/review">
-          <div class="review-form-grid">
-            <label>Advanced action
+            <label class="detail-cell wide">
+              <strong>Destination</strong>
+              <input type="text" name="primary_destination_name" value="{destination}">
+            </label>
+            <div class="detail-cell">
+              <strong>Trip type</strong>
+              <span>{trip_type}</span>
+            </div>
+            <div class="detail-cell">
+              <strong>Visibility</strong>
+              <span>{'Private' if trip['is_private'] else 'Visible to publish flow'}</span>
+            </div>
+            <div class="detail-cell">
+              <strong>Publish state</strong>
+              <span>{'Ready to publish' if trip['publish_ready'] else 'Not publish-ready yet'}</span>
+            </div>
+            <label class="detail-cell">
+              <strong>Reviewer name</strong>
+              <input type="text" name="reviewer_name" value="Venkat">
+            </label>
+            <label class="detail-cell">
+              <strong>Review action</strong>
               <select name="action">
                 <option value="confirm">confirm</option>
                 <option value="ignore">ignore</option>
@@ -1660,27 +1721,24 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 <option value="reject">reject</option>
               </select>
             </label>
-            <label>Reviewer name
-              <input type="text" name="reviewer_name" value="Venkat">
-            </label>
-            <label>Trip name
-              <input type="text" name="trip_name" value="{title}">
-            </label>
-            <label>Destination name
-              <input type="text" name="primary_destination_name" value="{destination}">
+            <label class="detail-cell wide">
+              <strong>Review notes</strong>
+              <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
             </label>
           </div>
-          <label>Summary
-            <textarea name="summary_text">{escape(trip['summary_text'] or '')}</textarea>
-          </label>
-          <label>Review notes
-            <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
-          </label>
-          <div class="actions">
-            <button class="primary" type="submit">Save review</button>
+          <div class="quick-actions">
+            <button class="button" type="submit" name="action" value="confirm">Confirm</button>
+            <button class="button" type="submit" name="action" value="publish">Publish</button>
+            <button class="button" type="submit" name="action" value="mark_private">Make private</button>
+            <button class="primary" type="submit">Save details</button>
           </div>
         </form>
-      </aside>
+        <div class="actions">
+          <a class="button" href="/admin">Back to queue</a>
+          <a class="button" href="{destination_href}">Destination context</a>
+          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
+        </div>
+      </article>
     </section>
 
     <section class="panel">
@@ -1793,6 +1851,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           L.circleMarker(legEnd, {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
         }}
         legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
+      }});
+
+      document.querySelectorAll(".leg-summary-input").forEach((node) => {{
+        ["click", "focus", "keydown", "mousedown", "mouseup"].forEach((eventName) => {{
+          node.addEventListener(eventName, (event) => event.stopPropagation());
+        }});
       }});
 
       const toast = document.querySelector("[data-toast]");
