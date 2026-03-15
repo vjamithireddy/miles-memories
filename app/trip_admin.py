@@ -146,7 +146,7 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                     te.timeline_label,
                     le.latitude,
                     le.longitude
-                FROM trip_events
+                FROM trip_events te
                 LEFT JOIN location_events le
                     ON te.event_type = 'location_event'
                    AND le.id = te.event_ref_id
