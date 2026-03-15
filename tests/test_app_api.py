@@ -193,7 +193,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Inner canyon hiking", response.body)
         self.assertIn(b"class=\"leg-summary-input\"", response.body)
         self.assertIn(b"class=\"leg-tag\"", response.body)
-        self.assertIn(b"Save leg", response.body)
+        self.assertIn(b"data-autosave=\"segment\"", response.body)
         self.assertIn(b"class=\"star-rating\"", response.body)
         self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
         self.assertIn(b"(3h 15m)", response.body)
@@ -275,8 +275,10 @@ class AppApiTests(unittest.TestCase):
 
     def test_update_trip_segment_from_form_uses_repository(self) -> None:
         class FakeRequest:
+            headers = {}
+
             async def body(self) -> bytes:
-                return b"segment_name=Flight+to+Vegas&summary_text=Trail+walk&rating=5"
+                return b"summary_text=Trail+walk&rating=5"
 
         with patch("app.main.trip_admin.update_trip_segment", return_value=_trip_detail()) as mock_update:
             response = asyncio.run(update_trip_segment_from_form(7, 41, FakeRequest()))
@@ -286,9 +288,28 @@ class AppApiTests(unittest.TestCase):
         mock_update.assert_called_once_with(
             7,
             41,
-            segment_name="Flight to Vegas",
+            segment_name=None,
             summary_text="Trail walk",
             rating=5,
+        )
+
+    def test_update_trip_segment_from_form_returns_no_content_for_fetch(self) -> None:
+        class FakeRequest:
+            headers = {"x-requested-with": "fetch"}
+
+            async def body(self) -> bytes:
+                return b"summary_text=Trail+walk&rating=4"
+
+        with patch("app.main.trip_admin.update_trip_segment", return_value=_trip_detail()) as mock_update:
+            response = asyncio.run(update_trip_segment_from_form(7, 41, FakeRequest()))
+
+        self.assertEqual(response.status_code, 204)
+        mock_update.assert_called_once_with(
+            7,
+            41,
+            segment_name=None,
+            summary_text="Trail walk",
+            rating=4,
         )
 
     def test_list_trips_passes_filters(self) -> None:

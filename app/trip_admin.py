@@ -319,8 +319,6 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         existing.update({
             "leg_type": label_type,
             "label": label,
-            "start_time": row["event_time"],
-            "end_time": row["event_time"],
             "source_event_id": movement_type,
         })
         if start.get("latLng"):

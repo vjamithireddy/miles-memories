@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.bootstrap import get_user_timezone
@@ -317,7 +317,8 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
 
 
 def _travel_leg_comment(item: dict) -> str:
-    return item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
+    comment = item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
+    return comment.rstrip(".")
 
 
 def _format_duration(start: datetime, end: datetime) -> str:
@@ -1132,20 +1133,23 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     travel_leg_items = "".join(
         f"""
         <li class="leg-item">
-          <form class="segment-form leg-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}">
+          <form class="segment-form leg-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}" data-autosave="segment">
           <details class="leg-collapse">
             <summary>
               <span class="leg-summary-copy">
-                <span class="leg-kind">{escape(_travel_leg_comment(item))}</span>
-                <span class="leg-tag">{escape(item['label'])}</span>
-                <span class="leg-summary-input-shell">
-                  <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
+                <span class="leg-heading-row">
+                  <span class="leg-kind">{escape(_travel_leg_comment(item))}</span>
+                  <span class="leg-tag">{escape(item['label'])}</span>
                 </span>
+                <span class="leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</span>
               </span>
-              <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</span>
             </summary>
             <div class="leg-body">
               <div class="leg-copy">
+                <label class="leg-field">
+                  <span>Summary</span>
+                  <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
+                </label>
                 <label class="star-rating-field">
                   <span>Rating</span>
                   <span class="star-rating" aria-label="Rating">
@@ -1163,7 +1167,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                   </span>
                 </label>
                 <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
-                <button class="primary button-sm" type="submit">Save leg</button>
               </div>
               <div class="leg-map-panel">
                 <div
@@ -1521,7 +1524,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .leg-summary-copy {{
       display: grid;
-      gap: 4px;
+      gap: 6px;
+      min-width: 0;
+    }}
+    .leg-heading-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
       min-width: 0;
     }}
     .leg-kind {{
@@ -1541,27 +1551,27 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       font-weight: 700;
       letter-spacing: 0.02em;
     }}
-    .leg-summary-input-shell {{
-      display: block;
-      max-width: 100%;
-    }}
     .leg-summary-input {{
       width: 100%;
-      min-height: 58px;
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--muted);
-      font-size: 0.92rem;
+      min-height: 74px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+      font-size: 1rem;
       line-height: 1.4;
       resize: none;
     }}
-    .leg-span {{
+    .leg-summary-input:focus {{
+      outline: none;
+      border-color: rgba(200,100,59,0.6);
+      box-shadow: 0 0 0 3px rgba(200,100,59,0.12);
+    }}
+    .leg-meta {{
       color: var(--muted);
-      font-weight: 400;
+      font-weight: 600;
       font-size: 0.92rem;
-      text-align: right;
     }}
     .leg-body {{
       padding: 18px;
@@ -1574,7 +1584,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       min-width: 0;
       display: grid;
       align-content: start;
-      gap: 16px;
+      gap: 18px;
+    }}
+    .leg-field {{
+      display: grid;
+      gap: 8px;
+    }}
+    .leg-field > span,
+    .star-rating-field > span:first-child {{
+      color: var(--muted);
+      font-weight: 600;
     }}
     .leg-source, .leg-comment {{
       color: var(--muted);
@@ -1590,6 +1609,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .leg-map-panel {{
       display: flex;
       min-height: 320px;
+    }}
+    .leg-form[data-save-state="saving"] .leg-collapse[open] {{
+      box-shadow: inset 0 0 0 1px rgba(39,93,79,0.2), 0 14px 26px rgba(50, 33, 15, 0.08);
+    }}
+    .leg-form[data-save-state="saved"] .leg-collapse[open] {{
+      box-shadow: inset 0 0 0 1px rgba(39,93,79,0.32), 0 14px 26px rgba(50, 33, 15, 0.1);
     }}
     .detail-pair {{
       display: grid;
@@ -1886,6 +1911,45 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         }});
       }});
 
+      const autosaveSegment = async (form) => {{
+        if (!form || form.dataset.saveState === "saving") {{
+          return;
+        }}
+        const body = new URLSearchParams(new FormData(form));
+        form.dataset.saveState = "saving";
+        try {{
+          const response = await fetch(form.action, {{
+            method: "POST",
+            headers: {{
+              "X-Requested-With": "fetch"
+            }},
+            body
+          }});
+          if (!response.ok) {{
+            throw new Error(`Save failed with ${{response.status}}`);
+          }}
+          form.dataset.saveState = "saved";
+          window.setTimeout(() => {{
+            if (form.dataset.saveState === "saved") {{
+              delete form.dataset.saveState;
+            }}
+          }}, 1600);
+        }} catch (error) {{
+          delete form.dataset.saveState;
+          console.error(error);
+        }}
+      }};
+
+      document.querySelectorAll("form[data-autosave=\"segment\"]").forEach((form) => {{
+        const summaryField = form.querySelector(".leg-summary-input");
+        if (summaryField) {{
+          summaryField.addEventListener("blur", () => autosaveSegment(form));
+        }}
+        form.querySelectorAll("input[name=\"rating\"]").forEach((field) => {{
+          field.addEventListener("change", () => autosaveSegment(form));
+        }});
+      }});
+
       const toast = document.querySelector("[data-toast]");
       if (toast) {{
         window.setTimeout(() => {{
@@ -2050,21 +2114,22 @@ async def update_trip_segment_from_form(
     trip_id: int,
     segment_id: int,
     request: Request,
-) -> RedirectResponse:
+) -> Response:
     payload = parse_qs((await request.body()).decode("utf-8"))
-    segment_name = (payload.get("segment_name") or [""])[0].strip() or None
     summary_text = (payload.get("summary_text") or [""])[0].strip() or None
     rating_text = (payload.get("rating") or [""])[0].strip()
     rating = int(rating_text) if rating_text else None
     updated = trip_admin.update_trip_segment(
         trip_id,
         segment_id,
-        segment_name=segment_name,
+        segment_name=None,
         summary_text=summary_text,
         rating=rating,
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip segment not found")
+    if request.headers.get("x-requested-with") == "fetch":
+        return Response(status_code=204)
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=segment", status_code=303)
 
 
