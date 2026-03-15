@@ -23,6 +23,18 @@ class LocationEvent:
 def _from_e7(value: Any) -> float | None:
     if value is None:
         return None
+
+
+def _parse_latlng_text(value: Any) -> tuple[float | None, float | None]:
+    if not isinstance(value, str):
+        return (None, None)
+    parts = value.replace("°", "").split(",")
+    if len(parts) != 2:
+        return (None, None)
+    try:
+        return (float(parts[0].strip()), float(parts[1].strip()))
+    except ValueError:
+        return (None, None)
     try:
         return float(value) / 1e7
     except (TypeError, ValueError):
@@ -92,11 +104,62 @@ def _parse_timeline_objects(data: dict[str, Any]) -> Iterable[LocationEvent]:
             )
 
 
+def _parse_semantic_segments(data: dict[str, Any]) -> Iterable[LocationEvent]:
+    for idx, seg in enumerate(data.get("semanticSegments", [])):
+        for point in seg.get("timelinePath", []):
+            lat, lon = _parse_latlng_text(point.get("point"))
+            ts = parse_ts(point.get("time"))
+            if lat is None or lon is None or ts is None:
+                continue
+            yield LocationEvent(
+                timestamp=ts,
+                latitude=lat,
+                longitude=lon,
+                accuracy_meters=None,
+                source_event_id=f"timeline_path:{idx}:{point.get('time')}",
+                raw_payload={"semanticSegmentIndex": idx, "timelinePoint": point},
+            )
+
+        visit = seg.get("visit")
+        if visit:
+            top_candidate = visit.get("topCandidate", {})
+            place_location = top_candidate.get("placeLocation", {})
+            lat, lon = _parse_latlng_text(place_location.get("latLng"))
+            ts = parse_ts(seg.get("startTime")) or parse_ts(seg.get("endTime"))
+            if lat is not None and lon is not None and ts is not None:
+                yield LocationEvent(
+                    timestamp=ts,
+                    latitude=lat,
+                    longitude=lon,
+                    accuracy_meters=None,
+                    source_event_id=top_candidate.get("placeId") or f"visit:{idx}",
+                    raw_payload={"semanticSegmentIndex": idx, "visit": visit},
+                )
+
+        activity = seg.get("activity")
+        if activity:
+            for boundary_name in ("start", "end"):
+                boundary = activity.get(boundary_name, {})
+                lat, lon = _parse_latlng_text(boundary.get("latLng"))
+                ts = parse_ts(seg.get("startTime") if boundary_name == "start" else seg.get("endTime"))
+                if lat is None or lon is None or ts is None:
+                    continue
+                yield LocationEvent(
+                    timestamp=ts,
+                    latitude=lat,
+                    longitude=lon,
+                    accuracy_meters=None,
+                    source_event_id=activity.get("topCandidate", {}).get("type") or f"activity:{idx}",
+                    raw_payload={"semanticSegmentIndex": idx, "activity": activity, "boundary": boundary_name},
+                )
+
+
 def parse_location_history(path: str) -> list[LocationEvent]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     events = list(_parse_locations_array(data))
     events.extend(_parse_timeline_objects(data))
+    events.extend(_parse_semantic_segments(data))
     events.sort(key=lambda e: e.timestamp)
     return events
 

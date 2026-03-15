@@ -5,6 +5,7 @@ import os
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
@@ -49,9 +50,33 @@ def _read_json(path: str) -> dict[str, Any] | None:
 
 
 def _sidecar_candidates(path: str) -> list[str]:
-    base = path + ".json"
-    root, _ = os.path.splitext(path)
-    return [base, root + ".json"]
+    root = Path(path)
+    parent = root.parent
+    stem = root.name
+    base_stem = root.stem
+    candidates = [str(root) + ".json", str(root.with_suffix(".json"))]
+
+    # Google Takeout often truncates long sidecar names, so match any json file
+    # that starts with the media filename or the filename stem.
+    try:
+        for child in parent.iterdir():
+            if not child.is_file() or child.suffix.lower() != ".json":
+                continue
+            name = child.name
+            if name == "metadata.json":
+                continue
+            if name.startswith(stem) or name.startswith(base_stem):
+                candidates.append(str(child))
+    except OSError:
+        pass
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate not in seen:
+            deduped.append(candidate)
+            seen.add(candidate)
+    return deduped
 
 
 def _extract_photo(path: str, sidecar: dict[str, Any] | None) -> PhotoRecord:
@@ -87,29 +112,62 @@ def _extract_photo(path: str, sidecar: dict[str, Any] | None) -> PhotoRecord:
     )
 
 
-def parse_takeout_zip(path: str) -> list[PhotoRecord]:
+def _extract_sidecar_only(path: str, sidecar: dict[str, Any]) -> PhotoRecord | None:
+    title = sidecar.get("title")
+    if not isinstance(title, str) or not title or title == os.path.basename(os.path.dirname(path)):
+        return None
+
+    synthetic_path = os.path.join(os.path.dirname(path), title)
+    return _extract_photo(synthetic_path, sidecar)
+
+
+def _parse_takeout_tree(root_dir: str) -> list[PhotoRecord]:
     records: list[PhotoRecord] = []
+    seen_paths: set[str] = set()
+    for root, _, files in os.walk(root_dir):
+        for name in files:
+            full = os.path.join(root, name)
+            if name.lower().endswith(".json"):
+                if name == "metadata.json":
+                    continue
+                sidecar = _read_json(full)
+                if sidecar is None:
+                    continue
+                record = _extract_sidecar_only(full, sidecar)
+                if record is None or record.original_filepath in seen_paths:
+                    continue
+                records.append(record)
+                seen_paths.add(record.original_filepath)
+                continue
+            if name.startswith("."):
+                continue
+            if os.path.splitext(name)[1].lower() not in MEDIA_EXTS:
+                continue
+            sidecar = None
+            for candidate in _sidecar_candidates(full):
+                if os.path.exists(candidate):
+                    sidecar = _read_json(candidate)
+                    if sidecar is not None:
+                        break
+            record = _extract_photo(full, sidecar)
+            if record.original_filepath in seen_paths:
+                continue
+            records.append(record)
+            seen_paths.add(record.original_filepath)
+
+    return records
+
+
+def parse_takeout_zip(path: str) -> list[PhotoRecord]:
     with TemporaryDirectory(prefix="milesphotos-") as tmp:
         with zipfile.ZipFile(path, "r") as zf:
             zf.extractall(tmp)
 
-        for root, _, files in os.walk(tmp):
-            for name in files:
-                full = os.path.join(root, name)
-                if name.lower().endswith(".json"):
-                    continue
-                if name.startswith("."):
-                    continue
-                if os.path.splitext(name)[1].lower() not in MEDIA_EXTS:
-                    continue
-                sidecar = None
-                for candidate in _sidecar_candidates(full):
-                    if os.path.exists(candidate):
-                        sidecar = _read_json(candidate)
-                        break
-                records.append(_extract_photo(full, sidecar))
+        return _parse_takeout_tree(tmp)
 
-    return records
+
+def parse_takeout_dir(path: str) -> list[PhotoRecord]:
+    return _parse_takeout_tree(path)
 
 
 def save_photo_records(import_id: int, records: list[PhotoRecord]) -> int:

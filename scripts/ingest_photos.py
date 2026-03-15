@@ -1,16 +1,20 @@
+import os
 import argparse
 
 from ingestion.imports import complete_import, create_import, fail_import, get_import_summary
-from ingestion.photos_takeout import parse_takeout_zip, save_photo_records
+from ingestion.photos_takeout import parse_takeout_dir, parse_takeout_zip, save_photo_records
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest Google Photos Takeout archive")
-    parser.add_argument("--file", required=True, help="Path to Google Photos Takeout zip")
+    parser = argparse.ArgumentParser(description="Ingest Google Photos Takeout archive or directory")
+    parser.add_argument("--file", required=True, help="Path to Google Photos Takeout zip or extracted directory")
     args = parser.parse_args()
     import_id = create_import("google_takeout_photos", "google_photos", args.file)
     try:
-        photos = parse_takeout_zip(args.file)
+        if os.path.isdir(args.file):
+            photos = parse_takeout_dir(args.file)
+        else:
+            photos = parse_takeout_zip(args.file)
         inserted = save_photo_records(import_id, photos)
         complete_import(import_id)
     except Exception as exc:
