@@ -75,6 +75,30 @@ class TripAdminTests(unittest.TestCase):
 
         self.assertEqual(summary, "Drive to Bright Angel Trailhead.")
 
+    def test_leg_default_summary_prefers_specific_lodging_stop(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "end_place_name": "Yavapai Lodge",
+            },
+            trip_name="Grand Canyon - NPS",
+        )
+
+        self.assertEqual(summary, "Drive to Yavapai Lodge.")
+
+    def test_leg_default_summary_prefers_specific_viewpoint_stop(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "end_place_name": "Mather Point Overlook",
+            },
+            trip_name="Grand Canyon - NPS",
+        )
+
+        self.assertEqual(summary, "Drive to Mather Point Overlook.")
+
 
 if __name__ == "__main__":
     unittest.main()

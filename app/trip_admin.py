@@ -119,6 +119,29 @@ def _segment_place_phrase(*names: str | None) -> str | None:
     return None
 
 
+def _segment_place_role(name: str | None) -> str | None:
+    if not name:
+        return None
+    lowered = name.lower()
+    role_keywords = (
+        ("trailhead", "trailhead"),
+        ("viewpoint", "viewpoint"),
+        ("overlook", "viewpoint"),
+        ("visitor center", "visitor center"),
+        ("lodge", "lodging"),
+        ("hotel", "lodging"),
+        ("inn", "lodging"),
+        ("resort", "lodging"),
+        ("campground", "camp"),
+        ("camp", "camp"),
+        ("village", "village"),
+    )
+    for keyword, role in role_keywords:
+        if keyword in lowered:
+            return role
+    return None
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -142,6 +165,7 @@ def _leg_default_summary(
     )
     preferred_origin = _preferred_segment_place(origin_name, start_name)
     specific_place = _segment_place_phrase(end_name, start_name, preferred_destination)
+    specific_role = _segment_place_role(specific_place)
 
     if leg_type == "air":
         if preferred_origin and preferred_destination and preferred_origin != preferred_destination:
@@ -165,8 +189,28 @@ def _leg_default_summary(
             if trip_context:
                 return f"Drive to trailhead in {trip_context}."
             return "Drive to trailhead."
-        if previous_leg_type in {"walk", "hike", "run"} and specific_place:
-            return f"Drive from trail toward {specific_place}."
+        if previous_leg_type in {"walk", "hike", "run"}:
+            if specific_place:
+                if specific_role == "lodging":
+                    return f"Drive from trail to {specific_place}."
+                if specific_role == "village":
+                    return f"Drive from trail into {specific_place}."
+                return f"Drive from trail toward {specific_place}."
+            if trip_context:
+                return f"Drive from trail in {trip_context}."
+        if specific_place:
+            if specific_role == "lodging":
+                return f"Drive to {specific_place}."
+            if specific_role == "viewpoint":
+                return f"Drive to {specific_place}."
+            if specific_role == "visitor center":
+                return f"Drive to {specific_place}."
+            if specific_role == "camp":
+                return f"Drive to {specific_place}."
+            if specific_role == "village":
+                return f"Drive in {specific_place}."
+            if specific_role == "trailhead":
+                return f"Drive to {specific_place}."
         if _is_airport_like(preferred_destination) and trip_context:
             return f"Drive in {trip_context}."
         if preferred_destination:
