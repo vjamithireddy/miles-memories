@@ -8,6 +8,7 @@ from trip_engine.detector import (
     _apply_destination_override,
     _generate_trip_name,
     _haversine_km,
+    _resolve_destination_profile,
     detect_trips,
 )
 
@@ -18,11 +19,17 @@ class FakeCursor:
         self.inserted_trip_params = []
         self.override_rows = []
         self._last_fetchall = []
+        self.place_row = None
+        self.insert_place_params = []
 
     def execute(self, query: str, params=None) -> None:
         compact = " ".join(query.split())
         if "INSERT INTO trips" in compact:
             self.inserted_trip_params.append(params)
+        elif "SELECT place_name, place_type, source, city FROM places" in compact:
+            self.fetchone_results.insert(0, self.place_row)
+        elif "INSERT INTO places" in compact:
+            self.insert_place_params.append(params)
         elif "FROM destination_overrides" in compact:
             self._last_fetchall = self.override_rows
         elif "SELECT id, event_timestamp FROM location_events" in compact:
@@ -93,6 +100,41 @@ class DetectorTests(unittest.TestCase):
         )
 
         self.assertEqual(trip_name, "Busch Stadium Day Trip")
+
+    def test_generate_trip_name_ignores_unknown_destination_placeholder(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "Unknown destination",
+                "locality": None,
+                "category": None,
+                "classification": None,
+            },
+            "day_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 7, 18, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Trip on 2026-03-07")
+
+    def test_resolve_destination_profile_refetches_stale_unknown_cache(self) -> None:
+        cursor = FakeCursor()
+        cursor.place_row = ("Unknown destination", "house", "nominatim", None)
+
+        with patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)), \
+             patch(
+                 "trip_engine.detector._fetch_destination_profile",
+                 return_value={
+                     "name": "13736 Riverport Drive",
+                     "category": "house",
+                     "display_name": "13736 Riverport Drive, Maryland Heights, Missouri",
+                     "locality": "Maryland Heights",
+                 },
+             ):
+            profile = _resolve_destination_profile(38.7548, -90.4668)
+
+        self.assertEqual(profile["locality"], "Maryland Heights")
+        self.assertIsNone(profile["name"])
+        self.assertEqual(cursor.insert_place_params[0][0], "Maryland Heights")
 
     def test_destination_override_matches_pattern(self) -> None:
         cursor = FakeCursor()

@@ -41,6 +41,7 @@ PRO_VENUE_PATTERNS = (
 
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 GENERIC_PLACE_TYPES = {"house", "residential", "road", "service", "address"}
+UNKNOWN_PLACE_NAMES = {"unknown destination", "unresolved destination"}
 
 
 @dataclass
@@ -72,7 +73,44 @@ def _is_address_like(value: Optional[str]) -> bool:
     text = value.strip()
     if not text:
         return True
+    if text.lower() in UNKNOWN_PLACE_NAMES:
+        return True
     if re.match(r"^\d+", text):
+        return True
+    return False
+
+
+def _meaningful_destination_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = value.strip()
+    if not text or text.lower() in UNKNOWN_PLACE_NAMES:
+        return None
+    return text
+
+
+def _meaningful_locality(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = value.strip()
+    if not text or text.lower() in UNKNOWN_PLACE_NAMES:
+        return None
+    return text
+
+
+def _is_stale_cached_place(
+    place_name: Optional[str],
+    place_type: Optional[str],
+    city: Optional[str],
+) -> bool:
+    normalized_name = _normalize_text(place_name)
+    if normalized_name in UNKNOWN_PLACE_NAMES:
+        return True
+    if _meaningful_locality(city):
+        return False
+    if not _meaningful_destination_name(place_name):
+        return True
+    if _is_address_like(place_name) and _normalize_text(place_type) in GENERIC_PLACE_TYPES:
         return True
     return False
 
@@ -110,7 +148,7 @@ def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, O
         with urlopen(request, timeout=5) as response:
             payload = json.load(response)
     except Exception:
-        return {"name": None, "category": None, "display_name": None}
+        return {"name": None, "category": None, "display_name": None, "locality": None}
 
     address = payload.get("address") or {}
     name = (
@@ -155,13 +193,21 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
             )
             row = cur.fetchone()
             if row:
-                return {
-                    "name": row[0],
-                    "category": row[1],
-                    "display_name": row[3],
-                    "locality": row[3],
-                    "classification": row[2],
-                }
+                place_name, place_type, source, city = row
+                if _is_stale_cached_place(place_name, place_type, city):
+                    row = None
+                else:
+                    name = _meaningful_destination_name(place_name)
+                    locality = _meaningful_locality(city)
+                    if name and _is_address_like(name) and locality:
+                        name = None
+                    return {
+                        "name": name,
+                        "category": place_type,
+                        "display_name": locality,
+                        "locality": locality,
+                        "classification": source,
+                    }
 
     profile = _fetch_destination_profile(latitude, longitude)
     classification = _classify_destination(
@@ -170,30 +216,38 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
         profile.get("display_name"),
     )
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO places (
-                    place_name, city, latitude, longitude, place_type, source
+    resolved_name = _meaningful_destination_name(profile.get("name"))
+    resolved_locality = _meaningful_locality(profile.get("locality")) or _meaningful_locality(
+        profile.get("display_name")
+    )
+    if resolved_name and _is_address_like(resolved_name) and resolved_locality:
+        resolved_name = None
+
+    if resolved_name or resolved_locality or classification:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO places (
+                        place_name, city, latitude, longitude, place_type, source
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        resolved_name or resolved_locality or "Unresolved destination",
+                        resolved_locality,
+                        latitude,
+                        longitude,
+                        profile.get("category"),
+                        classification or "nominatim",
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    profile.get("name") or profile.get("locality") or "Unknown destination",
-                    profile.get("locality") or profile.get("display_name"),
-                    latitude,
-                    longitude,
-                    profile.get("category"),
-                    classification or "nominatim",
-                ),
-            )
 
     return {
-        "name": profile.get("name"),
+        "name": resolved_name,
         "category": profile.get("category"),
         "display_name": profile.get("display_name"),
-        "locality": profile.get("locality"),
+        "locality": resolved_locality,
         "classification": classification,
     }
 
@@ -239,8 +293,8 @@ def _apply_destination_override(
 
 
 def _destination_title(profile: Dict[str, Optional[str]]) -> Optional[str]:
-    name = profile.get("name")
-    locality = profile.get("locality")
+    name = _meaningful_destination_name(profile.get("name"))
+    locality = _meaningful_locality(profile.get("locality"))
     category = _normalize_text(profile.get("category"))
 
     if name and not _is_address_like(name) and category not in GENERIC_PLACE_TYPES:
