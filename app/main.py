@@ -1,7 +1,7 @@
 from datetime import datetime
 from html import escape
 import json
-from typing import List, Optional
+from typing import List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -272,6 +272,52 @@ def _trip_badge_class(value: str) -> str:
     return ""
 
 
+def _render_trip_badges(trip: dict) -> str:
+    badges: list[tuple[str, str]] = []
+    status = trip["status"]
+    review = trip["review_decision"]
+    if status == review:
+        badges.append((status, _trip_badge_class(status)))
+    else:
+        badges.append((status, _trip_badge_class(status)))
+        badges.append((review, _trip_badge_class(review)))
+    badges.append(("Private" if trip["is_private"] else "Visible", ""))
+    badges.append(("Public" if trip["publish_ready"] else "Not Ready", ""))
+    return "".join(
+        f'<span class="badge {badge_class}">{escape(label)}</span>' for label, badge_class in badges
+    )
+
+
+def _build_trip_toast(saved: Union[bool, str]) -> str:
+    if not saved:
+        return ""
+    saved_key = "review" if saved is True else str(saved)
+    messages = {
+        "review": "Review saved.",
+        "published": "Trip published and marked ready.",
+        "privacy": "Trip visibility updated.",
+    }
+    message = messages.get(saved_key, "Update saved.")
+    return f"""
+    <div class="toast toast-success" role="status" aria-live="polite" data-toast>
+      <strong>{escape(message)}</strong>
+    </div>
+    """
+
+
+def _travel_leg_comment(item: dict) -> str:
+    label = item["label"]
+    start_name = item.get("start_place_name")
+    end_name = item.get("end_place_name")
+    if start_name and end_name:
+        return f"{label} from {start_name} to {end_name}."
+    if end_name:
+        return f"{label} toward {end_name}."
+    if start_name:
+        return f"{label} leaving {start_name}."
+    return f"{label} inferred from timeline activity data."
+
+
 def _render_admin_page(
     trips: List[dict],
     *,
@@ -301,13 +347,10 @@ def _render_admin_page(
         title = escape(trip["trip_name"] or "Untitled trip")
         destination = escape(trip["primary_destination_name"] or "Destination pending")
         trip_type = escape(trip["trip_type"] or "untyped")
-        status_value = escape(trip["status"])
-        review_value = escape(trip["review_decision"])
         score_value = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
-        privacy_value = "Private" if trip["is_private"] else "Visible"
-        ready_value = "Ready" if trip["publish_ready"] else "Not ready"
         detail_href = f"/admin/trip/{trip['id']}"
         json_href = f"/admin/trips/{trip['id']}"
+        badges_html = _render_trip_badges(trip)
 
         cards.append(
             f"""
@@ -320,16 +363,13 @@ def _render_admin_page(
                 <div class="score">{score_value}</div>
               </div>
               <div class="meta-row">
-                <span class="badge {_trip_badge_class(trip['status'])}">{status_value}</span>
-                <span class="badge {_trip_badge_class(trip['review_decision'])}">{review_value}</span>
-                <span class="badge">{privacy_value}</span>
-                <span class="badge">{ready_value}</span>
+                {badges_html}
               </div>
               <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
               <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
               <div class="card-actions">
-                <a href="{detail_href}">Open detail page</a>
-                <a href="{json_href}">JSON</a>
+                <a class="button button-sm" href="{detail_href}">Open detail page</a>
+                <a class="utility-link" href="{json_href}">JSON</a>
               </div>
             </article>
             """
@@ -447,7 +487,7 @@ def _render_admin_page(
       padding-bottom: 10px;
     }}
     .checkbox input {{ width: 18px; height: 18px; }}
-    .button {{
+    .button, button {{
       display: inline-block;
       border: 1px solid var(--accent);
       background: var(--accent);
@@ -456,10 +496,21 @@ def _render_admin_page(
       font-weight: 700;
       border-radius: 999px;
       padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
     }}
     .button.ghost {{
       background: transparent;
       color: var(--accent);
+    }}
+    .button.utility {{
+      background: transparent;
+      color: var(--accent);
+      border-color: var(--line);
+    }}
+    .button-sm {{
+      padding: 10px 14px;
+      font-size: 0.92rem;
     }}
     .trips {{
       display: grid;
@@ -518,12 +569,15 @@ def _render_admin_page(
     .card-actions {{
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 14px;
+      align-items: center;
     }}
-    .card-actions a {{
+    .utility-link {{
       color: var(--accent);
       text-decoration: none;
       font-weight: 700;
+      font-size: 0.92rem;
+      opacity: 0.86;
     }}
     .links {{
       display: flex;
@@ -550,7 +604,7 @@ def _render_admin_page(
         <p class="sub">Review detected trips, inspect status and destination signals, and use the JSON endpoints while the richer admin workflow is still being built.</p>
       </div>
       <div class="links">
-        <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
+        <a class="button ghost" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
         <a class="button ghost" href="/admin/overrides">Destination overrides</a>
         <a class="button ghost" href="/">Homepage</a>
       </div>
@@ -864,7 +918,7 @@ def _render_overrides_page(overrides: List[dict]) -> str:
 </html>"""
 
 
-def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
+def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> str:
     title = escape(trip["trip_name"] or "Untitled trip")
     destination = escape(trip["primary_destination_name"] or "Destination pending")
     trip_type = escape(trip["trip_type"] or "untyped")
@@ -883,9 +937,6 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     ]
     map_payload = escape(json.dumps(map_points))
     matching_overrides = trip.get("matching_overrides", [])
-    neighbors = trip.get("neighbors") or {}
-    previous_trip = neighbors.get("previous")
-    next_trip = neighbors.get("next")
     travel_legs = trip.get("travel_legs", [])
 
     timeline_items = "".join(
@@ -963,7 +1014,14 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
               <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
             </summary>
             <div class="leg-body">
-              <p>{escape(item['label'])} leg · source {escape(item.get('source_event_id') or 'unknown')}</p>
+              <div class="leg-copy">
+                <div class="leg-meta">
+                  <strong>{escape(item['label'])}</strong>
+                  <span>{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
+                </div>
+                <p class="leg-comment">{escape(_travel_leg_comment(item))}</p>
+                <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+              </div>
               <div
                 class="leg-map"
                 data-start-lat="{'' if item.get('start_latitude') is None else item['start_latitude']}"
@@ -985,12 +1043,8 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       </li>
     """
 
-    saved_banner = """
-    <section class="panel success-banner">
-      <strong>Review saved.</strong>
-      <p>Trip updates were written successfully.</p>
-    </section>
-    """ if saved else ""
+    toast_markup = _build_trip_toast(saved)
+    detail_badges = _render_trip_badges(trip)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1073,15 +1127,6 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     .badge.good {{ background: rgba(46,106,75,0.14); color: var(--good); }}
     .badge.warn {{ background: rgba(155,100,29,0.14); color: var(--warn); }}
     .badge.muted {{ background: rgba(100,112,132,0.14); color: var(--muted); }}
-    .success-banner {{
-      border-color: rgba(46,106,75,0.3);
-      background: rgba(46,106,75,0.08);
-    }}
-    .success-banner strong {{
-      display: block;
-      margin-bottom: 6px;
-      color: var(--good);
-    }}
     .button, button {{
       display: inline-block;
       text-decoration: none;
@@ -1097,6 +1142,11 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     .button.ghost {{
       background: transparent;
       color: var(--accent);
+    }}
+    .button.utility {{
+      background: transparent;
+      color: var(--accent);
+      border-color: var(--line);
     }}
     button:hover, .button:hover {{
       filter: brightness(0.98);
@@ -1185,6 +1235,15 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       display: grid;
       gap: 14px;
     }}
+    .quick-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }}
+    .quick-actions form {{
+      margin: 0;
+    }}
     .review-form-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1262,7 +1321,20 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       border-top: 1px solid var(--line);
       padding: 12px 16px 16px;
       display: grid;
-      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+      align-items: start;
+    }}
+    .leg-meta {{
+      display: grid;
+      gap: 4px;
+      margin-bottom: 10px;
+    }}
+    .leg-meta span, .leg-source, .leg-comment {{
+      color: var(--muted);
+    }}
+    .leg-comment {{
+      margin-bottom: 8px;
     }}
     .leg-map {{
       height: 180px;
@@ -1270,6 +1342,30 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
       border: 1px solid var(--line);
       border-radius: 16px;
       background: #efe5d7;
+    }}
+    .toast {{
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 1000;
+      min-width: 260px;
+      max-width: 360px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(46,106,75,0.24);
+      background: rgba(244, 255, 248, 0.96);
+      box-shadow: 0 18px 40px rgba(28, 43, 31, 0.18);
+      transform: translateY(0);
+      opacity: 1;
+      transition: opacity 220ms ease, transform 220ms ease;
+    }}
+    .toast strong {{
+      color: var(--good);
+    }}
+    .toast.is-hiding {{
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
     }}
     @media (max-width: 920px) {{
       .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
@@ -1279,28 +1375,26 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
         flex-direction: column;
         align-items: flex-start;
       }}
+      .leg-body {{
+        grid-template-columns: 1fr;
+      }}
     }}
   </style>
 </head>
 <body>
   <main class="stack">
-    {saved_banner}
+    {toast_markup}
     <section class="hero">
       <article class="panel">
         <div class="eyebrow">Trip Detail</div>
         <h1>{title}</h1>
         <p>{destination} · {trip_type}</p>
         <div class="meta-row">
-          <span class="badge {_trip_badge_class(trip['status'])}">{escape(trip['status'])}</span>
-          <span class="badge {_trip_badge_class(trip['review_decision'])}">{escape(trip['review_decision'])}</span>
-          <span class="badge">{'Private' if trip['is_private'] else 'Visible'}</span>
-          <span class="badge">{'Ready' if trip['publish_ready'] else 'Not ready'}</span>
+          {detail_badges}
         </div>
         <div class="actions">
           <a class="button" href="/admin">Back to queue</a>
-          <a class="button ghost" href="/admin/trips/{trip['id']}">Open JSON</a>
-          {f'<a class="button ghost" href="/admin/trip/{previous_trip["id"]}">Previous trip</a>' if previous_trip else ''}
-          {f'<a class="button ghost" href="/admin/trip/{next_trip["id"]}">Next trip</a>' if next_trip else ''}
+          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
         </div>
       </article>
       <aside class="panel">
@@ -1327,6 +1421,14 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
           <div class="detail-cell">
             <strong>Generated destination</strong>
             <span>{destination}</span>
+          </div>
+          <div class="detail-cell">
+            <strong>Visibility</strong>
+            <span>{'Private' if trip['is_private'] else 'Visible to publish flow'}</span>
+          </div>
+          <div class="detail-cell">
+            <strong>Publish state</strong>
+            <span>{'Ready to publish' if trip['publish_ready'] else 'Not publish-ready yet'}</span>
           </div>
         </div>
       </aside>
@@ -1355,9 +1457,29 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
 
       <article class="panel">
         <h2>Review trip</h2>
+        <div class="quick-actions">
+          <form method="post" action="/admin/trip/{trip['id']}/review">
+            <input type="hidden" name="action" value="confirm">
+            <input type="hidden" name="reviewer_name" value="Venkat">
+            <button type="submit">Confirm</button>
+          </form>
+          <form method="post" action="/admin/trip/{trip['id']}/review">
+            <input type="hidden" name="action" value="publish">
+            <input type="hidden" name="reviewer_name" value="Venkat">
+            <input type="hidden" name="is_private" value="false">
+            <input type="hidden" name="publish_ready" value="true">
+            <button type="submit">Publish</button>
+          </form>
+          <form method="post" action="/admin/trip/{trip['id']}/review">
+            <input type="hidden" name="action" value="mark_private">
+            <input type="hidden" name="reviewer_name" value="Venkat">
+            <input type="hidden" name="is_private" value="true">
+            <button class="button utility" type="submit">Make private</button>
+          </form>
+        </div>
         <form class="review-form" method="post" action="/admin/trip/{trip['id']}/review">
           <div class="review-form-grid">
-            <label>Action
+            <label>Advanced action
               <select name="action">
                 <option value="confirm">confirm</option>
                 <option value="ignore">ignore</option>
@@ -1387,13 +1509,6 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
           </div>
         </form>
       </article>
-    </section>
-
-    <section class="panel">
-      <h2>Linked events</h2>
-      <ul class="list">
-        {count_items}
-      </ul>
     </section>
 
     <section class="panel">
@@ -1427,6 +1542,13 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
           {timeline_items}
         </ul>
       </details>
+    </section>
+
+    <section class="panel">
+      <h2>Linked events</h2>
+      <ul class="list">
+        {count_items}
+      </ul>
     </section>
   </main>
   <script
@@ -1491,6 +1613,14 @@ def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
         L.circleMarker([endLat, endLon], {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
         legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
       }});
+
+      const toast = document.querySelector("[data-toast]");
+      if (toast) {{
+        window.setTimeout(() => {{
+          toast.classList.add("is-hiding");
+          window.setTimeout(() => toast.remove(), 240);
+        }}, 3800);
+      }}
     }})();
   </script>
 </body>
@@ -1571,7 +1701,7 @@ async def delete_destination_override(request: Request) -> RedirectResponse:
 
 
 @app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
-def admin_trip_detail_page(trip_id: int, saved: bool = Query(default=False)) -> HTMLResponse:
+def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTMLResponse:
     trip = trip_admin.get_trip(trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1589,6 +1719,10 @@ async def review_trip_from_form(trip_id: int, request: Request) -> RedirectRespo
     trip_name = (payload.get("trip_name") or [""])[0].strip() or None
     summary_text = (payload.get("summary_text") or [""])[0].strip() or None
     primary_destination_name = (payload.get("primary_destination_name") or [""])[0].strip() or None
+    is_private_values = payload.get("is_private") or [""]
+    publish_ready_values = payload.get("publish_ready") or [""]
+    is_private = None if not is_private_values[0] else _parse_flag(is_private_values[0])
+    publish_ready = None if not publish_ready_values[0] else _parse_flag(publish_ready_values[0])
 
     updated = trip_admin.record_review(
         trip_id,
@@ -1598,12 +1732,17 @@ async def review_trip_from_form(trip_id: int, request: Request) -> RedirectRespo
         trip_name=trip_name,
         summary_text=summary_text,
         primary_destination_name=primary_destination_name,
-        is_private=None,
-        publish_ready=None,
+        is_private=is_private,
+        publish_ready=publish_ready,
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=1", status_code=303)
+    saved_key = "review"
+    if action == "publish":
+        saved_key = "published"
+    elif action == "mark_private":
+        saved_key = "privacy"
+    return RedirectResponse(url=f"/admin/trip/{trip_id}?saved={saved_key}", status_code=303)
 
 
 @app.get("/health")

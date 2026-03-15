@@ -132,6 +132,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Trip review queue", response.body)
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b"Raw JSON Feed", response.body)
+        self.assertIn(b'class="button ghost" href="/admin/trips?', response.body)
+        self.assertIn(b"Open detail page", response.body)
+        self.assertIn(b'class="utility-link"', response.body)
         mock_list.assert_called_once_with(
             status="needs_review",
             review_decision="pending",
@@ -142,15 +145,9 @@ class AppApiTests(unittest.TestCase):
     def test_admin_trip_detail_renders_map(self) -> None:
         with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
              patch("app.main.destination_overrides.list_overrides", return_value=[]), \
-             patch("app.main.get_user_timezone", return_value="America/Chicago"), \
-             patch(
-                 "app.main.trip_admin.get_trip_neighbors",
-                 return_value={
-                     "previous": {"id": 8, "trip_name": "Utah Loop"},
-                     "next": {"id": 6, "trip_name": "Chicago Weekend"},
-                 },
-             ) as mock_neighbors:
-            response = admin_trip_detail_page(7, saved=True)
+             patch("app.main.trip_admin.get_trip_neighbors", return_value={"previous": None, "next": None}), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = admin_trip_detail_page(7, saved="review")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Trip map", response.body)
@@ -163,11 +160,12 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Destination context", response.body)
         self.assertIn(b"Expand full timeline", response.body)
         self.assertIn(b"Review saved.", response.body)
-        self.assertIn(b"/admin/trip/8", response.body)
-        self.assertIn(b"/admin/trip/6", response.body)
+        self.assertIn(b"Publish", response.body)
+        self.assertIn(b"Make private", response.body)
+        self.assertNotIn(b"Previous trip", response.body)
+        self.assertNotIn(b"Next trip", response.body)
         self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
         mock_get.assert_called_once_with(7)
-        mock_neighbors.assert_called_once_with(7)
 
     def test_review_trip_from_form_uses_repository(self) -> None:
         class FakeRequest:
@@ -182,7 +180,7 @@ class AppApiTests(unittest.TestCase):
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=1")
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=review")
         mock_review.assert_called_once_with(
             7,
             action="confirm",
@@ -193,6 +191,28 @@ class AppApiTests(unittest.TestCase):
             primary_destination_name="Denver",
             is_private=None,
             publish_ready=None,
+        )
+
+    def test_review_trip_from_form_handles_publish_flags(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return b"action=publish&reviewer_name=Venkat&is_private=false&publish_ready=true"
+
+        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+            response = asyncio.run(review_trip_from_form(7, FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=published")
+        mock_review.assert_called_once_with(
+            7,
+            action="publish",
+            reviewer_name="Venkat",
+            review_notes=None,
+            trip_name=None,
+            summary_text=None,
+            primary_destination_name=None,
+            is_private=False,
+            publish_ready=True,
         )
 
     def test_list_trips_passes_filters(self) -> None:
