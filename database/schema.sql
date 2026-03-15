@@ -6,10 +6,17 @@ CREATE TABLE IF NOT EXISTS users (
     home_longitude DOUBLE PRECISION,
     home_privacy_radius_meters INTEGER DEFAULT 500,
     home_local_radius_meters INTEGER DEFAULT 16093,
+    work_latitude DOUBLE PRECISION,
+    work_longitude DOUBLE PRECISION,
+    work_local_radius_meters INTEGER DEFAULT 1609,
     timezone TEXT DEFAULT 'America/Chicago',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS work_latitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS work_longitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS work_local_radius_meters INTEGER DEFAULT 1609;
 
 CREATE TABLE IF NOT EXISTS imports (
     id BIGSERIAL PRIMARY KEY,

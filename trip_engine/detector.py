@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import asin, cos, radians, sin, sqrt
 
-from app.bootstrap import ensure_default_user, get_home_profile
+from app.bootstrap import ensure_default_user, get_home_profile, get_work_profile
 from app.db import get_conn
 
 
@@ -11,6 +11,7 @@ class SimpleTrip:
     start_time: datetime
     end_time: datetime
     max_distance_km: float
+    touched_work: bool = False
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -38,6 +39,7 @@ def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
 def detect_trips() -> tuple[int, int]:
     user_id = ensure_default_user()
     home_lat, home_lon, local_radius_m = get_home_profile()
+    work_lat, work_lon, work_radius_m = get_work_profile()
     if home_lat is None or home_lon is None:
         return (0, 0)
 
@@ -46,19 +48,29 @@ def detect_trips() -> tuple[int, int]:
         return (0, 0)
 
     local_radius_km = local_radius_m / 1000.0
+    work_radius_km = work_radius_m / 1000.0
+    home_work_distance_km = None
+    if work_lat is not None and work_lon is not None:
+        home_work_distance_km = _haversine_km(home_lat, home_lon, work_lat, work_lon)
     candidates: list[SimpleTrip] = []
     current_start = None
     current_end = None
     current_max_dist = 0.0
+    current_touched_work = False
 
     for _, ts, lat, lon in events:
         dist = _haversine_km(home_lat, home_lon, lat, lon)
         away = dist > local_radius_km
+        work_dist = None
+        if work_lat is not None and work_lon is not None:
+            work_dist = _haversine_km(work_lat, work_lon, lat, lon)
         if away:
             if current_start is None:
                 current_start = ts
             current_end = ts
             current_max_dist = max(current_max_dist, dist)
+            if work_dist is not None and work_dist <= work_radius_km:
+                current_touched_work = True
         else:
             if current_start and current_end:
                 if (current_end - current_start) >= timedelta(hours=3):
@@ -67,11 +79,13 @@ def detect_trips() -> tuple[int, int]:
                             start_time=current_start,
                             end_time=current_end,
                             max_distance_km=current_max_dist,
+                            touched_work=current_touched_work,
                         )
                     )
                 current_start = None
                 current_end = None
                 current_max_dist = 0.0
+                current_touched_work = False
 
     if current_start and current_end and (current_end - current_start) >= timedelta(hours=3):
         candidates.append(
@@ -79,6 +93,7 @@ def detect_trips() -> tuple[int, int]:
                 start_time=current_start,
                 end_time=current_end,
                 max_distance_km=current_max_dist,
+                touched_work=current_touched_work,
             )
         )
 
@@ -87,11 +102,20 @@ def detect_trips() -> tuple[int, int]:
     with get_conn() as conn:
         with conn.cursor() as cur:
             for idx, trip in enumerate(candidates, start=1):
+                if (
+                    trip.touched_work
+                    and home_work_distance_km is not None
+                    and trip.max_distance_km <= max(home_work_distance_km + 5.0, local_radius_km + 5.0)
+                ):
+                    continue
                 duration = trip.end_time - trip.start_time
-                if duration < timedelta(hours=24):
+                if trip.start_time.date() != trip.end_time.date():
+                    if duration < timedelta(days=2):
+                        trip_type = "overnight_trip"
+                    else:
+                        trip_type = "multi_day_trip"
+                elif duration < timedelta(hours=24):
                     trip_type = "day_trip"
-                elif duration < timedelta(days=2):
-                    trip_type = "overnight_trip"
                 else:
                     trip_type = "multi_day_trip"
                 score = min(100, int(40 + min(trip.max_distance_km, 400) / 5))
