@@ -96,6 +96,29 @@ def _is_airport_like(value: str | None) -> bool:
     return bool(value and "airport" in value.lower())
 
 
+def _segment_place_phrase(*names: str | None) -> str | None:
+    keywords = (
+        "trailhead",
+        "viewpoint",
+        "overlook",
+        "visitor center",
+        "lodge",
+        "hotel",
+        "inn",
+        "resort",
+        "campground",
+        "camp",
+        "village",
+    )
+    for name in names:
+        if not name:
+            continue
+        lowered = name.lower()
+        if any(keyword in lowered for keyword in keywords):
+            return name
+    return None
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -117,11 +140,8 @@ def _leg_default_summary(
         start_name,
         fallback_trip_name=trip_context,
     )
-    preferred_origin = _preferred_segment_place(
-        origin_name,
-        start_name,
-        fallback_trip_name=trip_context,
-    )
+    preferred_origin = _preferred_segment_place(origin_name, start_name)
+    specific_place = _segment_place_phrase(end_name, start_name, preferred_destination)
 
     if leg_type == "air":
         if preferred_origin and preferred_destination and preferred_origin != preferred_destination:
@@ -134,9 +154,19 @@ def _leg_default_summary(
         if next_leg_type == "air":
             return "Drive to airport."
         if previous_leg_type == "air":
+            if specific_place:
+                return f"Drive from airport to {specific_place}."
             if preferred_destination and "airport" not in preferred_destination.lower():
                 return f"Drive from airport toward {preferred_destination}."
             return "Drive from airport."
+        if next_leg_type in {"walk", "hike", "run"}:
+            if specific_place:
+                return f"Drive to {specific_place}."
+            if trip_context:
+                return f"Drive to trailhead in {trip_context}."
+            return "Drive to trailhead."
+        if previous_leg_type in {"walk", "hike", "run"} and specific_place:
+            return f"Drive from trail toward {specific_place}."
         if _is_airport_like(preferred_destination) and trip_context:
             return f"Drive in {trip_context}."
         if preferred_destination:

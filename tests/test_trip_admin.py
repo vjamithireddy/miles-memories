@@ -21,6 +21,15 @@ class TripAdminTests(unittest.TestCase):
 
         self.assertEqual(summary, "Flight from St. Louis to Harry Reid Airport.")
 
+    def test_leg_default_summary_does_not_use_trip_context_as_flight_origin(self) -> None:
+        summary = _leg_default_summary(
+            {"label": "Air travel", "leg_type": "air"},
+            trip_name="Grand Canyon - NPS",
+            destination_name="Harry Reid Airport Rental Car Facility",
+        )
+
+        self.assertEqual(summary, "Flight to Harry Reid Airport.")
+
     def test_leg_default_summary_prefers_trip_context_for_walks(self) -> None:
         summary = _leg_default_summary(
             {"label": "Walking", "leg_type": "walk"},
@@ -38,6 +47,19 @@ class TripAdminTests(unittest.TestCase):
         )
 
         self.assertEqual(summary, "Drive in Grand Canyon - NPS.")
+
+    def test_leg_default_summary_uses_trailhead_when_car_leads_into_hike(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "end_place_name": "Bright Angel Trailhead",
+            },
+            trip_name="Grand Canyon - NPS",
+            next_leg_type="hike",
+        )
+
+        self.assertEqual(summary, "Drive to Bright Angel Trailhead.")
 
 
 if __name__ == "__main__":
