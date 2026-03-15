@@ -8,8 +8,9 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.bootstrap import ensure_default_user, get_home_profile, get_work_profile
+from app.bootstrap import ensure_default_user, get_home_profile, get_user_timezone, get_work_profile
 from app.db import get_conn
 
 AMATEUR_VENUE_PATTERNS = (
@@ -398,6 +399,18 @@ def _generate_trip_name(
     return destination
 
 
+def _get_local_zone() -> ZoneInfo:
+    zone_name = get_user_timezone()
+    try:
+        return ZoneInfo(zone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("America/Chicago")
+
+
+def _to_local_time(value: datetime, local_zone: ZoneInfo) -> datetime:
+    return value.astimezone(local_zone)
+
+
 def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -415,6 +428,7 @@ def detect_trips() -> tuple[int, int]:
     user_id = ensure_default_user()
     home_lat, home_lon, local_radius_m = get_home_profile()
     work_lat, work_lon, work_radius_m = get_work_profile()
+    local_zone = _get_local_zone()
     if home_lat is None or home_lon is None:
         return (0, 0)
 
@@ -512,7 +526,9 @@ def detect_trips() -> tuple[int, int]:
                 ):
                     continue
                 duration = trip.end_time - trip.start_time
-                if trip.start_time.date() != trip.end_time.date():
+                local_start = _to_local_time(trip.start_time, local_zone)
+                local_end = _to_local_time(trip.end_time, local_zone)
+                if local_start.date() != local_end.date():
                     if duration < timedelta(days=2):
                         trip_type = "overnight_trip"
                     else:
@@ -526,8 +542,8 @@ def detect_trips() -> tuple[int, int]:
                 title = _generate_trip_name(
                     destination_profile,
                     trip_type,
-                    trip.start_time,
-                    trip.end_time,
+                    local_start,
+                    local_end,
                 )
 
                 cur.execute(
@@ -549,8 +565,8 @@ def detect_trips() -> tuple[int, int]:
                         trip_type,
                         trip.start_time,
                         trip.end_time,
-                        trip.start_time.date(),
-                        trip.end_time.date(),
+                        local_start.date(),
+                        local_end.date(),
                         _destination_title(destination_profile),
                         score,
                     ),

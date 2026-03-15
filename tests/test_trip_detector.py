@@ -249,6 +249,7 @@ class DetectorTests(unittest.TestCase):
                  "trip_engine.detector.get_work_profile",
                  return_value=(38.768479, -90.46854, 1609),
              ), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
              patch(
                  "trip_engine.detector._fetch_location_events",
                  return_value=[
@@ -279,11 +280,12 @@ class DetectorTests(unittest.TestCase):
                  "trip_engine.detector.get_work_profile",
                  return_value=(None, None, 1609),
              ), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
              patch(
                  "trip_engine.detector._fetch_location_events",
                  return_value=[
                      (1, datetime(2026, 1, 1, 22, 0, tzinfo=timezone.utc), 39.5, -91.2),
-                     (2, datetime(2026, 1, 2, 5, 0, tzinfo=timezone.utc), 39.5, -91.2),
+                     (2, datetime(2026, 1, 2, 7, 0, tzinfo=timezone.utc), 39.5, -91.2),
                      (3, datetime(2026, 1, 2, 8, 30, tzinfo=timezone.utc), 38.75, -90.68),
                  ],
              ), \
@@ -298,6 +300,40 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(linked, 1)
         self.assertEqual(cursor.inserted_trip_params[0][3], "overnight_trip")
 
+    def test_detect_trips_uses_local_timezone_for_same_day_return(self) -> None:
+        cursor = FakeCursor()
+
+        with patch("trip_engine.detector.ensure_default_user", return_value=1), \
+             patch(
+                 "trip_engine.detector.get_home_profile",
+                 return_value=(38.7504884, -90.6877536, 16093),
+             ), \
+             patch(
+                 "trip_engine.detector.get_work_profile",
+                 return_value=(None, None, 1609),
+             ), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
+             patch(
+                 "trip_engine.detector._fetch_location_events",
+                 return_value=[
+                     (1, datetime(2026, 3, 7, 15, 10, tzinfo=timezone.utc), 38.8104, -90.8693),
+                     (2, datetime(2026, 3, 8, 1, 48, tzinfo=timezone.utc), 38.8099, -90.8691),
+                     (3, datetime(2026, 3, 8, 3, 0, tzinfo=timezone.utc), 38.7504, -90.6878),
+                 ],
+             ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Columbia", "classification": None},
+             ), \
+             patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            created, linked = detect_trips()
+
+        self.assertEqual(created, 1)
+        self.assertEqual(linked, 1)
+        self.assertEqual(cursor.inserted_trip_params[0][3], "day_trip")
+        self.assertEqual(cursor.inserted_trip_params[0][6].isoformat(), "2026-03-07")
+        self.assertEqual(cursor.inserted_trip_params[0][7].isoformat(), "2026-03-07")
+
     def test_detect_trips_ignores_amateur_sports_venue(self) -> None:
         cursor = FakeCursor()
 
@@ -310,6 +346,7 @@ class DetectorTests(unittest.TestCase):
                  "trip_engine.detector.get_work_profile",
                  return_value=(None, None, 1609),
              ), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
              patch(
                  "trip_engine.detector._fetch_location_events",
                  return_value=[
@@ -340,6 +377,7 @@ class DetectorTests(unittest.TestCase):
                  "trip_engine.detector.get_work_profile",
                  return_value=(None, None, 1609),
              ), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
              patch(
                  "trip_engine.detector._fetch_location_events",
                  return_value=[

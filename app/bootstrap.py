@@ -57,6 +57,23 @@ def get_work_profile() -> tuple[float | None, float | None, int]:
             return (row[0], row[1], int(row[2] or 1609))
 
 
+def get_user_timezone() -> str:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT timezone
+                FROM users
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return "America/Chicago"
+            return str(row[0])
+
+
 def set_home_profile(latitude: float, longitude: float, local_radius_meters: int) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
