@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.main import (
     admin_homepage,
     admin_overrides_page,
+    admin_trip_destination_page,
     admin_trip_detail_page,
     create_destination_override,
     delete_destination_override,
@@ -105,11 +106,12 @@ class AppApiTests(unittest.TestCase):
                 }
             ],
         ):
-            response = admin_overrides_page()
+            response = admin_overrides_page(return_to="/admin/trip/7")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Destination Overrides", response.body)
         self.assertIn(b"Enterprise Center keep", response.body)
+        self.assertIn(b'href="/admin/trip/7"', response.body)
 
     def test_homepage_returns_html(self) -> None:
         response = homepage()
@@ -132,7 +134,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Trip review queue", response.body)
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b"Raw JSON Feed", response.body)
-        self.assertIn(b'class="button ghost" href="/admin/trips?', response.body)
+        self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b"Open detail page", response.body)
         self.assertIn(b'class="utility-link"', response.body)
         mock_list.assert_called_once_with(
@@ -164,7 +166,20 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Make private", response.body)
         self.assertNotIn(b"Previous trip", response.body)
         self.assertNotIn(b"Next trip", response.body)
+        self.assertNotIn(b"<h2>Trip summary</h2>", response.body)
+        self.assertNotIn(b"<h2>Destination context</h2>", response.body)
         self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
+        mock_get.assert_called_once_with(7)
+
+    def test_admin_trip_destination_page_renders_return_link(self) -> None:
+        with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
+             patch("app.main.destination_overrides.list_overrides", return_value=[]):
+            response = admin_trip_destination_page(7, return_to="/admin/trip/7")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Destination Context", response.body)
+        self.assertIn(b"Back to trip detail", response.body)
+        self.assertIn(b'href="/admin/trip/7"', response.body)
         mock_get.assert_called_once_with(7)
 
     def test_review_trip_from_form_uses_repository(self) -> None:
@@ -305,13 +320,13 @@ class AppApiTests(unittest.TestCase):
     def test_delete_destination_override_uses_repository(self) -> None:
         class FakeRequest:
             async def body(self) -> bytes:
-                return b"override_id=9"
+                return b"override_id=9&return_to=%2Fadmin%2Ftrip%2F7"
 
         with patch("app.main.destination_overrides.delete_override") as mock_delete:
             response = asyncio.run(delete_destination_override(FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/admin/overrides")
+        self.assertEqual(response.headers["location"], "/admin/overrides?return_to=%2Fadmin%2Ftrip%2F7")
         mock_delete.assert_called_once_with(9)
 
 

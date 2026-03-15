@@ -318,6 +318,11 @@ def _travel_leg_comment(item: dict) -> str:
     return f"{label} inferred from timeline activity data."
 
 
+def _button_class(*names: str) -> str:
+    classes = ["button", *names]
+    return " ".join(part for part in classes if part)
+
+
 def _render_admin_page(
     trips: List[dict],
     *,
@@ -368,7 +373,7 @@ def _render_admin_page(
               <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
               <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
               <div class="card-actions">
-                <a class="button button-sm" href="{detail_href}">Open detail page</a>
+                <a class="{_button_class('primary', 'button-sm')}" href="{detail_href}">Open detail page</a>
                 <a class="utility-link" href="{json_href}">JSON</a>
               </div>
             </article>
@@ -490,8 +495,8 @@ def _render_admin_page(
     .button, button {{
       display: inline-block;
       border: 1px solid var(--accent);
-      background: var(--accent);
-      color: white;
+      background: transparent;
+      color: var(--accent);
       text-decoration: none;
       font-weight: 700;
       border-radius: 999px;
@@ -499,13 +504,11 @@ def _render_admin_page(
       font: inherit;
       cursor: pointer;
     }}
-    .button.ghost {{
-      background: transparent;
-      color: var(--accent);
+    .button.primary, button.primary {{
+      background: var(--accent);
+      color: white;
     }}
     .button.utility {{
-      background: transparent;
-      color: var(--accent);
       border-color: var(--line);
     }}
     .button-sm {{
@@ -604,9 +607,9 @@ def _render_admin_page(
         <p class="sub">Review detected trips, inspect status and destination signals, and use the JSON endpoints while the richer admin workflow is still being built.</p>
       </div>
       <div class="links">
-        <a class="button ghost" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
-        <a class="button ghost" href="/admin/overrides">Destination overrides</a>
-        <a class="button ghost" href="/">Homepage</a>
+        <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
+        <a class="button" href="/admin/overrides">Destination overrides</a>
+        <a class="button" href="/">Homepage</a>
       </div>
     </section>
 
@@ -658,6 +661,10 @@ def _parse_flag(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _query_text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
 def _get_local_zone() -> ZoneInfo:
     try:
         return ZoneInfo(get_user_timezone())
@@ -684,7 +691,10 @@ def _matching_overrides_for_trip(trip: dict) -> list[dict]:
     return matches
 
 
-def _render_overrides_page(overrides: List[dict]) -> str:
+def _render_overrides_page(overrides: List[dict], *, return_to: str = "") -> str:
+    return_target = return_to or "/admin"
+    return_query = urlencode({"return_to": return_target}) if return_target else ""
+    form_suffix = f"?{return_query}" if return_query else ""
     rows = "".join(
         f"""
         <tr>
@@ -697,6 +707,7 @@ def _render_overrides_page(overrides: List[dict]) -> str:
           <td>
             <form method="post" action="/admin/overrides/delete">
               <input type="hidden" name="override_id" value="{item['id']}">
+              <input type="hidden" name="return_to" value="{escape(return_target)}">
               <button class="danger" type="submit">Delete</button>
             </form>
           </td>
@@ -771,15 +782,15 @@ def _render_overrides_page(overrides: List[dict]) -> str:
       border-radius: 999px;
       padding: 12px 16px;
       border: 1px solid var(--accent);
-      background: var(--accent);
-      color: white;
+      background: transparent;
+      color: var(--accent);
       font-weight: 700;
       text-decoration: none;
       cursor: pointer;
     }}
-    .ghost {{
-      background: transparent;
-      color: var(--accent);
+    .button.primary, button.primary {{
+      background: var(--accent);
+      color: white;
     }}
     .danger {{
       background: transparent;
@@ -854,14 +865,14 @@ def _render_overrides_page(overrides: List[dict]) -> str:
         <p>Use overrides sparingly. Add ignore rules for recurring amateur venues the detector misses, or keep rules for destinations that should never be suppressed.</p>
       </div>
       <div class="links">
-        <a class="button ghost" href="/admin">Back to trip queue</a>
-        <a class="button ghost" href="/">Homepage</a>
+        <a class="button" href="{escape(return_target)}">Back</a>
+        <a class="button" href="/">Homepage</a>
       </div>
     </section>
 
     <section class="panel">
       <h2>Add override</h2>
-      <form method="post" action="/admin/overrides/create" class="form-grid">
+      <form method="post" action="/admin/overrides/create{form_suffix}" class="form-grid">
         <label>Rule name
           <input type="text" name="rule_name" required>
         </label>
@@ -889,7 +900,7 @@ def _render_overrides_page(overrides: List[dict]) -> str:
           <label><input type="checkbox" name="ignore_trip" value="true"> Ignore trip</label>
         </div>
         <div>
-          <button type="submit">Save override</button>
+          <button class="primary" type="submit">Save override</button>
         </div>
       </form>
     </section>
@@ -918,13 +929,128 @@ def _render_overrides_page(overrides: List[dict]) -> str:
 </html>"""
 
 
+def _render_trip_destination_page(trip: dict, *, return_to: str) -> str:
+    destination = escape(trip["primary_destination_name"] or "Destination pending")
+    title = escape(trip["trip_name"] or "Untitled trip")
+    override_items = "".join(
+        f"""
+        <li class="count-item">
+          <strong>{escape(item['rule_name'])}</strong>
+          <span>{'keep' if item['keep_trip'] else 'ignore' if item['ignore_trip'] else escape(item['classification'])}</span>
+        </li>
+        """
+        for item in trip.get("matching_overrides", [])
+    ) or """
+      <li class="count-item">
+        <strong>No matching overrides</strong>
+        <span>auto only</span>
+      </li>
+    """
+    safe_return = escape(return_to)
+    overrides_href = f"/admin/overrides?{urlencode({'return_to': return_to})}"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Destination context · {title}</title>
+  <style>
+    :root {{
+      --bg: #f2eee6;
+      --panel: #fff8ef;
+      --line: #dbcab1;
+      --ink: #1b2433;
+      --muted: #647084;
+      --accent: #b85f35;
+      --shadow: rgba(37, 28, 14, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(184,95,53,0.14), transparent 26%),
+        linear-gradient(180deg, #e7d3bc, var(--bg) 30%, #faf7f1 100%);
+    }}
+    main {{ max-width: 980px; margin: 0 auto; padding: 34px 18px 64px; display: grid; gap: 18px; }}
+    .panel {{
+      background: rgba(255, 248, 239, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 24px;
+    }}
+    .eyebrow {{ color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.8rem; margin-bottom: 10px; }}
+    h1, h2 {{ margin: 0 0 12px; }}
+    p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
+    .actions {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }}
+    .button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 16px;
+    }}
+    .button.primary {{ background: var(--accent); color: white; }}
+    .list {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }}
+    .count-item {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.5);
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <div class="eyebrow">Destination Context</div>
+      <h1>{destination}</h1>
+      <p>Context for <strong>{title}</strong>. Use this view to inspect destination naming and override matches, then jump back to the trip review page.</p>
+      <div class="actions">
+        <a class="button" href="{safe_return}">Back to trip detail</a>
+        <a class="button" href="{overrides_href}">Manage overrides</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Destination signals</h2>
+      <ul class="list">
+        <li class="count-item">
+          <strong>Primary destination</strong>
+          <span>{destination}</span>
+        </li>
+        <li class="count-item">
+          <strong>Matching overrides</strong>
+          <span>{len(trip.get("matching_overrides", []))}</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Override matches</h2>
+      <ul class="list">
+        {override_items}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
 def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> str:
     title = escape(trip["trip_name"] or "Untitled trip")
     destination = escape(trip["primary_destination_name"] or "Destination pending")
     trip_type = escape(trip["trip_type"] or "untyped")
     summary = escape(trip["summary_text"] or "No summary yet for this trip.")
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
-    published = escape(str(trip["published_at"] or "not published"))
     map_points = [
         {
             "lat": item["latitude"],
@@ -936,7 +1062,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         if item.get("latitude") is not None and item.get("longitude") is not None
     ]
     map_payload = escape(json.dumps(map_points))
-    matching_overrides = trip.get("matching_overrides", [])
     travel_legs = trip.get("travel_legs", [])
 
     timeline_items = "".join(
@@ -990,21 +1115,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       </li>
     """
 
-    override_items = "".join(
-        f"""
-        <li class="count-item">
-          <strong>{escape(item['rule_name'])}</strong>
-          <span>{'keep' if item['keep_trip'] else 'ignore' if item['ignore_trip'] else escape(item['classification'])}</span>
-        </li>
-        """
-        for item in matching_overrides
-    ) or """
-      <li class="count-item">
-        <strong>No matching overrides</strong>
-        <span>auto only</span>
-      </li>
-    """
-
     travel_leg_items = "".join(
         f"""
         <li class="leg-item">
@@ -1045,6 +1155,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
     toast_markup = _build_trip_toast(saved)
     detail_badges = _render_trip_badges(trip)
+    return_to = f"/admin/trip/{trip['id']}"
+    destination_href = f"/admin/trip/{trip['id']}/destination-context?{urlencode({'return_to': return_to})}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1090,7 +1202,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .hero {{
       display: grid;
-      grid-template-columns: 1.25fr 0.75fr;
+      grid-template-columns: 1.15fr 0.85fr;
       gap: 18px;
     }}
     .panel {{
@@ -1133,19 +1245,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border-radius: 999px;
       padding: 12px 16px;
       border: 1px solid var(--accent);
-      color: white;
-      background: var(--accent);
+      color: var(--accent);
+      background: transparent;
       font-weight: 700;
       font: inherit;
       cursor: pointer;
     }}
-    .button.ghost {{
-      background: transparent;
-      color: var(--accent);
+    .button.primary, button.primary {{
+      color: white;
+      background: var(--accent);
     }}
     .button.utility {{
-      background: transparent;
-      color: var(--accent);
       border-color: var(--line);
     }}
     button:hover, .button:hover {{
@@ -1388,21 +1498,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       <article class="panel">
         <div class="eyebrow">Trip Detail</div>
         <h1>{title}</h1>
-        <p>{destination} · {trip_type}</p>
-        <div class="meta-row">
-          {detail_badges}
-        </div>
-        <div class="actions">
-          <a class="button" href="/admin">Back to queue</a>
-          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
-        </div>
-      </article>
-      <aside class="panel">
-        <h2>Trip summary</h2>
         <p>{summary}</p>
         <div class="meta-row">
+          {detail_badges}
           <span class="badge">Confidence {confidence}</span>
-          <span class="badge">Published {published}</span>
           <span class="badge">Date range {escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
         </div>
         <div class="detail-grid">
@@ -1431,44 +1530,26 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <span>{'Ready to publish' if trip['publish_ready'] else 'Not publish-ready yet'}</span>
           </div>
         </div>
-      </aside>
-    </section>
-
-    <section class="two-up">
-      <article class="panel">
-        <h2>Destination context</h2>
-        <ul class="list">
-          <li class="count-item">
-            <strong>Primary destination</strong>
-            <span>{destination}</span>
-          </li>
-          <li class="count-item">
-            <strong>Matching overrides</strong>
-            <span>{len(matching_overrides)}</span>
-          </li>
-        </ul>
-        <ul class="list" style="margin-top: 12px;">
-          {override_items}
-        </ul>
         <div class="actions">
-          <a class="button ghost" href="/admin/overrides">Manage overrides</a>
+          <a class="button" href="/admin">Back to queue</a>
+          <a class="button" href="{destination_href}">Destination context</a>
+          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
         </div>
       </article>
-
-      <article class="panel">
+      <aside class="panel">
         <h2>Review trip</h2>
         <div class="quick-actions">
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="confirm">
             <input type="hidden" name="reviewer_name" value="Venkat">
-            <button type="submit">Confirm</button>
+            <button class="primary" type="submit">Confirm</button>
           </form>
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="publish">
             <input type="hidden" name="reviewer_name" value="Venkat">
             <input type="hidden" name="is_private" value="false">
             <input type="hidden" name="publish_ready" value="true">
-            <button type="submit">Publish</button>
+            <button class="primary" type="submit">Publish</button>
           </form>
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="mark_private">
@@ -1505,10 +1586,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
           </label>
           <div class="actions">
-            <button type="submit">Save review</button>
+            <button class="primary" type="submit">Save review</button>
           </div>
         </form>
-      </article>
+      </aside>
     </section>
 
     <section class="panel">
@@ -1652,13 +1733,17 @@ def admin_homepage(
 
 
 @app.get("/admin/overrides", response_class=HTMLResponse)
-def admin_overrides_page() -> HTMLResponse:
+def admin_overrides_page(return_to: str = Query(default="")) -> HTMLResponse:
     overrides = destination_overrides.list_overrides()
-    return HTMLResponse(_render_overrides_page(overrides))
+    return HTMLResponse(_render_overrides_page(overrides, return_to=_query_text(return_to)))
 
 
 @app.post("/admin/overrides/create")
-async def create_destination_override(request: Request) -> RedirectResponse:
+async def create_destination_override(
+    request: Request,
+    return_to: str = Query(default=""),
+) -> RedirectResponse:
+    normalized_return_to = _query_text(return_to)
     payload = parse_qs((await request.body()).decode("utf-8"))
     rule_name = (payload.get("rule_name") or [""])[0].strip()
     classification = (payload.get("classification") or ["custom_destination"])[0].strip()
@@ -1687,17 +1772,41 @@ async def create_destination_override(request: Request) -> RedirectResponse:
         longitude=longitude,
         radius_meters=radius_meters,
     )
-    return RedirectResponse(url="/admin/overrides", status_code=303)
+    target = (
+        f"/admin/overrides?{urlencode({'return_to': normalized_return_to})}"
+        if normalized_return_to
+        else "/admin/overrides"
+    )
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.post("/admin/overrides/delete")
 async def delete_destination_override(request: Request) -> RedirectResponse:
     payload = parse_qs((await request.body()).decode("utf-8"))
     override_id_text = (payload.get("override_id") or [""])[0].strip()
+    return_to = (payload.get("return_to") or [""])[0].strip()
     if not override_id_text:
         raise HTTPException(status_code=400, detail="override_id is required")
     destination_overrides.delete_override(int(override_id_text))
-    return RedirectResponse(url="/admin/overrides", status_code=303)
+    target = f"/admin/overrides?{urlencode({'return_to': return_to})}" if return_to else "/admin/overrides"
+    return RedirectResponse(url=target, status_code=303)
+
+
+@app.get("/admin/trip/{trip_id}/destination-context", response_class=HTMLResponse)
+def admin_trip_destination_page(
+    trip_id: int,
+    return_to: str = Query(default=""),
+) -> HTMLResponse:
+    trip = trip_admin.get_trip(trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    trip["matching_overrides"] = _matching_overrides_for_trip(trip)
+    normalized_return_to = _query_text(return_to)
+    return HTMLResponse(
+        _render_trip_destination_page(
+            trip, return_to=normalized_return_to or f"/admin/trip/{trip_id}"
+        )
+    )
 
 
 @app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
