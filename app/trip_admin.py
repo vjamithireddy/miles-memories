@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -48,6 +49,49 @@ def _is_placeholder_segment_summary(value: str | None) -> bool:
     return normalized.endswith("inferred from timeline activity data.")
 
 
+def _trip_context_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = re.sub(
+        r"\s+(day trip|weekend|overnight|overnight trip|multi[ -]?day trip|trip)$",
+        "",
+        value.strip(),
+        flags=re.IGNORECASE,
+    ).strip(" -")
+    return normalized or value.strip()
+
+
+def _clean_segment_place_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    lowered = cleaned.lower()
+    if "rental car facility" in lowered:
+        cleaned = re.sub(r"\s+rental car facility\b", "", cleaned, flags=re.IGNORECASE).strip(" -,")
+        lowered = cleaned.lower()
+    if lowered.endswith(" airport rental car"):
+        cleaned = re.sub(r"\s+airport rental car\b", " Airport", cleaned, flags=re.IGNORECASE).strip()
+        lowered = cleaned.lower()
+    if lowered.endswith(" airport"):
+        return cleaned
+    return cleaned or None
+
+
+def _preferred_segment_place(
+    *names: str | None,
+    fallback_trip_name: str | None = None,
+) -> str | None:
+    for name in names:
+        cleaned = _clean_segment_place_name(name)
+        if cleaned:
+            return cleaned
+    return _trip_context_name(fallback_trip_name)
+
+
+def _is_airport_like(value: str | None) -> bool:
+    return bool(value and "airport" in value.lower())
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -59,37 +103,51 @@ def _leg_default_summary(
     next_leg_type: str | None = None,
 ) -> str:
     label = leg["label"]
-    start_name = leg.get("start_place_name")
-    end_name = leg.get("end_place_name")
+    start_name = _clean_segment_place_name(leg.get("start_place_name"))
+    end_name = _clean_segment_place_name(leg.get("end_place_name"))
     leg_type = leg["leg_type"]
+    trip_context = _trip_context_name(trip_name)
+    preferred_destination = _preferred_segment_place(
+        destination_name,
+        end_name,
+        start_name,
+        fallback_trip_name=trip_context,
+    )
+    preferred_origin = _preferred_segment_place(
+        origin_name,
+        start_name,
+        fallback_trip_name=trip_context,
+    )
 
     if leg_type == "air":
-        if origin_name and destination_name and origin_name != destination_name:
-            return f"Flight from {origin_name} to {destination_name}."
-        if destination_name:
-            return f"Flight to {destination_name}."
+        if preferred_origin and preferred_destination and preferred_origin != preferred_destination:
+            return f"Flight from {preferred_origin} to {preferred_destination}."
+        if preferred_destination:
+            return f"Flight to {preferred_destination}."
         return "Flight segment inferred from timeline activity data."
 
     if leg_type == "car":
         if next_leg_type == "air":
             return "Drive to airport."
         if previous_leg_type == "air":
-            if destination_name:
-                return f"Drive from airport toward {destination_name}."
+            if preferred_destination and "airport" not in preferred_destination.lower():
+                return f"Drive from airport toward {preferred_destination}."
             return "Drive from airport."
-        if destination_name:
-            return f"Drive near {destination_name}."
-        if origin_name:
-            return f"Drive from {origin_name}."
+        if _is_airport_like(preferred_destination) and trip_context:
+            return f"Drive in {trip_context}."
+        if preferred_destination:
+            return f"Drive in {preferred_destination}."
+        if preferred_origin:
+            return f"Drive from {preferred_origin}."
 
     if leg_type in {"walk", "hike", "run"}:
         verb = {"walk": "Walk", "hike": "Hike", "run": "Run"}[leg_type]
         if leg_type == "hike" and trip_summary_text:
             return trip_summary_text.rstrip(".") + "."
-        if trip_name:
-            return f"{verb} in {trip_name}."
-        if destination_name:
-            return f"{verb} near {destination_name}."
+        if trip_context:
+            return f"{verb} in {trip_context}."
+        if preferred_destination:
+            return f"{verb} in {preferred_destination}."
         if end_name:
             return f"{verb} toward {end_name}."
         if start_name:

@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import unittest
+
+from app.trip_admin import _leg_default_summary
+
+
+class TripAdminTests(unittest.TestCase):
+    def test_leg_default_summary_cleans_rental_car_facility_for_flight(self) -> None:
+        summary = _leg_default_summary(
+            {"label": "Air travel", "leg_type": "air"},
+            trip_name="Grand Canyon - NPS",
+            destination_name="Harry Reid Airport Rental Car Facility",
+            origin_name="St. Louis",
+        )
+
+        self.assertEqual(summary, "Flight from St. Louis to Harry Reid Airport.")
+
+    def test_leg_default_summary_prefers_trip_context_for_walks(self) -> None:
+        summary = _leg_default_summary(
+            {"label": "Walking", "leg_type": "walk"},
+            trip_name="Grand Canyon - NPS",
+            destination_name="Harry Reid Airport Rental Car Facility",
+        )
+
+        self.assertEqual(summary, "Walk in Grand Canyon - NPS.")
+
+    def test_leg_default_summary_uses_cleaner_context_for_car_segments(self) -> None:
+        summary = _leg_default_summary(
+            {"label": "Car travel", "leg_type": "car"},
+            trip_name="Grand Canyon - NPS",
+            destination_name="Harry Reid Airport Rental Car Facility",
+        )
+
+        self.assertEqual(summary, "Drive in Grand Canyon - NPS.")
+
+
+if __name__ == "__main__":
+    unittest.main()
