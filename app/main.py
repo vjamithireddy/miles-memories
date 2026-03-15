@@ -1368,6 +1368,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .quick-actions form {{
       margin: 0;
     }}
+    .quick-actions button {{
+      min-width: 138px;
+    }}
     .review-form-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1445,9 +1448,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border-top: 1px solid var(--line);
       padding: 12px 16px 16px;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 280px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 16px;
       align-items: start;
+    }}
+    .leg-copy {{
+      min-width: 0;
     }}
     .leg-meta {{
       display: grid;
@@ -1458,11 +1464,24 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       color: var(--muted);
     }}
     .leg-map {{
-      height: 180px;
+      height: 220px;
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 16px;
       background: #efe5d7;
+    }}
+    .detail-pair {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .detail-pair-item {{
+      display: grid;
+      gap: 4px;
+    }}
+    .detail-value-lg {{
+      font-size: 1.22rem;
+      line-height: 1.25;
     }}
     .segment-form {{
       display: grid;
@@ -1502,6 +1521,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       .detail-cell.wide {{
         grid-column: auto;
       }}
+      .detail-pair {{
+        grid-template-columns: 1fr;
+      }}
       details.leg-collapse > summary {{
         flex-direction: column;
         align-items: flex-start;
@@ -1527,12 +1549,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         </div>
         <div class="detail-grid">
           <div class="detail-cell wide">
-            <strong>Start</strong>
-            <span>{escape(_format_local_datetime(trip['start_time']))}</span>
-          </div>
-          <div class="detail-cell wide">
-            <strong>End</strong>
-            <span>{escape(_format_local_datetime(trip['end_time']))}</span>
+            <strong>Trip timing</strong>
+            <div class="detail-pair">
+              <div class="detail-pair-item">
+                <strong>Start</strong>
+                <span class="detail-value-lg">{escape(_format_local_datetime(trip['start_time']))}</span>
+              </div>
+              <div class="detail-pair-item">
+                <strong>End</strong>
+                <span class="detail-value-lg">{escape(_format_local_datetime(trip['end_time']))}</span>
+              </div>
+            </div>
           </div>
           <div class="detail-cell">
             <strong>Trip type</strong>
@@ -1540,7 +1567,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           </div>
           <div class="detail-cell wide">
             <strong>Generated destination</strong>
-            <span>{destination}</span>
+            <span class="detail-value-lg">{destination}</span>
           </div>
           <div class="detail-cell">
             <strong>Visibility</strong>
@@ -1563,20 +1590,20 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="confirm">
             <input type="hidden" name="reviewer_name" value="Venkat">
-            <button class="primary" type="submit">Confirm</button>
+            <button class="button" type="submit">Confirm</button>
           </form>
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="publish">
             <input type="hidden" name="reviewer_name" value="Venkat">
             <input type="hidden" name="is_private" value="false">
             <input type="hidden" name="publish_ready" value="true">
-            <button class="primary" type="submit">Publish</button>
+            <button class="button" type="submit">Publish</button>
           </form>
           <form method="post" action="/admin/trip/{trip['id']}/review">
             <input type="hidden" name="action" value="mark_private">
             <input type="hidden" name="reviewer_name" value="Venkat">
             <input type="hidden" name="is_private" value="true">
-            <button class="button utility" type="submit">Make private</button>
+            <button class="button" type="submit">Make private</button>
           </form>
         </div>
         <form class="review-form" method="post" action="/admin/trip/{trip['id']}/review">
