@@ -72,9 +72,13 @@ class DetectorTests(unittest.TestCase):
                  "trip_engine.detector._fetch_location_events",
                  return_value=[
                      (1, datetime(2026, 1, 1, 13, 0, tzinfo=timezone.utc), 38.80, -90.55),
-                     (2, datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc), 38.768479, -90.46854),
+                     (2, datetime(2026, 1, 1, 17, 0, tzinfo=timezone.utc), 38.768479, -90.46854),
                      (3, datetime(2026, 1, 1, 17, 30, tzinfo=timezone.utc), 38.75, -90.68),
                  ],
+             ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Office", "classification": None},
              ), \
              patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
             created, linked = detect_trips()
@@ -102,12 +106,77 @@ class DetectorTests(unittest.TestCase):
                      (3, datetime(2026, 1, 2, 8, 30, tzinfo=timezone.utc), 38.75, -90.68),
                  ],
              ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Lake of the Ozarks", "classification": None},
+             ), \
              patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
             created, linked = detect_trips()
 
         self.assertEqual(created, 1)
         self.assertEqual(linked, 1)
         self.assertEqual(cursor.inserted_trip_params[0][3], "overnight_trip")
+
+    def test_detect_trips_ignores_amateur_sports_venue(self) -> None:
+        cursor = FakeCursor()
+
+        with patch("trip_engine.detector.ensure_default_user", return_value=1), \
+             patch(
+                 "trip_engine.detector.get_home_profile",
+                 return_value=(38.7504884, -90.6877536, 16093),
+             ), \
+             patch(
+                 "trip_engine.detector.get_work_profile",
+                 return_value=(None, None, 1609),
+             ), \
+             patch(
+                 "trip_engine.detector._fetch_location_events",
+                 return_value=[
+                     (1, datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc), 38.84, -90.42),
+                     (2, datetime(2026, 1, 1, 17, 45, tzinfo=timezone.utc), 38.84, -90.42),
+                     (3, datetime(2026, 1, 1, 18, 30, tzinfo=timezone.utc), 38.75, -90.68),
+                 ],
+             ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Rec Plex South", "classification": "amateur_sports_venue"},
+             ), \
+             patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            created, linked = detect_trips()
+
+        self.assertEqual((created, linked), (0, 0))
+        self.assertEqual(cursor.inserted_trip_params, [])
+
+    def test_detect_trips_keeps_professional_venue(self) -> None:
+        cursor = FakeCursor()
+
+        with patch("trip_engine.detector.ensure_default_user", return_value=1), \
+             patch(
+                 "trip_engine.detector.get_home_profile",
+                 return_value=(38.7504884, -90.6877536, 16093),
+             ), \
+             patch(
+                 "trip_engine.detector.get_work_profile",
+                 return_value=(None, None, 1609),
+             ), \
+             patch(
+                 "trip_engine.detector._fetch_location_events",
+                 return_value=[
+                     (1, datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc), 38.6226, -90.1928),
+                     (2, datetime(2026, 1, 1, 17, 45, tzinfo=timezone.utc), 38.6226, -90.1928),
+                     (3, datetime(2026, 1, 1, 18, 30, tzinfo=timezone.utc), 38.75, -90.68),
+                 ],
+             ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Busch Stadium", "classification": "pro_sports_venue"},
+             ), \
+             patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            created, linked = detect_trips()
+
+        self.assertEqual(created, 1)
+        self.assertEqual(linked, 1)
+        self.assertEqual(cursor.inserted_trip_params[0][8], "Busch Stadium")
 
 
 if __name__ == "__main__":

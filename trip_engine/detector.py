@@ -1,9 +1,44 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import json
 from math import asin, cos, radians, sin, sqrt
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from app.bootstrap import ensure_default_user, get_home_profile, get_work_profile
 from app.db import get_conn
+
+AMATEUR_VENUE_PATTERNS = (
+    "sports complex",
+    "sport complex",
+    "recreation center",
+    "rec center",
+    "community center",
+    "fieldhouse",
+    "high school",
+    "middle school",
+    "elementary school",
+    "athletic field",
+    "athletic complex",
+    "training center",
+    "ymca",
+)
+
+PRO_VENUE_PATTERNS = (
+    "stadium",
+    "arena",
+    "ballpark",
+    "speedway",
+    "raceway",
+    "coliseum",
+    "busch stadium",
+    "enterprise center",
+    "arrowhead stadium",
+    "kauffman stadium",
+)
+
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 
 
 @dataclass
@@ -11,6 +46,8 @@ class SimpleTrip:
     start_time: datetime
     end_time: datetime
     max_distance_km: float
+    destination_lat: float
+    destination_lon: float
     touched_work: bool = False
 
 
@@ -21,6 +58,120 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     c = 2 * asin(sqrt(a))
     return r * c
+
+
+def _normalize_text(value: Optional[str]) -> str:
+    return (value or "").strip().lower()
+
+
+def _classify_destination(
+    name: Optional[str],
+    category: Optional[str],
+    display_name: Optional[str],
+) -> Optional[str]:
+    haystack = " ".join(part for part in (name, category, display_name) if part).lower()
+    if not haystack:
+        return None
+    if any(pattern in haystack for pattern in PRO_VENUE_PATTERNS):
+        return "pro_sports_venue"
+    if any(pattern in haystack for pattern in AMATEUR_VENUE_PATTERNS):
+        return "amateur_sports_venue"
+    return None
+
+
+def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, Optional[str]]:
+    params = urlencode(
+        {
+            "lat": f"{latitude:.6f}",
+            "lon": f"{longitude:.6f}",
+            "format": "jsonv2",
+            "zoom": "18",
+            "addressdetails": "1",
+        }
+    )
+    request = Request(
+        f"{NOMINATIM_REVERSE_URL}?{params}",
+        headers={"User-Agent": "MilesMemories/0.1"},
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+    except Exception:
+        return {"name": None, "category": None, "display_name": None}
+
+    address = payload.get("address") or {}
+    name = (
+        payload.get("name")
+        or address.get("stadium")
+        or address.get("arena")
+        or address.get("building")
+        or address.get("amenity")
+        or address.get("leisure")
+        or address.get("tourism")
+    )
+    category = payload.get("type") or payload.get("category")
+    return {
+        "name": name,
+        "category": category,
+        "display_name": payload.get("display_name"),
+    }
+
+
+def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str, Optional[str]]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT place_name, place_type, source, city
+                FROM places
+                WHERE round(latitude::numeric, 3) = round(%s::numeric, 3)
+                  AND round(longitude::numeric, 3) = round(%s::numeric, 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (latitude, longitude),
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "name": row[0],
+                    "category": row[1],
+                    "display_name": row[3],
+                    "classification": row[2],
+                }
+
+    profile = _fetch_destination_profile(latitude, longitude)
+    classification = _classify_destination(
+        profile.get("name"),
+        profile.get("category"),
+        profile.get("display_name"),
+    )
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO places (
+                    place_name, city, latitude, longitude, place_type, source
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    profile.get("name") or "Unknown destination",
+                    profile.get("display_name"),
+                    latitude,
+                    longitude,
+                    profile.get("category"),
+                    classification or "nominatim",
+                ),
+            )
+
+    return {
+        "name": profile.get("name"),
+        "category": profile.get("category"),
+        "display_name": profile.get("display_name"),
+        "classification": classification,
+    }
 
 
 def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
@@ -56,6 +207,8 @@ def detect_trips() -> tuple[int, int]:
     current_start = None
     current_end = None
     current_max_dist = 0.0
+    current_destination_lat = home_lat
+    current_destination_lon = home_lon
     current_touched_work = False
 
     for _, ts, lat, lon in events:
@@ -68,7 +221,10 @@ def detect_trips() -> tuple[int, int]:
             if current_start is None:
                 current_start = ts
             current_end = ts
-            current_max_dist = max(current_max_dist, dist)
+            if dist >= current_max_dist:
+                current_max_dist = dist
+                current_destination_lat = lat
+                current_destination_lon = lon
             if work_dist is not None and work_dist <= work_radius_km:
                 current_touched_work = True
         else:
@@ -79,12 +235,16 @@ def detect_trips() -> tuple[int, int]:
                             start_time=current_start,
                             end_time=current_end,
                             max_distance_km=current_max_dist,
+                            destination_lat=current_destination_lat,
+                            destination_lon=current_destination_lon,
                             touched_work=current_touched_work,
                         )
                     )
                 current_start = None
                 current_end = None
                 current_max_dist = 0.0
+                current_destination_lat = home_lat
+                current_destination_lon = home_lon
                 current_touched_work = False
 
     if current_start and current_end and (current_end - current_start) >= timedelta(hours=3):
@@ -93,6 +253,8 @@ def detect_trips() -> tuple[int, int]:
                 start_time=current_start,
                 end_time=current_end,
                 max_distance_km=current_max_dist,
+                destination_lat=current_destination_lat,
+                destination_lon=current_destination_lon,
                 touched_work=current_touched_work,
             )
         )
@@ -102,11 +264,18 @@ def detect_trips() -> tuple[int, int]:
     with get_conn() as conn:
         with conn.cursor() as cur:
             for idx, trip in enumerate(candidates, start=1):
+                destination_profile = _resolve_destination_profile(
+                    trip.destination_lat,
+                    trip.destination_lon,
+                )
+                destination_class = destination_profile.get("classification")
                 if (
                     trip.touched_work
                     and home_work_distance_km is not None
                     and trip.max_distance_km <= max(home_work_distance_km + 5.0, local_radius_km + 5.0)
                 ):
+                    continue
+                if destination_class == "amateur_sports_venue":
                     continue
                 duration = trip.end_time - trip.start_time
                 if trip.start_time.date() != trip.end_time.date():
@@ -127,9 +296,10 @@ def detect_trips() -> tuple[int, int]:
                     INSERT INTO trips (
                         user_id, trip_name, trip_slug, trip_type, status, review_decision,
                         start_time, end_time, start_date, end_date,
+                        primary_destination_name,
                         confidence_score, is_private, publish_ready, created_by, detection_version
                     )
-                    VALUES (%s, %s, %s, %s, 'needs_review', 'pending', %s, %s, %s, %s, %s, TRUE, FALSE, 'system', 'v0')
+                    VALUES (%s, %s, %s, %s, 'needs_review', 'pending', %s, %s, %s, %s, %s, %s, TRUE, FALSE, 'system', 'v0')
                     ON CONFLICT (trip_slug) DO NOTHING
                     RETURNING id
                     """,
@@ -142,6 +312,7 @@ def detect_trips() -> tuple[int, int]:
                         trip.end_time,
                         trip.start_time.date(),
                         trip.end_time.date(),
+                        destination_profile.get("name"),
                         score,
                     ),
                 )
