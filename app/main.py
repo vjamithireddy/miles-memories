@@ -849,7 +849,7 @@ def _render_overrides_page(overrides: List[dict]) -> str:
 </html>"""
 
 
-def _render_trip_detail_page(trip: dict) -> str:
+def _render_trip_detail_page(trip: dict, *, saved: bool = False) -> str:
     title = escape(trip["trip_name"] or "Untitled trip")
     destination = escape(trip["primary_destination_name"] or "Destination pending")
     trip_type = escape(trip["trip_type"] or "untyped")
@@ -868,6 +868,9 @@ def _render_trip_detail_page(trip: dict) -> str:
     ]
     map_payload = escape(json.dumps(map_points))
     matching_overrides = trip.get("matching_overrides", [])
+    neighbors = trip.get("neighbors") or {}
+    previous_trip = neighbors.get("previous")
+    next_trip = neighbors.get("next")
 
     timeline_items = "".join(
         f"""
@@ -934,6 +937,13 @@ def _render_trip_detail_page(trip: dict) -> str:
         <span>auto only</span>
       </li>
     """
+
+    saved_banner = """
+    <section class="panel success-banner">
+      <strong>Review saved.</strong>
+      <p>Trip updates were written successfully.</p>
+    </section>
+    """ if saved else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1016,6 +1026,15 @@ def _render_trip_detail_page(trip: dict) -> str:
     .badge.good {{ background: rgba(46,106,75,0.14); color: var(--good); }}
     .badge.warn {{ background: rgba(155,100,29,0.14); color: var(--warn); }}
     .badge.muted {{ background: rgba(100,112,132,0.14); color: var(--muted); }}
+    .success-banner {{
+      border-color: rgba(46,106,75,0.3);
+      background: rgba(46,106,75,0.08);
+    }}
+    .success-banner strong {{
+      display: block;
+      margin-bottom: 6px;
+      color: var(--good);
+    }}
     .button {{
       display: inline-block;
       text-decoration: none;
@@ -1163,6 +1182,7 @@ def _render_trip_detail_page(trip: dict) -> str:
 </head>
 <body>
   <main class="stack">
+    {saved_banner}
     <section class="hero">
       <article class="panel">
         <div class="eyebrow">Trip Detail</div>
@@ -1177,6 +1197,8 @@ def _render_trip_detail_page(trip: dict) -> str:
         <div class="actions">
           <a class="button" href="/admin">Back to queue</a>
           <a class="button ghost" href="/admin/trips/{trip['id']}">Open JSON</a>
+          {f'<a class="button ghost" href="/admin/trip/{previous_trip["id"]}">Previous trip</a>' if previous_trip else ''}
+          {f'<a class="button ghost" href="/admin/trip/{next_trip["id"]}">Next trip</a>' if next_trip else ''}
         </div>
       </article>
       <aside class="panel">
@@ -1415,12 +1437,13 @@ async def delete_destination_override(request: Request) -> RedirectResponse:
 
 
 @app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
-def admin_trip_detail_page(trip_id: int) -> HTMLResponse:
+def admin_trip_detail_page(trip_id: int, saved: bool = Query(default=False)) -> HTMLResponse:
     trip = trip_admin.get_trip(trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
-    return HTMLResponse(_render_trip_detail_page(trip))
+    trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
+    return HTMLResponse(_render_trip_detail_page(trip, saved=saved))
 
 
 @app.post("/admin/trip/{trip_id}/review")
@@ -1446,7 +1469,7 @@ async def review_trip_from_form(trip_id: int, request: Request) -> RedirectRespo
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return RedirectResponse(url=f"/admin/trip/{trip_id}", status_code=303)
+    return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=1", status_code=303)
 
 
 @app.get("/health")

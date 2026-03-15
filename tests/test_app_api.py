@@ -128,8 +128,15 @@ class AppApiTests(unittest.TestCase):
 
     def test_admin_trip_detail_renders_map(self) -> None:
         with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
-             patch("app.main.destination_overrides.list_overrides", return_value=[]):
-            response = admin_trip_detail_page(7)
+             patch("app.main.destination_overrides.list_overrides", return_value=[]), \
+             patch(
+                 "app.main.trip_admin.get_trip_neighbors",
+                 return_value={
+                     "previous": {"id": 8, "trip_name": "Utah Loop"},
+                     "next": {"id": 6, "trip_name": "Chicago Weekend"},
+                 },
+             ) as mock_neighbors:
+            response = admin_trip_detail_page(7, saved=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Trip map", response.body)
@@ -138,7 +145,11 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Review trip", response.body)
         self.assertIn(b"Destination context", response.body)
         self.assertIn(b"Expand full timeline", response.body)
+        self.assertIn(b"Review saved.", response.body)
+        self.assertIn(b"/admin/trip/8", response.body)
+        self.assertIn(b"/admin/trip/6", response.body)
         mock_get.assert_called_once_with(7)
+        mock_neighbors.assert_called_once_with(7)
 
     def test_review_trip_from_form_uses_repository(self) -> None:
         class FakeRequest:
@@ -153,7 +164,7 @@ class AppApiTests(unittest.TestCase):
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/admin/trip/7")
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=1")
         mock_review.assert_called_once_with(
             7,
             action="confirm",

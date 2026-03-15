@@ -197,6 +197,61 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
             return trip
 
 
+def get_trip_neighbors(trip_id: int) -> dict[str, dict[str, Any] | None]:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT id, trip_name, start_time
+                FROM trips
+                WHERE id = %s
+                """,
+                (trip_id,),
+            )
+            current = cur.fetchone()
+            if not current:
+                return {"previous": None, "next": None}
+
+            cur.execute(
+                """
+                SELECT id, trip_name
+                FROM trips
+                WHERE (start_time > %s)
+                   OR (start_time = %s AND id > %s)
+                ORDER BY start_time ASC, id ASC
+                LIMIT 1
+                """,
+                (current["start_time"], current["start_time"], trip_id),
+            )
+            previous_row = cur.fetchone()
+
+            cur.execute(
+                """
+                SELECT id, trip_name
+                FROM trips
+                WHERE (start_time < %s)
+                   OR (start_time = %s AND id < %s)
+                ORDER BY start_time DESC, id DESC
+                LIMIT 1
+                """,
+                (current["start_time"], current["start_time"], trip_id),
+            )
+            next_row = cur.fetchone()
+
+    return {
+        "previous": (
+            {"id": int(previous_row["id"]), "trip_name": previous_row["trip_name"]}
+            if previous_row
+            else None
+        ),
+        "next": (
+            {"id": int(next_row["id"]), "trip_name": next_row["trip_name"]}
+            if next_row
+            else None
+        ),
+    }
+
+
 def record_review(
     trip_id: int,
     *,
