@@ -1138,6 +1138,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 data-start-lon="{'' if item.get('start_longitude') is None else item['start_longitude']}"
                 data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
                 data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
+                data-path="{escape(json.dumps(item.get('path_points') or []))}"
               ></div>
             </div>
           </details>
@@ -1675,7 +1676,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         const startLon = parseFloat(node.dataset.startLon || "");
         const endLat = parseFloat(node.dataset.endLat || "");
         const endLon = parseFloat(node.dataset.endLon || "");
-        if ([startLat, startLon, endLat, endLon].some((value) => Number.isNaN(value))) {{
+        const path = JSON.parse(node.dataset.path || "[]");
+        const pathPoints = path
+          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+          .map((point) => [point.lat, point.lon]);
+        if (!pathPoints.length && [startLat, startLon, endLat, endLon].some((value) => Number.isNaN(value))) {{
           node.style.display = "none";
           return;
         }}
@@ -1684,14 +1689,19 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           maxZoom: 18,
           attribution: "&copy; OpenStreetMap contributors"
         }}).addTo(legMap);
-        const legLine = L.polyline([[startLat, startLon], [endLat, endLon]], {{
+        const legLatLngs = pathPoints.length ? pathPoints : [[startLat, startLon], [endLat, endLon]];
+        const legLine = L.polyline(legLatLngs, {{
           color: "#275d4f",
           weight: 4,
           opacity: 0.9,
-          dashArray: "8 6"
+          dashArray: pathPoints.length > 2 ? null : "8 6"
         }}).addTo(legMap);
-        L.circleMarker([startLat, startLon], {{ radius: 6, color: "#b85f35" }}).addTo(legMap);
-        L.circleMarker([endLat, endLon], {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
+        const legStart = legLatLngs[0];
+        const legEnd = legLatLngs[legLatLngs.length - 1];
+        L.circleMarker(legStart, {{ radius: 6, color: "#b85f35" }}).addTo(legMap);
+        if (legLatLngs.length > 1) {{
+          L.circleMarker(legEnd, {{ radius: 6, color: "#275d4f" }}).addTo(legMap);
+        }}
         legMap.fitBounds(legLine.getBounds(), {{ padding: [20, 20] }});
       }});
 

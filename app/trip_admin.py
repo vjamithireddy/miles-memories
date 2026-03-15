@@ -69,6 +69,12 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 existing["start_time"] = row["event_time"]
             if row["event_time"] > existing["end_time"]:
                 existing["end_time"] = row["event_time"]
+            latitude = row.get("latitude")
+            longitude = row.get("longitude")
+            if latitude is not None and longitude is not None:
+                point = {"lat": float(latitude), "lon": float(longitude)}
+                if not existing["path_points"] or existing["path_points"][-1] != point:
+                    existing["path_points"].append(point)
             continue
         by_segment[int(segment_index)] = {
             "leg_type": label_type,
@@ -80,7 +86,14 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "end_latitude": None,
             "end_longitude": None,
             "source_event_id": movement_type,
+            "path_points": [],
         }
+        latitude = row.get("latitude")
+        longitude = row.get("longitude")
+        if latitude is not None and longitude is not None:
+            by_segment[int(segment_index)]["path_points"].append(
+                {"lat": float(latitude), "lon": float(longitude)}
+            )
         if start.get("latLng"):
             lat, lon = start["latLng"].replace("°", "").split(",")
             by_segment[int(segment_index)]["start_latitude"] = float(lat.strip())
@@ -100,7 +113,20 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 end_time.replace("Z", "+00:00")
             )
 
-    return [by_segment[key] for key in sorted(by_segment)]
+    legs = []
+    for key in sorted(by_segment):
+        leg = by_segment[key]
+        if not leg["path_points"]:
+            if leg["start_latitude"] is not None and leg["start_longitude"] is not None:
+                leg["path_points"].append(
+                    {"lat": leg["start_latitude"], "lon": leg["start_longitude"]}
+                )
+            if leg["end_latitude"] is not None and leg["end_longitude"] is not None:
+                end_point = {"lat": leg["end_latitude"], "lon": leg["end_longitude"]}
+                if not leg["path_points"] or leg["path_points"][-1] != end_point:
+                    leg["path_points"].append(end_point)
+        legs.append(leg)
+    return legs
 
 
 def list_trips(
@@ -248,7 +274,9 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                 SELECT
                     te.event_time,
                     le.source_event_id,
-                    le.raw_payload_json
+                    le.raw_payload_json,
+                    le.latitude,
+                    le.longitude
                 FROM trip_events te
                 JOIN location_events le
                     ON te.event_type = 'location_event'

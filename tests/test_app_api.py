@@ -81,6 +81,11 @@ def _trip_detail() -> dict:
             "end_latitude": 36.0866,
             "end_longitude": -115.1385,
             "source_event_id": "FLYING",
+            "path_points": [
+                {"lat": 38.7416, "lon": -90.3619},
+                {"lat": 37.1000, "lon": -96.2000},
+                {"lat": 36.0866, "lon": -115.1385},
+            ],
         }
     ]
     return trip
@@ -156,6 +161,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Travel legs", response.body)
         self.assertIn(b"Air travel", response.body)
         self.assertIn(b"class=\"leg-map\"", response.body)
+        self.assertIn(b"data-path=", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
         self.assertIn(b"Review trip", response.body)
