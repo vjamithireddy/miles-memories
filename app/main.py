@@ -1122,20 +1122,20 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         <li class="leg-item">
           <details class="leg-collapse">
             <summary>
-              <span class="leg-kind">{escape(item['label'])}</span>
+              <span class="leg-summary-copy">
+                <span class="leg-kind">{escape(item.get('segment_name') or item['label'])}</span>
+                <span class="leg-comment-preview">{escape(_travel_leg_comment(item))}</span>
+              </span>
               <span class="leg-span">{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
             </summary>
             <div class="leg-body">
-                <div class="leg-copy">
+              <div class="leg-copy">
                 <div class="leg-meta">
-                  <strong>{escape(item.get('segment_name') or item['label'])}</strong>
+                  <strong>{escape(item['label'])}</strong>
                   <span>{escape(_format_local_datetime(item['start_time']))} to {escape(_format_local_datetime(item['end_time']))}</span>
                 </div>
                 <form class="segment-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}">
-                  <label>Segment name
-                    <input type="text" name="segment_name" value="{escape(item.get('segment_name') or item['label'])}">
-                  </label>
-                  <label>Generated summary
+                  <label>Edit summary
                     <textarea name="summary_text">{escape(_travel_leg_comment(item))}</textarea>
                   </label>
                   <label>Rating
@@ -1152,14 +1152,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                   <button class="primary button-sm" type="submit">Save leg</button>
                 </form>
               </div>
-              <div
-                class="leg-map"
-                data-start-lat="{'' if item.get('start_latitude') is None else item['start_latitude']}"
-                data-start-lon="{'' if item.get('start_longitude') is None else item['start_longitude']}"
-                data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
-                data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
-                data-path="{escape(json.dumps(item.get('path_points') or []))}"
-              ></div>
+              <div class="leg-map-panel">
+                <div
+                  class="leg-map"
+                  data-start-lat="{'' if item.get('start_latitude') is None else item['start_latitude']}"
+                  data-start-lon="{'' if item.get('start_longitude') is None else item['start_longitude']}"
+                  data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
+                  data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
+                  data-path="{escape(json.dumps(item.get('path_points') or []))}"
+                ></div>
+              </div>
             </div>
           </details>
         </li>
@@ -1435,32 +1437,52 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     details.leg-collapse > summary {{
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
       cursor: pointer;
-      padding: 12px 16px;
+      padding: 16px 18px;
       list-style: none;
       font-weight: 700;
-      background: rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.28);
+      transition: background 180ms ease, border-color 180ms ease;
     }}
     details.leg-collapse > summary::-webkit-details-marker {{
       display: none;
     }}
+    details.leg-collapse[open] {{
+      background: rgba(255,255,255,0.72);
+      box-shadow: inset 0 0 0 1px rgba(200,100,59,0.14), 0 14px 26px rgba(50, 33, 15, 0.08);
+    }}
+    details.leg-collapse[open] > summary {{
+      background: linear-gradient(180deg, rgba(200,100,59,0.08), rgba(255,255,255,0.24));
+      border-bottom: 1px solid rgba(216,201,179,0.9);
+    }}
+    .leg-summary-copy {{
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }}
     .leg-kind {{
       color: var(--ink);
+    }}
+    .leg-comment-preview {{
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 0.98rem;
+      line-height: 1.4;
     }}
     .leg-span {{
       color: var(--muted);
       font-weight: 400;
       font-size: 0.92rem;
+      text-align: right;
     }}
     .leg-body {{
-      border-top: 1px solid var(--line);
-      padding: 12px 16px 16px;
+      padding: 18px;
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 16px;
-      align-items: start;
+      align-items: stretch;
     }}
     .leg-copy {{
       min-width: 0;
@@ -1474,11 +1496,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       color: var(--muted);
     }}
     .leg-map {{
-      height: 220px;
+      height: 100%;
+      min-height: 320px;
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 16px;
       background: #efe5d7;
+    }}
+    .leg-map-panel {{
+      display: flex;
+      min-height: 320px;
     }}
     .detail-pair {{
       display: grid;
@@ -1538,8 +1565,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         flex-direction: column;
         align-items: flex-start;
       }}
+      .leg-span {{
+        text-align: left;
+      }}
       .leg-body {{
         grid-template-columns: 1fr;
+      }}
+      .leg-map-panel {{
+        min-height: 260px;
       }}
     }}
   </style>
