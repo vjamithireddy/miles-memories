@@ -1347,6 +1347,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border-radius: 18px;
       background: rgba(255,255,255,0.5);
     }}
+    .detail-cell.wide {{
+      grid-column: 1 / -1;
+    }}
     .timeline-item {{
       display: grid;
       grid-template-columns: 220px 1fr;
@@ -1496,6 +1499,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
         grid-template-columns: 1fr;
       }}
+      .detail-cell.wide {{
+        grid-column: auto;
+      }}
       details.leg-collapse > summary {{
         flex-direction: column;
         align-items: flex-start;
@@ -1520,11 +1526,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           <span class="badge">Date range {escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
         </div>
         <div class="detail-grid">
-          <div class="detail-cell">
+          <div class="detail-cell wide">
             <strong>Start</strong>
             <span>{escape(_format_local_datetime(trip['start_time']))}</span>
           </div>
-          <div class="detail-cell">
+          <div class="detail-cell wide">
             <strong>End</strong>
             <span>{escape(_format_local_datetime(trip['end_time']))}</span>
           </div>
@@ -1532,7 +1538,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <strong>Trip type</strong>
             <span>{trip_type}</span>
           </div>
-          <div class="detail-cell">
+          <div class="detail-cell wide">
             <strong>Generated destination</strong>
             <span>{destination}</span>
           </div>

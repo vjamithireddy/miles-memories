@@ -73,6 +73,28 @@ def _trip_detail() -> dict:
     ]
     trip["travel_legs"] = [
         {
+            "leg_type": "hike",
+            "label": "Hiking",
+            "start_time": datetime(2026, 3, 1, 13, 0, tzinfo=timezone.utc),
+            "end_time": datetime(2026, 3, 1, 16, 15, tzinfo=timezone.utc),
+            "start_latitude": 36.1069,
+            "start_longitude": -112.1129,
+            "end_latitude": 36.0570,
+            "end_longitude": -112.1438,
+            "source_event_id": "HIKING",
+            "segment_id": 40,
+            "segment_name": "South Kaibab hike",
+            "segment_summary": "Inner canyon hiking: South Kaibab -> Phantom Ranch -> Tonto -> Bright Angel.",
+            "segment_rating": 5,
+            "path_points": [
+                {"lat": 36.1069, "lon": -112.1129},
+                {"lat": 36.0930, "lon": -112.1180},
+                {"lat": 36.0815, "lon": -112.1275},
+                {"lat": 36.0690, "lon": -112.1362},
+                {"lat": 36.0570, "lon": -112.1438},
+            ],
+        },
+        {
             "leg_type": "air",
             "label": "Air travel",
             "start_time": datetime(2026, 3, 1, 8, 30, tzinfo=timezone.utc),
@@ -164,10 +186,11 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Trip map", response.body)
         self.assertIn(b"Travel legs", response.body)
-        self.assertIn(b"Air travel", response.body)
+        self.assertIn(b"Hiking", response.body)
         self.assertIn(b"class=\"leg-map\"", response.body)
         self.assertIn(b"data-path=", response.body)
-        self.assertIn(b"Flight to Las Vegas", response.body)
+        self.assertIn(b"South Kaibab hike", response.body)
+        self.assertIn(b"Inner canyon hiking", response.body)
         self.assertIn(b"Save leg", response.body)
         self.assertIn(b"id=\"trip-map\"", response.body)
         self.assertIn(b"38.62700, -90.19940", response.body)
@@ -181,6 +204,7 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b"Next trip", response.body)
         self.assertNotIn(b"<h2>Trip summary</h2>", response.body)
         self.assertNotIn(b"<h2>Destination context</h2>", response.body)
+        self.assertIn(b'detail-cell wide', response.body)
         self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
         mock_get.assert_called_once_with(7)
 

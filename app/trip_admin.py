@@ -51,6 +51,8 @@ def _is_placeholder_segment_summary(value: str | None) -> bool:
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
+    trip_name: str | None = None,
+    trip_summary_text: str | None = None,
     origin_name: str | None = None,
     destination_name: str | None = None,
     previous_leg_type: str | None = None,
@@ -82,6 +84,10 @@ def _leg_default_summary(
 
     if leg_type in {"walk", "hike", "run"}:
         verb = {"walk": "Walk", "hike": "Hike", "run": "Run"}[leg_type]
+        if leg_type == "hike" and trip_summary_text:
+            return trip_summary_text.rstrip(".") + "."
+        if trip_name:
+            return f"{verb} in {trip_name}."
         if destination_name:
             return f"{verb} near {destination_name}."
         if end_name:
@@ -109,9 +115,37 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raw_payload = None
         if not isinstance(raw_payload, dict):
             continue
-        activity = raw_payload.get("activity")
         segment_index = raw_payload.get("semanticSegmentIndex")
-        if not isinstance(activity, dict) or segment_index is None:
+        if segment_index is None:
+            continue
+        existing = by_segment.setdefault(
+            int(segment_index),
+            {
+                "leg_type": None,
+                "label": None,
+                "start_time": row["event_time"],
+                "end_time": row["event_time"],
+                "start_latitude": None,
+                "start_longitude": None,
+                "end_latitude": None,
+                "end_longitude": None,
+                "source_event_id": None,
+                "path_points": [],
+            },
+        )
+        if row["event_time"] < existing["start_time"]:
+            existing["start_time"] = row["event_time"]
+        if row["event_time"] > existing["end_time"]:
+            existing["end_time"] = row["event_time"]
+        latitude = row.get("latitude")
+        longitude = row.get("longitude")
+        if latitude is not None and longitude is not None:
+            point = {"lat": float(latitude), "lon": float(longitude)}
+            if not existing["path_points"] or existing["path_points"][-1] != point:
+                existing["path_points"].append(point)
+
+        activity = raw_payload.get("activity")
+        if not isinstance(activity, dict):
             continue
         top_candidate = activity.get("topCandidate") or {}
         movement_type = top_candidate.get("type") or row["source_event_id"]
@@ -120,59 +154,37 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         label_type, label = LEG_LABELS[movement_type]
         start = activity.get("start") or {}
         end = activity.get("end") or {}
-        existing = by_segment.get(int(segment_index))
-        if existing:
-            if row["event_time"] < existing["start_time"]:
-                existing["start_time"] = row["event_time"]
-            if row["event_time"] > existing["end_time"]:
-                existing["end_time"] = row["event_time"]
-            latitude = row.get("latitude")
-            longitude = row.get("longitude")
-            if latitude is not None and longitude is not None:
-                point = {"lat": float(latitude), "lon": float(longitude)}
-                if not existing["path_points"] or existing["path_points"][-1] != point:
-                    existing["path_points"].append(point)
-            continue
-        by_segment[int(segment_index)] = {
+        existing.update({
             "leg_type": label_type,
             "label": label,
             "start_time": row["event_time"],
             "end_time": row["event_time"],
-            "start_latitude": None,
-            "start_longitude": None,
-            "end_latitude": None,
-            "end_longitude": None,
             "source_event_id": movement_type,
-            "path_points": [],
-        }
-        latitude = row.get("latitude")
-        longitude = row.get("longitude")
-        if latitude is not None and longitude is not None:
-            by_segment[int(segment_index)]["path_points"].append(
-                {"lat": float(latitude), "lon": float(longitude)}
-            )
+        })
         if start.get("latLng"):
             lat, lon = start["latLng"].replace("°", "").split(",")
-            by_segment[int(segment_index)]["start_latitude"] = float(lat.strip())
-            by_segment[int(segment_index)]["start_longitude"] = float(lon.strip())
+            existing["start_latitude"] = float(lat.strip())
+            existing["start_longitude"] = float(lon.strip())
         if end.get("latLng"):
             lat, lon = end["latLng"].replace("°", "").split(",")
-            by_segment[int(segment_index)]["end_latitude"] = float(lat.strip())
-            by_segment[int(segment_index)]["end_longitude"] = float(lon.strip())
+            existing["end_latitude"] = float(lat.strip())
+            existing["end_longitude"] = float(lon.strip())
         start_time = activity.get("startTime")
         end_time = activity.get("endTime")
         if start_time:
-            by_segment[int(segment_index)]["start_time"] = datetime.fromisoformat(
+            existing["start_time"] = datetime.fromisoformat(
                 start_time.replace("Z", "+00:00")
             )
         if end_time:
-            by_segment[int(segment_index)]["end_time"] = datetime.fromisoformat(
+            existing["end_time"] = datetime.fromisoformat(
                 end_time.replace("Z", "+00:00")
             )
 
     legs = []
     for key in sorted(by_segment):
         leg = by_segment[key]
+        if not leg["leg_type"]:
+            continue
         if not leg["path_points"]:
             if leg["start_latitude"] is not None and leg["start_longitude"] is not None:
                 leg["path_points"].append(
@@ -191,6 +203,8 @@ def _sync_trip_segments(
     trip_id: int,
     legs: list[dict[str, Any]],
     *,
+    trip_name: str | None = None,
+    trip_summary_text: str | None = None,
     origin_name: str | None = None,
     destination_name: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -235,6 +249,8 @@ def _sync_trip_segments(
         next_leg_type = legs[index + 1]["leg_type"] if index + 1 < len(legs) else None
         default_summary = _leg_default_summary(
             leg,
+            trip_name=trip_name,
+            trip_summary_text=trip_summary_text,
             origin_name=origin_name,
             destination_name=destination_name,
             previous_leg_type=previous_leg_type,
@@ -453,6 +469,8 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
                 cur,
                 trip_id,
                 _build_travel_legs(cur.fetchall()),
+                trip_name=trip.get("trip_name"),
+                trip_summary_text=trip.get("summary_text"),
                 origin_name=trip.get("origin_place_name"),
                 destination_name=trip.get("primary_destination_name"),
             )
