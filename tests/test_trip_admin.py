@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from app.trip_admin import _leg_default_summary
+from app.trip_admin import _is_placeholder_segment_summary, _leg_default_summary
 
 
 class TripAdminTests(unittest.TestCase):
+    def test_placeholder_segment_summary_flags_low_quality_airport_text(self) -> None:
+        self.assertTrue(
+            _is_placeholder_segment_summary("Drive near Harry Reid Airport Rental Car Facility.")
+        )
+
     def test_leg_default_summary_cleans_rental_car_facility_for_flight(self) -> None:
         summary = _leg_default_summary(
             {"label": "Air travel", "leg_type": "air"},

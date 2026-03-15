@@ -46,7 +46,11 @@ def _is_placeholder_segment_summary(value: str | None) -> bool:
     if not value:
         return True
     normalized = value.strip().lower()
-    return normalized.endswith("inferred from timeline activity data.")
+    return (
+        normalized.endswith("inferred from timeline activity data.")
+        or "rental car facility" in normalized
+        or normalized.startswith("drive near ")
+    )
 
 
 def _trip_context_name(value: str | None) -> str | None:
