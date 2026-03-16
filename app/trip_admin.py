@@ -10,6 +10,11 @@ from psycopg.rows import dict_row
 
 from app.bootstrap import get_user_timezone
 from app.db import get_conn
+from trip_engine.detector import (
+    _apply_destination_override,
+    _destination_title,
+    _resolve_destination_profile,
+)
 
 
 def _normalize_trip(row: dict[str, Any]) -> dict[str, Any]:
