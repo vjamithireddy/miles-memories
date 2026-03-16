@@ -7,6 +7,7 @@ from unittest.mock import patch
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
     _build_travel_legs,
+    _is_generic_regional_drive_summary,
     _is_placeholder_segment_summary,
     _leg_default_summary,
     _should_refresh_segment_summary,
@@ -19,6 +20,10 @@ class TripAdminTests(unittest.TestCase):
             _is_placeholder_segment_summary("Drive near Harry Reid Airport Rental Car Facility.")
         )
 
+    def test_generic_regional_drive_summary_is_flagged(self) -> None:
+        self.assertTrue(_is_generic_regional_drive_summary("Drive in Flathead County."))
+        self.assertTrue(_is_generic_regional_drive_summary("Monday Morning drive in Flathead County (2)"))
+
     def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
         self.assertTrue(
             _should_refresh_segment_summary(
@@ -26,6 +31,16 @@ class TripAdminTests(unittest.TestCase):
                 leg={"leg_type": "air"},
                 trip_name="Grand Canyon - NPS",
                 destination_name="Harry Reid Airport Rental Car Facility",
+            )
+        )
+
+    def test_refresh_segment_summary_flags_generic_regional_drive_text(self) -> None:
+        self.assertTrue(
+            _should_refresh_segment_summary(
+                "Monday Morning drive in Flathead County (2)",
+                leg={"leg_type": "car"},
+                trip_name="Road Trip - Summer 2025",
+                destination_name="Flathead County",
             )
         )
 

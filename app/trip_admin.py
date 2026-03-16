@@ -12,6 +12,7 @@ from app.bootstrap import get_user_timezone
 from app.db import get_conn
 from trip_engine.detector import (
     _destination_title,
+    _resolve_destination_profile,
 )
 
 
@@ -55,6 +56,18 @@ def _is_placeholder_segment_summary(value: str | None) -> bool:
         normalized.endswith("inferred from timeline activity data.")
         or "rental car facility" in normalized
         or normalized.startswith("drive near ")
+    )
+
+
+def _is_generic_regional_drive_summary(value: str | None) -> bool:
+    if not value:
+        return False
+    normalized = value.strip().lower()
+    return bool(
+        re.match(
+            r"^(?:[a-z-]+\s+[a-z-]+\s+)?drive (?:in|from trail in|to trailhead in) .*(county|state|region)(?: \(\d+\))?\.?$",
+            normalized,
+        )
     )
 
 
@@ -278,6 +291,8 @@ def _should_refresh_segment_summary(
 ) -> bool:
     if _is_placeholder_segment_summary(existing_summary):
         return True
+    if leg.get("leg_type") == "car" and _is_generic_regional_drive_summary(existing_summary):
+        return True
     if not existing_summary:
         return True
     normalized_existing = existing_summary.strip()
@@ -486,6 +501,46 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         legs.append(leg)
     return legs
+
+
+def enrich_trip_leg_places(trip_id: int) -> int:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    te.event_time,
+                    le.source_event_id,
+                    le.raw_payload_json,
+                    le.latitude,
+                    le.longitude
+                FROM trip_events te
+                JOIN location_events le
+                    ON te.event_type = 'location_event'
+                   AND le.id = te.event_ref_id
+                WHERE te.trip_id = %s
+                ORDER BY te.event_time ASC, te.id ASC
+                """,
+                (trip_id,),
+            )
+            legs = _build_travel_legs(cur.fetchall())
+
+    seen: set[tuple[float, float]] = set()
+    enriched = 0
+    for leg in legs:
+        for latitude, longitude in (
+            (leg.get("start_latitude"), leg.get("start_longitude")),
+            (leg.get("end_latitude"), leg.get("end_longitude")),
+        ):
+            if latitude is None or longitude is None:
+                continue
+            key = (round(float(latitude), 5), round(float(longitude), 5))
+            if key in seen:
+                continue
+            seen.add(key)
+            _resolve_destination_profile(float(latitude), float(longitude))
+            enriched += 1
+    return enriched
 
 
 def _sync_trip_segments(
