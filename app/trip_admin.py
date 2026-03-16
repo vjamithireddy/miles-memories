@@ -177,6 +177,15 @@ def _prefer_locality_over_region(name: str | None, locality: str | None) -> str 
     return cleaned_name or cleaned_locality
 
 
+def _place_candidate_score(place_name: str | None, locality: str | None) -> tuple[int, int, int]:
+    cleaned_name = _clean_segment_place_name(place_name)
+    cleaned_locality = _clean_segment_place_name(locality)
+    has_specific_name = int(bool(cleaned_name and not _is_regional_place(cleaned_name)))
+    has_locality = int(bool(cleaned_locality and not _is_regional_place(cleaned_locality)))
+    has_any_name = int(bool(cleaned_name or cleaned_locality))
+    return (has_specific_name, has_locality, has_any_name)
+
+
 def _drive_duration_minutes(leg: dict[str, Any]) -> int:
     start_time = leg.get("start_time")
     end_time = leg.get("end_time")
@@ -389,18 +398,24 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT place_name, place_type, source, city
+                SELECT id, place_name, place_type, source, city
                 FROM places
                 WHERE round(latitude::numeric, 3) = round(%s::numeric, 3)
                   AND round(longitude::numeric, 3) = round(%s::numeric, 3)
                 ORDER BY id DESC
-                LIMIT 1
                 """,
                 (float(latitude), float(longitude)),
             )
-            row = cur.fetchone()
-    if not row:
+            rows = cur.fetchall()
+    if not rows:
         return None
+    row = max(
+        rows,
+        key=lambda candidate: (
+            *_place_candidate_score(candidate["place_name"], candidate["city"]),
+            int(candidate.get("id") or 0),
+        ),
+    )
     preferred_name = _prefer_locality_over_region(row["place_name"], row["city"])
     profile = {
         "name": preferred_name,

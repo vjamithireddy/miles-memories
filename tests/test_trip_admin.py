@@ -10,6 +10,7 @@ from app.trip_admin import (
     _is_generic_regional_segment_summary,
     _is_placeholder_segment_summary,
     _leg_default_summary,
+    _place_candidate_score,
     _prefer_locality_over_region,
     _should_refresh_segment_summary,
 )
@@ -36,6 +37,18 @@ class TripAdminTests(unittest.TestCase):
         self.assertEqual(
             _prefer_locality_over_region("Washburn Lodge", "Yellowstone National Park"),
             "Washburn Lodge",
+        )
+
+    def test_place_candidate_score_prefers_specific_name_over_county(self) -> None:
+        self.assertGreater(
+            _place_candidate_score("Whitefish", None),
+            _place_candidate_score("Flathead County", None),
+        )
+
+    def test_place_candidate_score_prefers_locality_over_regional_fallback(self) -> None:
+        self.assertGreater(
+            _place_candidate_score("Flathead County", "Whitefish"),
+            _place_candidate_score("Flathead County", "Flathead County"),
         )
 
     def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
