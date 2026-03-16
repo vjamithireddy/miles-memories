@@ -248,6 +248,52 @@ def _drive_duration_minutes(leg: dict[str, Any]) -> int:
     return max(0, int((end_time - start_time).total_seconds() // 60))
 
 
+def _specific_leg_place_name(leg: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = _clean_segment_place_name(leg.get(key))
+        if value and not _is_regional_place(value):
+            return value
+    return None
+
+
+def _apply_trip_context_place_inference(legs: list[dict[str, Any]]) -> None:
+    for index, leg in enumerate(legs):
+        start_name = _clean_segment_place_name(leg.get("start_place_name"))
+        end_name = _clean_segment_place_name(leg.get("end_place_name"))
+        if not start_name or _is_regional_place(start_name):
+            inferred_start = None
+            if index > 0:
+                inferred_start = _specific_leg_place_name(
+                    legs[index - 1],
+                    "end_place_name",
+                    "start_place_name",
+                    "context_end_name",
+                    "context_start_name",
+                )
+            if inferred_start:
+                leg["context_start_name"] = inferred_start
+        if not end_name or _is_regional_place(end_name):
+            inferred_end = None
+            if index + 1 < len(legs):
+                inferred_end = _specific_leg_place_name(
+                    legs[index + 1],
+                    "start_place_name",
+                    "end_place_name",
+                    "context_start_name",
+                    "context_end_name",
+                )
+            if not inferred_end and index > 0:
+                inferred_end = _specific_leg_place_name(
+                    legs[index - 1],
+                    "end_place_name",
+                    "start_place_name",
+                    "context_end_name",
+                    "context_start_name",
+                )
+            if inferred_end:
+                leg["context_end_name"] = inferred_end
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -259,8 +305,8 @@ def _leg_default_summary(
     next_leg_type: str | None = None,
 ) -> str:
     label = leg["label"]
-    start_name = _clean_segment_place_name(leg.get("start_place_name"))
-    end_name = _clean_segment_place_name(leg.get("end_place_name"))
+    start_name = _clean_segment_place_name(leg.get("context_start_name")) or _clean_segment_place_name(leg.get("start_place_name"))
+    end_name = _clean_segment_place_name(leg.get("context_end_name")) or _clean_segment_place_name(leg.get("end_place_name"))
     leg_type = leg["leg_type"]
     trip_context = _trip_context_name(trip_name)
     preferred_destination = _preferred_segment_place(
@@ -596,6 +642,7 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             leg.get("end_longitude"),
         )
         legs.append(leg)
+    _apply_trip_context_place_inference(legs)
     return legs
 
 

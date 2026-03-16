@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
+    _apply_trip_context_place_inference,
     _best_nearby_place_name,
     _build_travel_legs,
     _enrich_nearby_endpoint_places,
@@ -75,6 +76,23 @@ class TripAdminTests(unittest.TestCase):
             _best_nearby_place_name(rows, latitude=48.11, longitude=-114.02),
             "Whitefish",
         )
+
+    def test_apply_trip_context_place_inference_uses_adjacent_specific_stop(self) -> None:
+        legs = [
+            {
+                "start_place_name": "Saint Mary",
+                "end_place_name": "Glacier County",
+            },
+            {
+                "start_place_name": "Glacier County",
+                "end_place_name": "Rising Sun Campground",
+            },
+        ]
+
+        _apply_trip_context_place_inference(legs)
+
+        self.assertEqual(legs[0]["context_end_name"], "Rising Sun Campground")
+        self.assertEqual(legs[1]["context_start_name"], "Saint Mary")
 
     def test_enrich_nearby_endpoint_places_queries_offset_ring(self) -> None:
         calls = []
@@ -215,6 +233,20 @@ class TripAdminTests(unittest.TestCase):
         )
 
         self.assertEqual(summary, "Road trip drive.")
+
+    def test_leg_default_summary_prefers_trip_context_endpoint_names(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "start_place_name": "Saint Mary",
+                "end_place_name": "Glacier County",
+                "context_end_name": "Rising Sun Campground",
+            },
+            trip_name="Road Trip - Summer 2025",
+        )
+
+        self.assertEqual(summary, "Drive from Saint Mary to Rising Sun Campground.")
 
     def test_duplicate_leg_summaries_are_disambiguated(self) -> None:
         class FakeCursor:
