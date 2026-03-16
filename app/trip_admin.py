@@ -167,6 +167,16 @@ def _is_regional_place(name: str | None) -> bool:
     return any(token in lowered for token in ("county", "state", "region"))
 
 
+def _prefer_locality_over_region(name: str | None, locality: str | None) -> str | None:
+    cleaned_name = _clean_segment_place_name(name)
+    cleaned_locality = _clean_segment_place_name(locality)
+    if cleaned_name and not _is_regional_place(cleaned_name):
+        return cleaned_name
+    if cleaned_locality:
+        return cleaned_locality
+    return cleaned_name or cleaned_locality
+
+
 def _drive_duration_minutes(leg: dict[str, Any]) -> int:
     start_time = leg.get("start_time")
     end_time = leg.get("end_time")
@@ -391,8 +401,9 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
             row = cur.fetchone()
     if not row:
         return None
+    preferred_name = _prefer_locality_over_region(row["place_name"], row["city"])
     profile = {
-        "name": row["place_name"],
+        "name": preferred_name,
         "category": row["place_type"],
         "display_name": row["city"],
         "locality": row["city"],

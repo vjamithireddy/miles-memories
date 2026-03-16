@@ -10,6 +10,7 @@ from app.trip_admin import (
     _is_generic_regional_drive_summary,
     _is_placeholder_segment_summary,
     _leg_default_summary,
+    _prefer_locality_over_region,
     _should_refresh_segment_summary,
 )
 
@@ -23,6 +24,18 @@ class TripAdminTests(unittest.TestCase):
     def test_generic_regional_drive_summary_is_flagged(self) -> None:
         self.assertTrue(_is_generic_regional_drive_summary("Drive in Flathead County."))
         self.assertTrue(_is_generic_regional_drive_summary("Monday Morning drive in Flathead County (2)"))
+
+    def test_prefer_locality_over_region_uses_city_when_name_is_county(self) -> None:
+        self.assertEqual(
+            _prefer_locality_over_region("Flathead County", "Whitefish"),
+            "Whitefish",
+        )
+
+    def test_prefer_locality_over_region_keeps_specific_place(self) -> None:
+        self.assertEqual(
+            _prefer_locality_over_region("Washburn Lodge", "Yellowstone National Park"),
+            "Washburn Lodge",
+        )
 
     def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
         self.assertTrue(
