@@ -1574,6 +1574,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .quick-actions button {{
       min-width: 138px;
     }}
+    .workflow-help {{
+      margin-top: -4px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
     .review-form-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1936,46 +1941,25 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <strong>Trip timing</strong>
               <span class="detail-value-lg">{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}</span>
             </div>
-            <label class="detail-cell wide">
-              <strong>Destination</strong>
-              <input type="text" name="primary_destination_name" value="{destination}">
-            </label>
             <div class="detail-cell">
               <strong>Trip type</strong>
               <span>{trip_type}</span>
             </div>
-            <div class="detail-cell">
-              <strong>Visibility</strong>
-              <span>{'Private' if trip['is_private'] else 'Visible to publish flow'}</span>
-            </div>
-            <div class="detail-cell">
-              <strong>Publish state</strong>
-              <span>{'Ready to publish' if trip['publish_ready'] else 'Not publish-ready yet'}</span>
-            </div>
             <label class="detail-cell">
               <strong>Reviewer name</strong>
               <input type="text" name="reviewer_name" value="Venkat">
-            </label>
-            <label class="detail-cell">
-              <strong>Review action</strong>
-              <select name="action">
-                <option value="confirm">confirm</option>
-                <option value="ignore">ignore</option>
-                <option value="publish">publish</option>
-                <option value="mark_private">mark_private</option>
-                <option value="reject">reject</option>
-              </select>
             </label>
             <label class="detail-cell wide">
               <strong>Review notes</strong>
               <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
             </label>
           </div>
+          <div class="workflow-help">Use the action buttons to move the trip forward. Save details only updates the text fields.</div>
           <div class="quick-actions">
             <button class="button" type="submit" name="action" value="confirm">Confirm</button>
             <button class="button" type="submit" name="action" value="publish">Publish</button>
             <button class="button" type="submit" name="action" value="mark_private">Make private</button>
-            <button class="primary" type="submit">Save details</button>
+            <button class="primary" type="submit" name="action" value="save">Save details</button>
           </div>
         </form>
         <div class="actions">
@@ -2237,7 +2221,7 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
 @app.post("/admin/trip/{trip_id}/review")
 async def review_trip_from_form(trip_id: int, request: Request) -> RedirectResponse:
     payload = parse_qs((await request.body()).decode("utf-8"))
-    action = (payload.get("action") or ["confirm"])[0].strip()
+    action = (payload.get("action") or ["save"])[0].strip() or "save"
     reviewer_name = (payload.get("reviewer_name") or [""])[0].strip() or None
     review_notes = (payload.get("review_notes") or [""])[0].strip() or None
     trip_name = (payload.get("trip_name") or [""])[0].strip() or None

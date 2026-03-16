@@ -206,6 +206,10 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Review saved.", response.body)
         self.assertIn(b"Publish", response.body)
         self.assertIn(b"Make private", response.body)
+        self.assertIn(b"Save details", response.body)
+        self.assertNotIn(b"Review action", response.body)
+        self.assertNotIn(b"Publish state", response.body)
+        self.assertNotIn(b"Visibility", response.body)
         self.assertNotIn(b"Previous trip", response.body)
         self.assertNotIn(b"Next trip", response.body)
         self.assertNotIn(b"<h2>Trip summary</h2>", response.body)
@@ -272,6 +276,28 @@ class AppApiTests(unittest.TestCase):
             primary_destination_name=None,
             is_private=False,
             publish_ready=True,
+        )
+
+    def test_review_trip_from_form_defaults_to_save(self) -> None:
+        class FakeRequest:
+            async def body(self) -> bytes:
+                return b"reviewer_name=Venkat&trip_name=Colorado+Weekend&summary_text=Late+winter+trip."
+
+        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+            response = asyncio.run(review_trip_from_form(7, FakeRequest()))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=review")
+        mock_review.assert_called_once_with(
+            7,
+            action="save",
+            reviewer_name="Venkat",
+            review_notes=None,
+            trip_name="Colorado Weekend",
+            summary_text="Late winter trip.",
+            primary_destination_name=None,
+            is_private=None,
+            publish_ready=None,
         )
 
     def test_update_trip_segment_from_form_uses_repository(self) -> None:

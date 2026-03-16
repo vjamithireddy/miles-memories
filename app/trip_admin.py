@@ -735,6 +735,7 @@ def record_review(
     publish_ready: bool | None,
 ) -> dict[str, Any] | None:
     action_map = {
+        "save": (None, None),
         "confirm": ("confirmed", "confirmed"),
         "reject": ("ignored", "rejected"),
         "ignore": ("ignored", "ignored"),
@@ -777,8 +778,8 @@ def record_review(
                     primary_destination_name = COALESCE(%s, primary_destination_name),
                     is_private = %s,
                     publish_ready = %s,
-                    status = %s,
-                    review_decision = %s,
+                    status = COALESCE(%s, status),
+                    review_decision = COALESCE(%s, review_decision),
                     published_at = CASE
                         WHEN %s::timestamptz IS NULL THEN published_at
                         ELSE %s::timestamptz
@@ -799,13 +800,14 @@ def record_review(
                     trip_id,
                 ),
             )
-            cur.execute(
-                """
-                INSERT INTO admin_reviews (trip_id, reviewer_name, review_action, review_notes)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (trip_id, reviewer_name, action, review_notes),
-            )
+            if reviewer_name or review_notes or action != "save":
+                cur.execute(
+                    """
+                    INSERT INTO admin_reviews (trip_id, reviewer_name, review_action, review_notes)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (trip_id, reviewer_name, action, review_notes),
+                )
 
     return get_trip(trip_id)
 
