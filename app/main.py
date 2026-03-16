@@ -1,6 +1,7 @@
 from datetime import datetime
 from html import escape
 import json
+import math
 from typing import List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
@@ -368,10 +369,65 @@ def _render_leg_map_preview(item: dict) -> str:
     lat_span = max(max_lat - min_lat, 0.0001)
     lon_span = max(max_lon - min_lon, 0.0001)
 
+    def pick_zoom() -> int:
+        span = max(lat_span, lon_span)
+        if span > 20:
+            return 4
+        if span > 8:
+            return 5
+        if span > 3:
+            return 6
+        if span > 1:
+            return 7
+        if span > 0.4:
+            return 8
+        if span > 0.12:
+            return 10
+        if span > 0.04:
+            return 11
+        if span > 0.015:
+            return 12
+        return 13
+
+    def project(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+        lat = max(min(lat, 85.0511), -85.0511)
+        scale = 256 * (2**zoom)
+        x = (lon + 180.0) / 360.0 * scale
+        lat_rad = math.radians(lat)
+        y = (
+            1
+            - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi
+        ) / 2 * scale
+        return x, y
+
+    zoom = pick_zoom()
+    projected = [project(lat, lon, zoom) for lat, lon in points]
+    min_px = min(point[0] for point in projected)
+    max_px = max(point[0] for point in projected)
+    min_py = min(point[1] for point in projected)
+    max_py = max(point[1] for point in projected)
+    tile_size = 256
+    margin = 48
+    tile_min_x = int(math.floor((min_px - margin) / tile_size))
+    tile_max_x = int(math.floor((max_px + margin) / tile_size))
+    tile_min_y = int(math.floor((min_py - margin) / tile_size))
+    tile_max_y = int(math.floor((max_py + margin) / tile_size))
+    max_tile_index = (2**zoom) - 1
+    tile_min_x = max(0, min(tile_min_x, max_tile_index))
+    tile_max_x = max(0, min(tile_max_x, max_tile_index))
+    tile_min_y = max(0, min(tile_min_y, max_tile_index))
+    tile_max_y = max(0, min(tile_max_y, max_tile_index))
+    tile_count_x = max(1, tile_max_x - tile_min_x + 1)
+    tile_count_y = max(1, tile_max_y - tile_min_y + 1)
+    map_pixel_width = tile_count_x * tile_size
+    map_pixel_height = tile_count_y * tile_size
+
     def scale(point: tuple[float, float]) -> tuple[float, float]:
-        lat, lon = point
-        x = padding + ((lon - min_lon) / lon_span) * (width - (padding * 2))
-        y = height - padding - ((lat - min_lat) / lat_span) * (height - (padding * 2))
+        pixel_x, pixel_y = project(point[0], point[1], zoom)
+        x = ((pixel_x - (tile_min_x * tile_size)) / map_pixel_width) * width
+        y = ((pixel_y - (tile_min_y * tile_size)) / map_pixel_height) * height
+        x = min(max(x, padding), width - padding)
+        y = min(max(y, padding), height - padding)
         return round(x, 2), round(y, 2)
 
     scaled = [scale(point) for point in points]
@@ -380,19 +436,27 @@ def _render_leg_map_preview(item: dict) -> str:
     )
     start_x, start_y = scaled[0]
     end_x, end_y = scaled[-1]
+    tiles = []
+    for tile_x in range(tile_min_x, tile_max_x + 1):
+        for tile_y in range(tile_min_y, tile_max_y + 1):
+            left = ((tile_x - tile_min_x) * tile_size / map_pixel_width) * width
+            top = ((tile_y - tile_min_y) * tile_size / map_pixel_height) * height
+            tile_width = (tile_size / map_pixel_width) * width
+            tile_height = (tile_size / map_pixel_height) * height
+            tiles.append(
+                f'<img class="leg-map-tile" src="https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png" '
+                f'alt="" loading="lazy" style="left:{left:.2f}px;top:{top:.2f}px;width:{tile_width:.2f}px;height:{tile_height:.2f}px;">'
+            )
     return f"""
-    <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}" role="img" aria-label="Travel leg route preview">
-      <defs>
-        <linearGradient id="legMapBg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#f7efdf" />
-          <stop offset="100%" stop-color="#efe3cd" />
-        </linearGradient>
-      </defs>
-      <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="url(#legMapBg)" />
-      <path d="{path_d}" fill="none" stroke="#275d4f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-      <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#b85f35" stroke-width="6" />
-      <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#275d4f" stroke-width="6" />
-    </svg>
+    <div class="leg-map-frame" role="img" aria-label="Travel leg map preview">
+      {''.join(tiles)}
+      <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}">
+        <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
+        <path d="{path_d}" fill="none" stroke="#275d4f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#b85f35" stroke-width="6" />
+        <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#275d4f" stroke-width="6" />
+      </svg>
+    </div>
     """
 
 
@@ -1666,11 +1730,27 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       overflow: hidden;
       position: relative;
     }}
+    .leg-map-frame {{
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 320px;
+      background: #efe5d7;
+    }}
+    .leg-map-tile {{
+      position: absolute;
+      display: block;
+      max-width: none;
+      user-select: none;
+      pointer-events: none;
+    }}
     .leg-map-panel {{
       display: flex;
       min-height: 320px;
     }}
     .leg-map-svg {{
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       display: block;
