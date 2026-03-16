@@ -147,6 +147,21 @@ def _segment_place_role(name: str | None) -> str | None:
     return None
 
 
+def _is_regional_place(name: str | None) -> bool:
+    if not name:
+        return False
+    lowered = name.lower()
+    return any(token in lowered for token in ("county", "state", "region"))
+
+
+def _drive_duration_minutes(leg: dict[str, Any]) -> int:
+    start_time = leg.get("start_time")
+    end_time = leg.get("end_time")
+    if not start_time or not end_time:
+        return 0
+    return max(0, int((end_time - start_time).total_seconds() // 60))
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -180,6 +195,7 @@ def _leg_default_summary(
         return "Flight segment inferred from timeline activity data."
 
     if leg_type == "car":
+        drive_minutes = _drive_duration_minutes(leg)
         if next_leg_type == "air":
             return "Drive to airport."
         if previous_leg_type == "air":
@@ -203,6 +219,9 @@ def _leg_default_summary(
                 return f"Drive from trail toward {specific_place}."
             if trip_context:
                 return f"Drive from trail in {trip_context}."
+        if start_name and end_name and start_name != end_name:
+            if not (_is_regional_place(start_name) and _is_regional_place(end_name)):
+                return f"Drive from {start_name} to {end_name}."
         if specific_place:
             if specific_role == "lodging":
                 return f"Drive to {specific_place}."
@@ -216,6 +235,11 @@ def _leg_default_summary(
                 return f"Drive in {specific_place}."
             if specific_role == "trailhead":
                 return f"Drive to {specific_place}."
+        if drive_minutes >= 90:
+            if preferred_origin and preferred_destination and preferred_origin != preferred_destination:
+                if not (_is_regional_place(preferred_origin) and _is_regional_place(preferred_destination)):
+                    return f"Drive from {preferred_origin} to {preferred_destination}."
+            return "Road trip drive."
         if _is_airport_like(preferred_destination) and trip_context:
             return f"Drive in {trip_context}."
         if preferred_destination:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import unittest
+from unittest.mock import patch
 
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
@@ -102,6 +103,38 @@ class TripAdminTests(unittest.TestCase):
 
         self.assertEqual(summary, "Drive to Mather Point Overlook.")
 
+    def test_leg_default_summary_prefers_endpoint_places_for_long_drive(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "start_place_name": "West Glacier",
+                "end_place_name": "Whitefish Village",
+                "start_time": datetime(2025, 7, 28, 13, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2025, 7, 28, 16, 0, tzinfo=timezone.utc),
+            },
+            trip_name="Montana Road Trip",
+            destination_name="Flathead County",
+        )
+
+        self.assertEqual(summary, "Drive from West Glacier to Whitefish Village.")
+
+    def test_leg_default_summary_uses_neutral_text_for_long_regional_drive(self) -> None:
+        summary = _leg_default_summary(
+            {
+                "label": "Car travel",
+                "leg_type": "car",
+                "start_place_name": "Flathead County",
+                "end_place_name": "Flathead County",
+                "start_time": datetime(2025, 7, 28, 13, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2025, 7, 28, 16, 0, tzinfo=timezone.utc),
+            },
+            trip_name="Montana Road Trip",
+            destination_name="Flathead County",
+        )
+
+        self.assertEqual(summary, "Road trip drive.")
+
     def test_duplicate_leg_summaries_are_disambiguated(self) -> None:
         class FakeCursor:
             def __init__(self) -> None:
@@ -153,7 +186,7 @@ class TripAdminTests(unittest.TestCase):
             },
         }
 
-        with unittest.mock.patch(
+        with patch(
             "app.trip_admin._leg_point_place_name",
             side_effect=["Whitefish Village", "Avalanche Trailhead"],
         ):
