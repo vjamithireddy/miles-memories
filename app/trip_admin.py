@@ -330,6 +330,17 @@ def _apply_duplicate_leg_summary_disambiguation(cur: Any, legs: list[dict[str, A
                 )
 
 
+def _leg_point_place_name(latitude: float | None, longitude: float | None) -> str | None:
+    if latitude is None or longitude is None:
+        return None
+    profile = _apply_destination_override(
+        float(latitude),
+        float(longitude),
+        _resolve_destination_profile(float(latitude), float(longitude)),
+    )
+    return _destination_title(profile)
+
+
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_segment: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -357,6 +368,8 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "end_longitude": None,
                 "source_event_id": None,
                 "path_points": [],
+                "start_place_name": None,
+                "end_place_name": None,
             },
         )
         if row["event_time"] < existing["start_time"]:
@@ -418,6 +431,14 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 end_point = {"lat": leg["end_latitude"], "lon": leg["end_longitude"]}
                 if not leg["path_points"] or leg["path_points"][-1] != end_point:
                     leg["path_points"].append(end_point)
+        leg["start_place_name"] = _leg_point_place_name(
+            leg.get("start_latitude"),
+            leg.get("start_longitude"),
+        )
+        leg["end_place_name"] = _leg_point_place_name(
+            leg.get("end_latitude"),
+            leg.get("end_longitude"),
+        )
         legs.append(leg)
     return legs
 

@@ -5,6 +5,7 @@ import unittest
 
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
+    _build_travel_legs,
     _is_placeholder_segment_summary,
     _leg_default_summary,
     _should_refresh_segment_summary,
@@ -133,6 +134,33 @@ class TripAdminTests(unittest.TestCase):
         self.assertIn("drive in flathead county", legs[0]["segment_summary"].lower())
         self.assertIn("drive in flathead county", legs[1]["segment_summary"].lower())
         self.assertEqual(len(cur.calls), 2)
+
+    def test_build_travel_legs_populates_place_names_from_leg_points(self) -> None:
+        row = {
+            "event_time": datetime(2025, 7, 28, 13, 0, tzinfo=timezone.utc),
+            "latitude": 48.0,
+            "longitude": -114.0,
+            "source_event_id": "IN_PASSENGER_VEHICLE",
+            "raw_payload_json": {
+                "semanticSegmentIndex": 3,
+                "activity": {
+                    "topCandidate": {"type": "IN_PASSENGER_VEHICLE"},
+                    "start": {"latLng": "48.1000°, -114.1000°"},
+                    "end": {"latLng": "48.2000°, -114.2000°"},
+                    "startTime": "2025-07-28T13:00:00Z",
+                    "endTime": "2025-07-28T15:00:00Z",
+                },
+            },
+        }
+
+        with unittest.mock.patch(
+            "app.trip_admin._leg_point_place_name",
+            side_effect=["Whitefish Village", "Avalanche Trailhead"],
+        ):
+            legs = _build_travel_legs([row])
+
+        self.assertEqual(legs[0]["start_place_name"], "Whitefish Village")
+        self.assertEqual(legs[0]["end_place_name"], "Avalanche Trailhead")
 
 
 if __name__ == "__main__":
