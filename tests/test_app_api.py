@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timezone
+import base64
 import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 from app.main import (
+    admin_basic_auth,
     admin_homepage,
     admin_overrides_page,
     admin_trip_destination_page,
@@ -119,6 +123,45 @@ def _trip_detail() -> dict:
 
 
 class AppApiTests(unittest.TestCase):
+    def test_admin_routes_require_basic_auth(self) -> None:
+        async def receive() -> dict:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def allow(_request: Request):
+            return PlainTextResponse("ok")
+
+        base_scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/admin",
+            "raw_path": b"/admin",
+            "query_string": b"",
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+            "headers": [],
+        }
+
+        with patch("app.main.get_admin_username", return_value="venkat"), patch(
+            "app.main.get_admin_password", return_value="secret-pass"
+        ):
+            unauthorized = asyncio.run(admin_basic_auth(Request(base_scope, receive), allow))
+            self.assertEqual(unauthorized.status_code, 401)
+            self.assertEqual(
+                unauthorized.headers.get("www-authenticate"),
+                'Basic realm="MilesMemories Admin"',
+            )
+
+            token = base64.b64encode(b"venkat:secret-pass").decode("ascii")
+            authorized_scope = dict(base_scope)
+            authorized_scope["headers"] = [
+                (b"authorization", f"Basic {token}".encode("ascii"))
+            ]
+            authorized = asyncio.run(admin_basic_auth(Request(authorized_scope, receive), allow))
+            self.assertEqual(authorized.status_code, 200)
+            self.assertEqual(authorized.body, b"ok")
+
     def test_admin_overrides_page_renders_rules(self) -> None:
         with patch(
             "app.main.destination_overrides.list_overrides",

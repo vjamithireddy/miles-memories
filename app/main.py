@@ -1,20 +1,29 @@
+import base64
+import binascii
 from datetime import datetime
 from html import escape
 import json
 import math
+import secrets
 from typing import List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap import get_user_timezone
 from app import destination_overrides, trip_admin
 from app.schemas import PublishReadyRequest, TripDetail, TripReviewRequest, TripSummary
-from app.settings import get_app_host, get_app_port, get_app_reload
+from app.settings import (
+    get_admin_password,
+    get_admin_username,
+    get_app_host,
+    get_app_port,
+    get_app_reload,
+)
 
 app = FastAPI(title="MilesMemories API", version="0.1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -28,6 +37,49 @@ def _html_response(content: str) -> HTMLResponse:
             "Pragma": "no-cache",
         },
     )
+
+
+def _admin_auth_failure(message: str, status_code: int = 401) -> PlainTextResponse:
+    response = PlainTextResponse(message, status_code=status_code)
+    response.headers["WWW-Authenticate"] = 'Basic realm="MilesMemories Admin"'
+    return response
+
+
+def _decode_basic_auth_header(header_value: str) -> Optional[tuple[str, str]]:
+    if not header_value.startswith("Basic "):
+        return None
+    try:
+        decoded = base64.b64decode(header_value[6:], validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        return None
+    if ":" not in decoded:
+        return None
+    username, password = decoded.split(":", 1)
+    return username, password
+
+
+@app.middleware("http")
+async def admin_basic_auth(request: Request, call_next):
+    if not request.url.path.startswith("/admin"):
+        return await call_next(request)
+
+    expected_username = get_admin_username()
+    expected_password = get_admin_password()
+    if not expected_username or not expected_password:
+        return _admin_auth_failure("Admin authentication is not configured.", status_code=503)
+
+    credentials = _decode_basic_auth_header(request.headers.get("Authorization", ""))
+    if not credentials:
+        return _admin_auth_failure("Admin authentication required.")
+
+    username, password = credentials
+    if not (
+        secrets.compare_digest(username, expected_username)
+        and secrets.compare_digest(password, expected_password)
+    ):
+        return _admin_auth_failure("Invalid admin credentials.")
+
+    return await call_next(request)
 
 HOME_PAGE = """<!DOCTYPE html>
 <html lang="en">

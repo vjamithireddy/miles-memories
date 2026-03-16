@@ -18,3 +18,11 @@ def get_app_host() -> str:
 
 def get_app_reload() -> bool:
     return os.getenv("APP_RELOAD", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_admin_username() -> str:
+    return os.getenv("ADMIN_USERNAME", "").strip()
+
+
+def get_admin_password() -> str:
+    return os.getenv("ADMIN_PASSWORD", "")
