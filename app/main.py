@@ -2329,9 +2329,9 @@ async def update_trip_segment_from_form(
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=segment", status_code=303)
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/health", response_class=PlainTextResponse)
+def health() -> str:
+    return "ok"
 
 
 @app.get("/admin/trips", response_model=List[TripSummary])

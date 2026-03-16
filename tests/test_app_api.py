@@ -19,6 +19,7 @@ from app.main import (
     create_destination_override,
     delete_destination_override,
     get_admin_trip,
+    health,
     homepage,
     list_admin_trips,
     review_trip_from_form,
@@ -195,6 +196,11 @@ class AppApiTests(unittest.TestCase):
         self.assertIn("text/html", response.media_type)
         self.assertIn(b"MilesMemories", response.body)
         self.assertIn(b"/admin/trips", response.body)
+
+    def test_health_returns_plain_text(self) -> None:
+        response = health()
+
+        self.assertEqual(response, "ok")
 
     def test_admin_homepage_renders_trips(self) -> None:
         with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list:
