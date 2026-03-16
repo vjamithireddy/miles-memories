@@ -371,23 +371,25 @@ def _render_leg_map_preview(item: dict) -> str:
 
     def pick_zoom() -> int:
         span = max(lat_span, lon_span)
-        if span > 20:
+        if span > 30:
             return 4
-        if span > 8:
+        if span > 15:
             return 5
-        if span > 3:
+        if span > 6:
             return 6
-        if span > 1:
+        if span > 2.5:
             return 7
-        if span > 0.4:
+        if span > 0.9:
             return 8
-        if span > 0.12:
+        if span > 0.3:
+            return 9
+        if span > 0.1:
             return 10
-        if span > 0.04:
+        if span > 0.03:
             return 11
-        if span > 0.015:
+        if span > 0.01:
             return 12
-        return 13
+        return 14
 
     def project(lat: float, lon: float, zoom: int) -> tuple[float, float]:
         lat = max(min(lat, 85.0511), -85.0511)
@@ -452,10 +454,15 @@ def _render_leg_map_preview(item: dict) -> str:
       {''.join(tiles)}
       <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}">
         <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
-        <path d="{path_d}" fill="none" stroke="#275d4f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#b85f35" stroke-width="6" />
-        <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#275d4f" stroke-width="6" />
+        <path d="{path_d}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#c8643b" stroke-width="6" />
+        <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />
       </svg>
+      <div class="leg-map-legend">
+        <span><i class="legend-dot legend-start"></i>Start</span>
+        <span><i class="legend-dot legend-end"></i>End</span>
+      </div>
     </div>
     """
 
@@ -1754,6 +1761,40 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       width: 100%;
       height: 100%;
       display: block;
+    }}
+    .leg-map-legend {{
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      display: inline-flex;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 248, 239, 0.92);
+      border: 1px solid rgba(219, 202, 177, 0.9);
+      color: var(--ink);
+      font-size: 0.82rem;
+      font-weight: 600;
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .leg-map-legend span {{
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }}
+    .legend-dot {{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      background: currentColor;
+    }}
+    .legend-start {{
+      color: #c8643b;
+    }}
+    .legend-end {{
+      color: #2f6c5b;
     }}
     .leg-map-empty {{
       display: grid;
