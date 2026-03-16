@@ -186,6 +186,41 @@ def _place_candidate_score(place_name: str | None, locality: str | None) -> tupl
     return (has_specific_name, has_locality, has_any_name)
 
 
+def _candidate_distance_sq(
+    latitude: float,
+    longitude: float,
+    candidate_latitude: float | None,
+    candidate_longitude: float | None,
+) -> float:
+    if candidate_latitude is None or candidate_longitude is None:
+        return float("inf")
+    return (float(candidate_latitude) - latitude) ** 2 + (float(candidate_longitude) - longitude) ** 2
+
+
+def _best_nearby_place_name(
+    rows: list[dict[str, Any]],
+    *,
+    latitude: float,
+    longitude: float,
+) -> str | None:
+    shortlisted = []
+    for row in rows:
+        preferred_name = _prefer_locality_over_region(row.get("place_name"), row.get("city"))
+        if not preferred_name or _is_regional_place(preferred_name):
+            continue
+        shortlisted.append(
+            (
+                _candidate_distance_sq(latitude, longitude, row.get("latitude"), row.get("longitude")),
+                -int(row.get("id") or 0),
+                preferred_name,
+            )
+        )
+    if not shortlisted:
+        return None
+    shortlisted.sort()
+    return shortlisted[0][2]
+
+
 def _drive_duration_minutes(leg: dict[str, Any]) -> int:
     start_time = leg.get("start_time")
     end_time = leg.get("end_time")
@@ -407,8 +442,20 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
                 (float(latitude), float(longitude)),
             )
             rows = cur.fetchall()
+            cur.execute(
+                """
+                SELECT id, place_name, place_type, source, city, latitude, longitude
+                FROM places
+                WHERE ABS(latitude - %s) <= 0.15
+                  AND ABS(longitude - %s) <= 0.15
+                ORDER BY id DESC
+                LIMIT 200
+                """,
+                (float(latitude), float(longitude)),
+            )
+            nearby_rows = cur.fetchall()
     if not rows:
-        return None
+        return _best_nearby_place_name(nearby_rows, latitude=float(latitude), longitude=float(longitude))
     row = max(
         rows,
         key=lambda candidate: (
@@ -424,7 +471,11 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
         "locality": row["city"],
         "classification": row["source"],
     }
-    return _destination_title(profile)
+    title = _destination_title(profile)
+    if title and not _is_regional_place(title):
+        return title
+    nearby_name = _best_nearby_place_name(nearby_rows, latitude=float(latitude), longitude=float(longitude))
+    return nearby_name or title
 
 
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

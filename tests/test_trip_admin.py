@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
+    _best_nearby_place_name,
     _build_travel_legs,
     _is_generic_regional_segment_summary,
     _is_placeholder_segment_summary,
@@ -49,6 +50,29 @@ class TripAdminTests(unittest.TestCase):
         self.assertGreater(
             _place_candidate_score("Flathead County", "Whitefish"),
             _place_candidate_score("Flathead County", "Flathead County"),
+        )
+
+    def test_best_nearby_place_name_prefers_specific_locality_over_county(self) -> None:
+        rows = [
+            {
+                "id": 1,
+                "place_name": "Flathead County",
+                "city": "Flathead County",
+                "latitude": 48.1,
+                "longitude": -113.9,
+            },
+            {
+                "id": 2,
+                "place_name": "Whitefish",
+                "city": "Whitefish",
+                "latitude": 48.12,
+                "longitude": -114.03,
+            },
+        ]
+
+        self.assertEqual(
+            _best_nearby_place_name(rows, latitude=48.11, longitude=-114.02),
+            "Whitefish",
         )
 
     def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
