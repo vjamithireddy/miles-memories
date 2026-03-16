@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import unittest
 
 from app.trip_admin import (
+    _apply_duplicate_leg_summary_disambiguation,
     _is_placeholder_segment_summary,
     _leg_default_summary,
     _should_refresh_segment_summary,
@@ -98,6 +100,39 @@ class TripAdminTests(unittest.TestCase):
         )
 
         self.assertEqual(summary, "Drive to Mather Point Overlook.")
+
+    def test_duplicate_leg_summaries_are_disambiguated(self) -> None:
+        class FakeCursor:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def execute(self, sql: str, params: tuple[object, ...]) -> None:
+                self.calls.append((sql, params))
+
+        legs = [
+            {
+                "segment_id": 10,
+                "leg_type": "car",
+                "start_time": datetime(2025, 7, 28, 13, 0, tzinfo=timezone.utc),
+                "segment_summary": "Drive in Flathead County.",
+                "segment_summary_auto": True,
+            },
+            {
+                "segment_id": 11,
+                "leg_type": "car",
+                "start_time": datetime(2025, 7, 28, 20, 0, tzinfo=timezone.utc),
+                "segment_summary": "Drive in Flathead County.",
+                "segment_summary_auto": True,
+            },
+        ]
+        cur = FakeCursor()
+
+        _apply_duplicate_leg_summary_disambiguation(cur, legs)
+
+        self.assertNotEqual(legs[0]["segment_summary"], legs[1]["segment_summary"])
+        self.assertIn("drive in flathead county", legs[0]["segment_summary"].lower())
+        self.assertIn("drive in flathead county", legs[1]["segment_summary"].lower())
+        self.assertEqual(len(cur.calls), 2)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 import json
 import re
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from psycopg.rows import dict_row
 
+from app.bootstrap import get_user_timezone
 from app.db import get_conn
 
 
@@ -266,6 +268,68 @@ def _should_refresh_segment_summary(
     return False
 
 
+def _segment_local_zone() -> ZoneInfo:
+    try:
+        return ZoneInfo(get_user_timezone())
+    except Exception:
+        return ZoneInfo("America/Chicago")
+
+
+def _segment_time_bucket(value: datetime) -> str:
+    hour = value.hour
+    if hour < 5:
+        return "Late-night"
+    if hour < 11:
+        return "Morning"
+    if hour < 14:
+        return "Midday"
+    if hour < 18:
+        return "Afternoon"
+    if hour < 22:
+        return "Evening"
+    return "Night"
+
+
+def _disambiguated_summary(summary: str, leg: dict[str, Any], sequence: int, total: int) -> str:
+    base = summary.rstrip(".")
+    if not base:
+        return summary
+    local_start = leg["start_time"].astimezone(_segment_local_zone())
+    prefix = f"{local_start.strftime('%A')} {_segment_time_bucket(local_start)}"
+    adjusted = f"{prefix} {base[0].lower()}{base[1:]}"
+    if total > 1:
+        adjusted = f"{adjusted} ({sequence})"
+    return f"{adjusted}."
+
+
+def _apply_duplicate_leg_summary_disambiguation(cur: Any, legs: list[dict[str, Any]]) -> None:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for leg in legs:
+        summary = (leg.get("segment_summary") or "").strip()
+        if not summary:
+            continue
+        grouped.setdefault((leg["leg_type"], summary), []).append(leg)
+
+    for (_, summary), grouped_legs in grouped.items():
+        if len(grouped_legs) < 2:
+            continue
+        for index, leg in enumerate(grouped_legs, start=1):
+            updated_summary = _disambiguated_summary(summary, leg, index, len(grouped_legs))
+            if updated_summary == leg["segment_summary"]:
+                continue
+            leg["segment_summary"] = updated_summary
+            if leg.get("segment_summary_auto"):
+                cur.execute(
+                    """
+                    UPDATE trip_segments
+                    SET notes = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (updated_summary, leg["segment_id"]),
+                )
+
+
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_segment: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -448,6 +512,7 @@ def _sync_trip_segments(
                 ),
             )
             persisted = cur.fetchone()
+            auto_summary = True
         elif _should_refresh_segment_summary(
             persisted.get("notes"),
             leg=leg,
@@ -465,11 +530,16 @@ def _sync_trip_segments(
                 (default_summary, persisted["id"]),
             )
             persisted = cur.fetchone()
+            auto_summary = True
+        else:
+            auto_summary = not persisted.get("notes")
         leg["segment_id"] = int(persisted["id"])
         leg["segment_name"] = persisted.get("segment_name") or leg["label"]
         leg["segment_summary"] = persisted.get("notes") or default_summary
         leg["segment_rating"] = persisted.get("rating")
+        leg["segment_summary_auto"] = auto_summary
         synced.append(leg)
+    _apply_duplicate_leg_summary_disambiguation(cur, synced)
     return synced
 
 
