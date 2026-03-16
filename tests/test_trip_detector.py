@@ -8,6 +8,7 @@ from trip_engine.detector import (
     _apply_destination_override,
     _generate_trip_name,
     _haversine_km,
+    _is_stale_cached_place,
     _resolve_destination_profile,
     _select_locality,
     detect_trips,
@@ -68,6 +69,9 @@ class FakeConn:
 
 
 class DetectorTests(unittest.TestCase):
+    def test_stale_cached_place_flags_county_only_cache(self) -> None:
+        self.assertTrue(_is_stale_cached_place("Flathead County", "boundary", "Flathead County"))
+
     def test_haversine_is_reasonable_for_home_to_work(self) -> None:
         distance = _haversine_km(38.7504884, -90.6877536, 38.757, -90.465)
         self.assertGreater(distance, 15)

@@ -168,9 +168,22 @@ def _is_stale_cached_place(
     normalized_name = _normalize_text(place_name)
     if normalized_name in UNKNOWN_PLACE_NAMES:
         return True
-    if _meaningful_locality(city):
+    normalized_city = _normalize_text(city)
+    if (
+        _meaningful_locality(city)
+        and "county" not in normalized_city
+        and "state" not in normalized_city
+        and "region" not in normalized_city
+    ):
         return False
     if not _meaningful_destination_name(place_name):
+        return True
+    if _is_downranked_destination_name(place_name) and (
+        not _meaningful_locality(city)
+        or "county" in normalized_city
+        or "state" in normalized_city
+        or "region" in normalized_city
+    ):
         return True
     if _is_address_like(place_name) and _normalize_text(place_type) in GENERIC_PLACE_TYPES:
         return True
@@ -237,7 +250,12 @@ def _fetch_destination_profile(latitude: float, longitude: float) -> Dict[str, O
     }
 
 
-def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str, Optional[str]]:
+def _resolve_destination_profile(
+    latitude: float,
+    longitude: float,
+    *,
+    force_refresh: bool = False,
+) -> Dict[str, Optional[str]]:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -252,7 +270,7 @@ def _resolve_destination_profile(latitude: float, longitude: float) -> Dict[str,
                 (latitude, longitude),
             )
             row = cur.fetchone()
-            if row:
+            if row and not force_refresh:
                 place_name, place_type, source, city = row
                 if _is_stale_cached_place(place_name, place_type, city):
                     row = None

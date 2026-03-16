@@ -564,7 +564,9 @@ def enrich_trip_leg_places(trip_id: int) -> int:
             if key in seen:
                 continue
             seen.add(key)
-            _resolve_destination_profile(float(latitude), float(longitude))
+            current_name = _leg_point_place_name(float(latitude), float(longitude))
+            force_refresh = _is_regional_place(current_name)
+            _resolve_destination_profile(float(latitude), float(longitude), force_refresh=force_refresh)
             enriched += 1
     return enriched
 
