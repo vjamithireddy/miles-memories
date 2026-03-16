@@ -8,6 +8,7 @@ from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
     _best_nearby_place_name,
     _build_travel_legs,
+    _enrich_nearby_endpoint_places,
     _is_generic_regional_segment_summary,
     _is_placeholder_segment_summary,
     _leg_default_summary,
@@ -74,6 +75,20 @@ class TripAdminTests(unittest.TestCase):
             _best_nearby_place_name(rows, latitude=48.11, longitude=-114.02),
             "Whitefish",
         )
+
+    def test_enrich_nearby_endpoint_places_queries_offset_ring(self) -> None:
+        calls = []
+
+        def fake_resolve(latitude: float, longitude: float, *, force_refresh: bool = False):
+            calls.append((round(latitude, 3), round(longitude, 3), force_refresh))
+            return {"name": None, "locality": None, "category": None, "display_name": None}
+
+        with patch("app.trip_admin._resolve_destination_profile", side_effect=fake_resolve):
+            count = _enrich_nearby_endpoint_places(48.0, -114.0)
+
+        self.assertEqual(count, 4)
+        self.assertIn((48.0, -113.99, True), calls)
+        self.assertIn((48.01, -114.0, True), calls)
 
     def test_refresh_segment_summary_flags_legacy_trip_context_flight_text(self) -> None:
         self.assertTrue(

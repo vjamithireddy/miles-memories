@@ -47,6 +47,13 @@ LEG_LABELS = {
     "HIKING": ("hike", "Hiking"),
 }
 
+NEARBY_ENRICHMENT_OFFSETS = (
+    (0.0, 0.01),
+    (0.01, 0.0),
+    (0.0, -0.01),
+    (-0.01, 0.0),
+)
+
 
 def _is_placeholder_segment_summary(value: str | None) -> bool:
     if not value:
@@ -219,6 +226,18 @@ def _best_nearby_place_name(
         return None
     shortlisted.sort()
     return shortlisted[0][2]
+
+
+def _enrich_nearby_endpoint_places(latitude: float, longitude: float) -> int:
+    enriched = 0
+    for lat_offset, lon_offset in NEARBY_ENRICHMENT_OFFSETS:
+        _resolve_destination_profile(
+            latitude + lat_offset,
+            longitude + lon_offset,
+            force_refresh=True,
+        )
+        enriched += 1
+    return enriched
 
 
 def _drive_duration_minutes(leg: dict[str, Any]) -> int:
@@ -617,7 +636,14 @@ def enrich_trip_leg_places(trip_id: int) -> int:
             seen.add(key)
             current_name = _leg_point_place_name(float(latitude), float(longitude))
             force_refresh = _is_regional_place(current_name)
-            _resolve_destination_profile(float(latitude), float(longitude), force_refresh=force_refresh)
+            profile = _resolve_destination_profile(
+                float(latitude),
+                float(longitude),
+                force_refresh=force_refresh,
+            )
+            exact_title = _destination_title(profile)
+            if force_refresh and _is_regional_place(exact_title) and exact_title == current_name:
+                enriched += _enrich_nearby_endpoint_places(float(latitude), float(longitude))
             enriched += 1
     return enriched
 
