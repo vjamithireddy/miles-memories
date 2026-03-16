@@ -11,9 +11,7 @@ from psycopg.rows import dict_row
 from app.bootstrap import get_user_timezone
 from app.db import get_conn
 from trip_engine.detector import (
-    _apply_destination_override,
     _destination_title,
-    _resolve_destination_profile,
 )
 
 
@@ -338,11 +336,29 @@ def _apply_duplicate_leg_summary_disambiguation(cur: Any, legs: list[dict[str, A
 def _leg_point_place_name(latitude: float | None, longitude: float | None) -> str | None:
     if latitude is None or longitude is None:
         return None
-    profile = _apply_destination_override(
-        float(latitude),
-        float(longitude),
-        _resolve_destination_profile(float(latitude), float(longitude)),
-    )
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT place_name, place_type, source, city
+                FROM places
+                WHERE round(latitude::numeric, 3) = round(%s::numeric, 3)
+                  AND round(longitude::numeric, 3) = round(%s::numeric, 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (float(latitude), float(longitude)),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    profile = {
+        "name": row["place_name"],
+        "category": row["place_type"],
+        "display_name": row["city"],
+        "locality": row["city"],
+        "classification": row["source"],
+    }
     return _destination_title(profile)
 
 
