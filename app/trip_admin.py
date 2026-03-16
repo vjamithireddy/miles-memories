@@ -59,13 +59,13 @@ def _is_placeholder_segment_summary(value: str | None) -> bool:
     )
 
 
-def _is_generic_regional_drive_summary(value: str | None) -> bool:
+def _is_generic_regional_segment_summary(value: str | None) -> bool:
     if not value:
         return False
     normalized = value.strip().lower()
     return bool(
         re.match(
-            r"^(?:[a-z-]+\s+[a-z-]+\s+)?drive (?:in|from trail in|to trailhead in) .*(county|state|region)(?: \(\d+\))?\.?$",
+            r"^(?:[a-z-]+\s+[a-z-]+\s+)?(?:drive|walk|hike|run) (?:in|from trail in|to trailhead in) .*(county|state|region)(?: \(\d+\))?\.?$",
             normalized,
         )
     )
@@ -301,7 +301,7 @@ def _should_refresh_segment_summary(
 ) -> bool:
     if _is_placeholder_segment_summary(existing_summary):
         return True
-    if leg.get("leg_type") == "car" and _is_generic_regional_drive_summary(existing_summary):
+    if leg.get("leg_type") in {"car", "walk", "hike", "run"} and _is_generic_regional_segment_summary(existing_summary):
         return True
     if not existing_summary:
         return True

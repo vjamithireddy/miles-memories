@@ -7,7 +7,7 @@ from unittest.mock import patch
 from app.trip_admin import (
     _apply_duplicate_leg_summary_disambiguation,
     _build_travel_legs,
-    _is_generic_regional_drive_summary,
+    _is_generic_regional_segment_summary,
     _is_placeholder_segment_summary,
     _leg_default_summary,
     _prefer_locality_over_region,
@@ -21,9 +21,10 @@ class TripAdminTests(unittest.TestCase):
             _is_placeholder_segment_summary("Drive near Harry Reid Airport Rental Car Facility.")
         )
 
-    def test_generic_regional_drive_summary_is_flagged(self) -> None:
-        self.assertTrue(_is_generic_regional_drive_summary("Drive in Flathead County."))
-        self.assertTrue(_is_generic_regional_drive_summary("Monday Morning drive in Flathead County (2)"))
+    def test_generic_regional_segment_summary_is_flagged(self) -> None:
+        self.assertTrue(_is_generic_regional_segment_summary("Drive in Flathead County."))
+        self.assertTrue(_is_generic_regional_segment_summary("Monday Morning drive in Flathead County (2)"))
+        self.assertTrue(_is_generic_regional_segment_summary("Sunday Morning walk in Flathead County (3)"))
 
     def test_prefer_locality_over_region_uses_city_when_name_is_county(self) -> None:
         self.assertEqual(
