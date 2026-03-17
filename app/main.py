@@ -337,15 +337,29 @@ def _trip_badge_class(value: str) -> str:
     return ""
 
 
+def _trip_badge_label(value: str) -> str:
+    normalized = value.lower()
+    if normalized in {"confirmed", "published"}:
+        return "Reviewed"
+    if normalized in {"pending", "needs_review"}:
+        return "Needs review"
+    if normalized in {"ignored", "rejected"}:
+        return "Not a trip"
+    return value.replace("_", " ")
+
+
 def _render_trip_badges(trip: dict) -> str:
     badges: list[tuple[str, str]] = []
     status = trip["status"]
     review = trip["review_decision"]
     if status == review:
-        badges.append((status, _trip_badge_class(status)))
+        badges.append((_trip_badge_label(status), _trip_badge_class(status)))
     else:
-        badges.append((status, _trip_badge_class(status)))
-        badges.append((review, _trip_badge_class(review)))
+        badges.append((_trip_badge_label(status), _trip_badge_class(status)))
+        review_label = _trip_badge_label(review)
+        status_label = _trip_badge_label(status)
+        if review_label != status_label:
+            badges.append((review_label, _trip_badge_class(review)))
     badges.append(("Private" if trip["is_private"] else "Visible", ""))
     badges.append(("Public" if trip["publish_ready"] else "Not Ready", ""))
     return "".join(
@@ -1615,13 +1629,22 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       resize: vertical;
     }}
     .quick-actions {{
+      display: grid;
+      gap: 12px;
+      margin-bottom: 14px;
+    }}
+    .action-group {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin-bottom: 14px;
+      align-items: center;
     }}
-    .quick-actions form {{
-      margin: 0;
+    .action-group-label {{
+      min-width: 78px;
+      font-size: 0.86rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
     }}
     .quick-actions button {{
       min-width: 138px;
@@ -1950,6 +1973,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       .detail-pair {{
         grid-template-columns: 1fr;
       }}
+      .action-group {{
+        align-items: flex-start;
+        flex-direction: column;
+      }}
+      .action-group-label {{
+        min-width: auto;
+      }}
       details.leg-collapse > summary {{
         flex-direction: column;
         align-items: flex-start;
@@ -2006,12 +2036,22 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
             </label>
           </div>
-          <div class="workflow-help">Use the action buttons to move the trip forward. Save details only updates the text fields.</div>
+          <div class="workflow-help">Review the trip first with a simple yes/no decision. Once it is reviewed, choose whether it should stay private or be made public.</div>
           <div class="quick-actions">
-            <button class="button" type="submit" name="action" value="confirm">Confirm</button>
-            <button class="button" type="submit" name="action" value="publish">Publish</button>
-            <button class="button" type="submit" name="action" value="mark_private">Make private</button>
-            <button class="primary" type="submit" name="action" value="save">Save details</button>
+            <div class="action-group">
+              <span class="action-group-label">Review</span>
+              <button class="button" type="submit" name="action" value="confirm">Yes</button>
+              <button class="button" type="submit" name="action" value="reject">No</button>
+            </div>
+            <div class="action-group">
+              <span class="action-group-label">Visibility</span>
+              <button class="button" type="submit" name="action" value="publish">Public</button>
+              <button class="button" type="submit" name="action" value="mark_private">Private</button>
+            </div>
+            <div class="action-group">
+              <span class="action-group-label">Details</span>
+              <button class="primary" type="submit" name="action" value="save">Save details</button>
+            </div>
           </div>
         </form>
         <div class="actions">
