@@ -870,6 +870,45 @@ def list_trips(
             return [_normalize_trip(row) for row in cur.fetchall()]
 
 
+def list_published_trips(*, limit: int = 12) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    trip_name,
+                    trip_slug,
+                    trip_type,
+                    status,
+                    review_decision,
+                    start_time,
+                    end_time,
+                    start_date,
+                    end_date,
+                    primary_destination_name,
+                    origin_place_name,
+                    confidence_score,
+                    summary_text,
+                    is_private,
+                    publish_ready,
+                    published_at,
+                    updated_at
+                FROM trips
+                WHERE is_private = FALSE
+                  AND (
+                    status = 'published'
+                    OR publish_ready = TRUE
+                    OR published_at IS NOT NULL
+                  )
+                ORDER BY COALESCE(published_at, end_time, start_time) DESC, id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [_normalize_trip(row) for row in cur.fetchall()]
+
+
 def get_trip(trip_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:

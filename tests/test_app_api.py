@@ -190,12 +190,27 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'href="/admin/trip/7"', response.body)
 
     def test_homepage_returns_html(self) -> None:
-        response = homepage()
+        published_trip = _trip_summary()
+        published_trip["trip_name"] = "Glacier National Park"
+        published_trip["primary_destination_name"] = "Montana"
+        published_trip["summary_text"] = "Road trip through Glacier and Yellowstone."
+        published_trip["is_private"] = False
+        published_trip["publish_ready"] = True
+        published_trip["status"] = "published"
+
+        with patch("app.main.trip_admin.list_published_trips", return_value=[published_trip]) as mock_list, \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = homepage()
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/html", response.media_type)
         self.assertIn(b"MilesMemories", response.body)
-        self.assertIn(b"/admin/trips", response.body)
+        self.assertIn(b"Published travel stories from your own data", response.body)
+        self.assertIn(b"Recent published trips", response.body)
+        self.assertIn(b"Glacier National Park", response.body)
+        self.assertIn(b"Montana", response.body)
+        self.assertNotIn(b"/admin/trips", response.body)
+        mock_list.assert_called_once_with(limit=12)
 
     def test_health_returns_plain_text(self) -> None:
         response = health()

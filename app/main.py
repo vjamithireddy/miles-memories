@@ -81,26 +81,83 @@ async def admin_basic_auth(request: Request, call_next):
 
     return await call_next(request)
 
-HOME_PAGE = """<!DOCTYPE html>
+def _render_public_homepage(trips: List[dict]) -> str:
+    published_total = len(trips)
+    latest_label = "No published trips yet"
+    if trips:
+        latest_trip = trips[0]
+        latest_dt = latest_trip.get("published_at") or latest_trip.get("end_time") or latest_trip.get("start_time")
+        latest_label = _format_local_datetime(latest_dt) if latest_dt else "Recently updated"
+
+    if trips:
+        feature_trip = trips[0]
+        feature_title = escape(feature_trip.get("trip_name") or "Untitled trip")
+        feature_destination = escape(feature_trip.get("primary_destination_name") or "Destination pending")
+        feature_summary = escape(
+            feature_trip.get("summary_text")
+            or "A published trip from the MilesMemories archive."
+        )
+        feature_timing = (
+            f"{escape(_format_local_datetime(feature_trip['start_time']))} → "
+            f"{escape(_format_local_datetime(feature_trip['end_time']))}"
+        )
+        feature_trip_type = escape((feature_trip.get("trip_type") or "trip").replace("_", " "))
+    else:
+        feature_title = "Published trips will appear here"
+        feature_destination = "MilesMemories archive"
+        feature_summary = "Trips you publish from the admin workflow will appear on this landing page."
+        feature_timing = "Publish a reviewed trip to open the public archive."
+        feature_trip_type = "Published archive"
+
+    cards = []
+    for trip in trips:
+        title = escape(trip.get("trip_name") or "Untitled trip")
+        destination = escape(trip.get("primary_destination_name") or "Destination pending")
+        summary = escape(trip.get("summary_text") or "Published from the MilesMemories archive.")
+        trip_type = escape((trip.get("trip_type") or "trip").replace("_", " "))
+        timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
+        cards.append(
+            f"""
+            <article class="trip-card">
+              <div class="trip-card-top">
+                <span class="trip-chip">{trip_type}</span>
+                <span class="trip-chip muted">{timing}</span>
+              </div>
+              <h3>{title}</h3>
+              <p class="trip-destination">{destination}</p>
+              <p>{summary}</p>
+            </article>
+            """
+        )
+
+    trips_markup = "".join(cards) if cards else """
+      <article class="trip-card empty-state">
+        <h3>No public trips yet</h3>
+        <p>Publish a reviewed trip from the admin workflow and it will appear here automatically.</p>
+      </article>
+    """
+
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MilesMemories</title>
   <style>
-    :root {
+    :root {{
       --bg: #f4efe6;
-      --panel: #fffaf2;
+      --panel: rgba(255, 250, 242, 0.92);
       --ink: #1d2430;
       --muted: #5f6b7a;
       --line: #d8c9b3;
       --accent: #c8643b;
       --accent-dark: #8e3f22;
+      --good: #275d4f;
       --shadow: rgba(50, 33, 15, 0.12);
-    }
+    }}
 
-    * { box-sizing: border-box; }
-    body {
+    * {{ box-sizing: border-box; }}
+    body {{
       margin: 0;
       font-family: Georgia, "Times New Roman", serif;
       color: var(--ink);
@@ -108,213 +165,244 @@ HOME_PAGE = """<!DOCTYPE html>
         radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
         radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
         linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
-    }
+    }}
 
-    main {
-      max-width: 1080px;
+    main {{
+      max-width: 1200px;
       margin: 0 auto;
-      padding: 48px 20px 72px;
-    }
-
-    .hero {
+      padding: 48px 20px 80px;
       display: grid;
-      gap: 24px;
-      grid-template-columns: 1.4fr 1fr;
-      align-items: stretch;
-    }
+      gap: 22px;
+    }}
 
-    .card {
-      background: rgba(255, 250, 242, 0.9);
+    .panel {{
+      background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 24px;
+      border-radius: 28px;
       box-shadow: 0 18px 40px var(--shadow);
-      padding: 28px;
-    }
+      padding: 30px;
+    }}
 
-    .eyebrow {
+    .hero {{
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 20px;
+    }}
+
+    .hero-copy {{
+      display: grid;
+      gap: 18px;
+    }}
+
+    .eyebrow {{
       display: inline-block;
-      margin-bottom: 14px;
       font-size: 0.8rem;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--accent-dark);
-    }
+    }}
 
-    h1, h2, h3 {
-      margin: 0 0 12px;
-      line-height: 1.05;
+    h1, h2, h3 {{
+      margin: 0;
+      line-height: 1.04;
       font-weight: 700;
-    }
+    }}
 
-    h1 {
-      font-size: clamp(2.3rem, 5vw, 4.8rem);
-      max-width: 10ch;
-    }
+    h1 {{
+      font-size: clamp(2.4rem, 5vw, 5rem);
+      max-width: 11ch;
+    }}
 
-    p {
+    h2 {{
+      font-size: clamp(1.6rem, 2vw, 2.3rem);
+      margin-bottom: 14px;
+    }}
+
+    h3 {{
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+    }}
+
+    p {{
       margin: 0;
       line-height: 1.65;
       color: var(--muted);
       font-size: 1rem;
-    }
+    }}
 
-    .hero-copy {
-      display: grid;
-      gap: 18px;
-    }
+    .hero-note {{
+      font-size: 1.08rem;
+      max-width: 60ch;
+    }}
 
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 8px;
-    }
-
-    .button, .link-card a {
-      text-decoration: none;
-    }
-
-    .button {
-      padding: 12px 16px;
-      border-radius: 999px;
-      border: 1px solid var(--accent);
-      color: white;
-      background: var(--accent);
-      font-weight: 700;
-      box-shadow: 0 8px 20px rgba(200, 100, 59, 0.25);
-    }
-
-    .button.secondary {
-      background: transparent;
-      color: var(--accent-dark);
-    }
-
-    .stats {
+    .stats {{
       display: grid;
       gap: 14px;
-    }
+      align-content: start;
+    }}
 
-    .stat {
-      padding: 16px 0;
-      border-bottom: 1px solid var(--line);
-    }
+    .stat {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,0.52);
+    }}
 
-    .stat:last-child { border-bottom: 0; }
-
-    .stat strong {
+    .stat strong {{
       display: block;
-      font-size: 1.9rem;
-      margin-bottom: 4px;
+      font-size: 2rem;
       color: var(--ink);
-    }
+      margin-bottom: 4px;
+    }}
 
-    .grid {
+    .feature-grid {{
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+    }}
+
+    .feature-card {{
+      display: grid;
+      gap: 14px;
+    }}
+
+    .feature-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+
+    .trip-chip {{
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      text-transform: capitalize;
+      background: rgba(200,100,59,0.14);
+      color: var(--accent-dark);
+    }}
+
+    .trip-chip.muted {{
+      background: rgba(29,36,48,0.06);
+      color: var(--muted);
+    }}
+
+    .feature-destination {{
+      color: var(--good);
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+
+    .published-grid {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
-      margin-top: 22px;
-    }
+    }}
 
-    .link-card {
-      min-height: 180px;
+    .trip-card {{
       display: grid;
       gap: 12px;
-      align-content: start;
-    }
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      background: rgba(255,255,255,0.58);
+    }}
 
-    .link-card span {
-      display: inline-block;
-      font-size: 0.76rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--accent-dark);
-    }
+    .trip-card-top {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
+    }}
 
-    .link-card a {
-      color: var(--ink);
-      font-size: 1.3rem;
+    .trip-destination {{
+      color: var(--good);
       font-weight: 700;
-    }
+      margin-top: -4px;
+    }}
 
-    .foot {
-      margin-top: 22px;
-      font-size: 0.95rem;
-    }
+    .section-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: baseline;
+      margin-bottom: 16px;
+    }}
 
-    code {
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 0.95em;
-      background: rgba(29, 36, 48, 0.06);
-      padding: 0.15rem 0.35rem;
-      border-radius: 6px;
-    }
+    .foot {{
+      color: var(--muted);
+      font-size: 0.94rem;
+    }}
 
-    @media (max-width: 820px) {
-      .hero, .grid {
+    .empty-state {{
+      grid-column: 1 / -1;
+      min-height: 0;
+    }}
+
+    @media (max-width: 960px) {{
+      .hero,
+      .feature-grid,
+      .published-grid {{
         grid-template-columns: 1fr;
-      }
-
-      main {
-        padding-top: 28px;
-      }
-    }
+      }}
+    }}
   </style>
 </head>
 <body>
   <main>
-    <section class="hero">
-      <article class="card hero-copy">
-        <div>
-          <div class="eyebrow">MilesMemories</div>
-          <h1>Travel stories assembled from your own data.</h1>
-        </div>
-        <p>
-          The service is live. Location history and Garmin activity data can flow into trip review,
-          publishing, and timeline tooling from this deployment.
-        </p>
-        <div class="actions">
-          <a class="button" href="/admin/trips">Open Trip API</a>
-          <a class="button secondary" href="/health">Service Health</a>
-        </div>
-      </article>
-
-      <aside class="card stats">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <span class="eyebrow">MilesMemories</span>
+        <h1>Published travel stories from your own data.</h1>
+        <p class="hero-note">This public landing page only shows trips you have reviewed, published, and marked visible from the admin workflow.</p>
+      </div>
+      <aside class="stats">
         <div class="stat">
-          <strong>Live</strong>
-          <p>FastAPI app running behind Nginx on the VPS.</p>
+          <strong>{published_total}</strong>
+          <p>Published trips currently visible on the site.</p>
         </div>
         <div class="stat">
-          <strong>/admin/trips</strong>
-          <p>Trip review endpoints are available for the next UI layer.</p>
-        </div>
-        <div class="stat">
-          <strong>Scope</strong>
-          <p>Current build excludes photo processing and focuses on trips, locations, and Garmin data.</p>
+          <strong>{escape(latest_label)}</strong>
+          <p>Most recent published timeline currently surfaced here.</p>
         </div>
       </aside>
     </section>
 
-    <section class="grid">
-      <article class="card link-card">
-        <span>Endpoint</span>
-        <a href="/admin/trips">Trip Review Feed</a>
-        <p>List detected trips, filter by review state, and use this as the source for an admin review screen.</p>
+    <section class="feature-grid">
+      <article class="panel feature-card">
+        <span class="eyebrow">Featured Trip</span>
+        <h2>{feature_title}</h2>
+        <div class="feature-destination">{feature_destination}</div>
+        <p>{feature_summary}</p>
+        <div class="feature-meta">
+          <span class="trip-chip">{feature_trip_type}</span>
+          <span class="trip-chip muted">{feature_timing}</span>
+        </div>
       </article>
-      <article class="card link-card">
-        <span>Endpoint</span>
-        <a href="/health">Health Check</a>
-        <p>Simple uptime check for browser, curl, systemd validation, and reverse proxy smoke tests.</p>
-      </article>
-      <article class="card link-card">
-        <span>Next Build</span>
-        <a href="/admin/trips">Admin Homepage Placeholder</a>
-        <p>Next sensible step is a lightweight trip operations UI on top of the review endpoints.</p>
+      <article class="panel feature-card">
+        <span class="eyebrow">How It Works</span>
+        <h2>Publish from review</h2>
+        <p>Trips stay private until you review them in the admin workflow. Once a trip is reviewed and set to public, it appears here automatically.</p>
+        <p class="foot">This public page does not expose admin JSON or review tooling.</p>
       </article>
     </section>
 
-    <p class="foot">
-      Base API is available now. Start with <code>/admin/trips</code> for trip data and <code>/health</code> for deployment checks.
-    </p>
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Published Archive</span>
+          <h2>Recent published trips</h2>
+        </div>
+        <p>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
+      </div>
+      <div class="published-grid">
+        {trips_markup}
+      </div>
+    </section>
   </main>
 </body>
 </html>
@@ -323,7 +411,8 @@ HOME_PAGE = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def homepage() -> HTMLResponse:
-    return _html_response(HOME_PAGE)
+    trips = trip_admin.list_published_trips(limit=12)
+    return _html_response(_render_public_homepage(trips))
 
 
 def _trip_badge_class(value: str) -> str:
