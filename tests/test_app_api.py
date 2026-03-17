@@ -273,6 +273,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Public", response.body)
         self.assertIn(b"Private", response.body)
         self.assertNotIn(b"Save details", response.body)
+        self.assertIn(b"Review complete. Choose whether this trip should stay private or be visible on the public site.", response.body)
         self.assertIn(b"Text edits autosave when you leave a field.", response.body)
         self.assertIn(b'is-current', response.body)
         self.assertIn(b'segmented-control', response.body)
@@ -287,7 +288,7 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b"<h2>Destination context</h2>", response.body)
         self.assertNotIn(b"Segment name", response.body)
         self.assertNotIn(b"Edit summary", response.body)
-        self.assertIn(b"Review the trip first with a simple yes/no decision.", response.body)
+        self.assertNotIn(b"Review the trip first with a simple yes/no decision.", response.body)
         self.assertIn(b'detail-cell wide', response.body)
         mock_get.assert_called_once_with(7)
 
@@ -301,6 +302,28 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Back to trip detail", response.body)
         self.assertIn(b'href="/admin/trip/7"', response.body)
         mock_get.assert_called_once_with(7)
+
+    def test_admin_trip_detail_disables_visibility_until_reviewed(self) -> None:
+        trip = _trip_detail()
+        trip["status"] = "needs_review"
+        trip["review_decision"] = "pending"
+        trip["is_private"] = True
+        trip["publish_ready"] = False
+
+        with patch("app.main.trip_admin.get_trip", return_value=trip), \
+             patch("app.main.destination_overrides.list_overrides", return_value=[]), \
+             patch("app.main.trip_admin.get_trip_neighbors", return_value={"previous": None, "next": None}), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = admin_trip_detail_page(7)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            b"Start by answering Yes or No. Visibility becomes available only after the trip is reviewed.",
+            response.body,
+        )
+        self.assertIn(b'aria-label="Visibility"', response.body)
+        self.assertIn(b'value="publish" aria-pressed="false" disabled', response.body)
+        self.assertIn(b'value="mark_private" aria-pressed="true" disabled', response.body)
 
     def test_review_trip_from_form_uses_repository(self) -> None:
         class FakeRequest:

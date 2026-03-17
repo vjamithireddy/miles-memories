@@ -490,6 +490,14 @@ def _trip_visibility_state(trip: dict) -> Optional[str]:
     return None
 
 
+def _review_step_hint(review_state: Optional[str]) -> str:
+    if review_state == "yes":
+        return "Review complete. Choose whether this trip should stay private or be visible on the public site."
+    if review_state == "no":
+        return "Marked as not a trip. Public visibility is disabled for rejected items."
+    return "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed."
+
+
 def _format_duration(start: datetime, end: datetime) -> str:
     total_seconds = max(int((end - start).total_seconds()), 0)
     hours, remainder = divmod(total_seconds, 3600)
@@ -1556,6 +1564,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     detail_badges = _render_trip_badges(trip)
     review_state = _trip_review_state(trip)
     visibility_state = _trip_visibility_state(trip)
+    visibility_enabled = review_state == "yes"
+    review_hint = _review_step_hint(review_state)
     return_to = f"/admin/trip/{trip['id']}"
     destination_href = f"/admin/trip/{trip['id']}/destination-context?{urlencode({'return_to': return_to})}"
 
@@ -1838,6 +1848,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .segmented-control button:not(.is-current):hover {{
       background: rgba(184,95,53,0.08);
+    }}
+    .segmented-control button:disabled {{
+      cursor: not-allowed;
+      color: rgba(184,95,53,0.45);
+      background: rgba(255,255,255,0.55);
+      border-color: rgba(184,95,53,0.14);
+      opacity: 0.8;
+    }}
+    .segmented-control button:disabled:hover {{
+      background: rgba(255,255,255,0.55);
     }}
     .workflow-help {{
       margin-top: -4px;
@@ -2234,7 +2254,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
             </label>
           </div>
-          <div class="workflow-help">Review the trip first with a simple yes/no decision. Once it is reviewed, choose whether it should stay private or be made public. Text edits autosave when you leave a field.</div>
+          <div class="workflow-help">{escape(review_hint)} Text edits autosave when you leave a field.</div>
           <div class="quick-actions">
             <div class="action-group">
               <span class="action-group-label">Review</span>
@@ -2246,8 +2266,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <div class="action-group">
               <span class="action-group-label">Visibility</span>
               <div class="segmented-control" role="group" aria-label="Visibility">
-                <button class="button{' is-current' if visibility_state == 'public' else ''}" type="submit" name="action" value="publish" aria-pressed="{'true' if visibility_state == 'public' else 'false'}">Public</button>
-                <button class="button{' is-current' if visibility_state == 'private' else ''}" type="submit" name="action" value="mark_private" aria-pressed="{'true' if visibility_state == 'private' else 'false'}">Private</button>
+                <button class="button{' is-current' if visibility_state == 'public' else ''}" type="submit" name="action" value="publish" aria-pressed="{'true' if visibility_state == 'public' else 'false'}"{'' if visibility_enabled else ' disabled'}>Public</button>
+                <button class="button{' is-current' if visibility_state == 'private' else ''}" type="submit" name="action" value="mark_private" aria-pressed="{'true' if visibility_state == 'private' else 'false'}"{'' if visibility_enabled else ' disabled'}>Private</button>
               </div>
             </div>
           </div>
@@ -2402,16 +2422,29 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               if (badgeSlot && payload.badge_html) {{
                 badgeSlot.innerHTML = payload.badge_html;
               }}
-              overviewForm.querySelectorAll('[aria-label="Review decision"] button').forEach((node) => {{
+              const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
+              reviewButtons.forEach((node) => {{
                 const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
                 node.classList.toggle("is-current", active);
                 node.setAttribute("aria-pressed", active ? "true" : "false");
               }});
+              const visibilityEnabled = payload.review_state === "yes";
               overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
                 const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
                 node.classList.toggle("is-current", active);
                 node.setAttribute("aria-pressed", active ? "true" : "false");
+                node.disabled = !visibilityEnabled;
               }});
+              const workflowHelp = overviewForm.querySelector(".workflow-help");
+              if (workflowHelp) {{
+                if (payload.review_state === "yes") {{
+                  workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
+                }} else if (payload.review_state === "no") {{
+                  workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
+                }} else {{
+                  workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
+                }}
+              }}
               const existing = document.querySelector("[data-toast]");
               if (existing) {{
                 existing.remove();
