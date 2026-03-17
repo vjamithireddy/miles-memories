@@ -502,24 +502,27 @@ def _format_duration(start: datetime, end: datetime) -> str:
     return " ".join(parts)
 
 
-def _render_leg_map_preview(item: dict) -> str:
-    raw_points = item.get("path_points") or []
+def _render_route_map_preview(
+    raw_points: Optional[List[dict[str, float]]] = None,
+    *,
+    start_latitude: Optional[float] = None,
+    start_longitude: Optional[float] = None,
+    end_latitude: Optional[float] = None,
+    end_longitude: Optional[float] = None,
+    aria_label: str = "Route map preview",
+) -> str:
     points: list[tuple[float, float]] = []
-    for point in raw_points:
+    for point in raw_points or []:
         lat = point.get("lat")
         lon = point.get("lon")
         if lat is None or lon is None:
             continue
         points.append((float(lat), float(lon)))
     if not points:
-        start_lat = item.get("start_latitude")
-        start_lon = item.get("start_longitude")
-        end_lat = item.get("end_latitude")
-        end_lon = item.get("end_longitude")
-        if start_lat is not None and start_lon is not None:
-            points.append((float(start_lat), float(start_lon)))
-        if end_lat is not None and end_lon is not None:
-            end_point = (float(end_lat), float(end_lon))
+        if start_latitude is not None and start_longitude is not None:
+            points.append((float(start_latitude), float(start_longitude)))
+        if end_latitude is not None and end_longitude is not None:
+            end_point = (float(end_latitude), float(end_longitude))
             if not points or points[-1] != end_point:
                 points.append(end_point)
     if not points:
@@ -616,7 +619,7 @@ def _render_leg_map_preview(item: dict) -> str:
                 f'alt="" loading="lazy" style="left:{left:.2f}px;top:{top:.2f}px;width:{tile_width:.2f}px;height:{tile_height:.2f}px;">'
             )
     return f"""
-    <div class="leg-map-frame" role="img" aria-label="Travel leg map preview">
+    <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}">
       {''.join(tiles)}
       <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}">
         <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
@@ -631,6 +634,17 @@ def _render_leg_map_preview(item: dict) -> str:
       </div>
     </div>
     """
+
+
+def _render_leg_map_preview(item: dict) -> str:
+    return _render_route_map_preview(
+        item.get("path_points") or [],
+        start_latitude=item.get("start_latitude"),
+        start_longitude=item.get("start_longitude"),
+        end_latitude=item.get("end_latitude"),
+        end_longitude=item.get("end_longitude"),
+        aria_label="Travel leg map preview",
+    )
 
 
 def _button_class(*names: str) -> str:
@@ -1418,7 +1432,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                     map_points[-1]["lat"] != end_point["lat"] or map_points[-1]["lon"] != end_point["lon"]
                 ):
                     map_points.append(end_point)
-    map_payload = escape(json.dumps(map_points))
+    trip_map_markup = _render_route_map_preview(
+        [{"lat": point["lat"], "lon": point["lon"]} for point in map_points],
+        aria_label="Trip route map preview",
+    )
     travel_legs = trip.get("travel_legs", [])
 
     timeline_items = "".join(
@@ -1675,15 +1692,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .map-copy {{
       padding: 24px 24px 0;
     }}
-    #trip-map {{
-      height: 360px;
-      width: 100%;
+    .trip-map-static {{
       border-top: 1px solid var(--line);
+      padding: 18px 24px 24px;
       background: #efe5d7;
     }}
-    .map-fallback {{
-      padding: 18px 24px 24px;
-      color: var(--muted);
+    .trip-map-static .leg-map-frame {{
+      max-width: 100%;
+      min-height: 420px;
     }}
     .list {{
       list-style: none;
@@ -2256,8 +2272,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         <h2>Trip map</h2>
         <p>Linked trip coordinates are plotted in order so you can review the route shape and destination cluster.</p>
       </div>
-      <div id="trip-map" data-points="{map_payload}"></div>
-      <div class="map-fallback">Map points appear here when linked location events include coordinates.</div>
+      <div class="trip-map-static">{trip_map_markup}</div>
     </section>
 
     <section class="panel">
@@ -2284,45 +2299,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       </ul>
     </section>
   </main>
-  <script src="/static/leaflet/leaflet.js"></script>
   <script>
     (function () {{
-      if (!window.L) {{
-        return;
-      }}
-      const mapNode = document.getElementById("trip-map");
-      if (mapNode) {{
-        const points = JSON.parse(mapNode.dataset.points || "[]");
-        if (points.length) {{
-          const fallback = document.querySelector(".map-fallback");
-          if (fallback) {{
-            fallback.style.display = "none";
-          }}
-          const map = L.map(mapNode, {{ scrollWheelZoom: false }});
-          L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
-            maxZoom: 18,
-            attribution: "&copy; OpenStreetMap contributors"
-          }}).addTo(map);
-          const latlngs = points.map((point) => [point.lat, point.lon]);
-          const polyline = L.polyline(latlngs, {{
-            color: "#b85f35",
-            weight: 4,
-            opacity: 0.9
-          }}).addTo(map);
-          const start = points[0];
-          const end = points[points.length - 1];
-          L.circleMarker([start.lat, start.lon], {{ radius: 7, color: "#b85f35" }})
-            .addTo(map)
-            .bindPopup(`Start: ${{start.label}}<br>${{start.time}}`);
-          if (points.length > 1) {{
-            L.circleMarker([end.lat, end.lon], {{ radius: 7, color: "#275d4f" }})
-              .addTo(map)
-              .bindPopup(`End: ${{end.label}}<br>${{end.time}}`);
-          }}
-          map.fitBounds(polyline.getBounds(), {{ padding: [24, 24] }});
-        }}
-      }}
-
       document.querySelectorAll(".leg-summary-input").forEach((node) => {{
         ["click", "focus", "keydown", "mousedown", "mouseup"].forEach((eventName) => {{
           node.addEventListener(eventName, (event) => event.stopPropagation());
