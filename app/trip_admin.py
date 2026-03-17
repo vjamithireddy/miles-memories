@@ -909,6 +909,30 @@ def list_published_trips(*, limit: int = 12) -> list[dict[str, Any]]:
             return [_normalize_trip(row) for row in cur.fetchall()]
 
 
+def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM trips
+                WHERE trip_slug = %s
+                  AND is_private = FALSE
+                  AND (
+                    status = 'published'
+                    OR publish_ready = TRUE
+                    OR published_at IS NOT NULL
+                  )
+                LIMIT 1
+                """,
+                (trip_slug,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return get_trip(int(row["id"]))
+
+
 def get_trip(trip_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:

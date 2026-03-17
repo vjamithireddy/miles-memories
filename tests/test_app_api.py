@@ -22,6 +22,7 @@ from app.main import (
     health,
     homepage,
     list_admin_trips,
+    public_trip_detail_page,
     review_trip_from_form,
     review_trip,
     update_trip_segment_from_form,
@@ -210,7 +211,34 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Glacier National Park", response.body)
         self.assertIn(b"Montana", response.body)
         self.assertNotIn(b"/admin/trips", response.body)
+        self.assertIn(b'href="/trips/colorado-weekend"', response.body)
         mock_list.assert_called_once_with(limit=12)
+
+    def test_public_trip_detail_renders_read_only_story(self) -> None:
+        trip = _trip_detail()
+        trip["is_private"] = False
+        trip["publish_ready"] = True
+        trip["status"] = "published"
+
+        with patch("app.main.trip_admin.get_public_trip_by_slug", return_value=trip) as mock_get, \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = public_trip_detail_page("colorado-weekend")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Published Trip", response.body)
+        self.assertIn(b"Travel legs", response.body)
+        self.assertIn(b'class="public-legs"', response.body)
+        self.assertIn(b"Expand / collapse", response.body)
+        self.assertIn(b'class="public-leg-header"', response.body)
+        self.assertIn(b"position: sticky", response.body)
+        self.assertIn(b"Back to published trips", response.body)
+        self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
+        self.assertNotIn(b"Reviewer name", response.body)
+        self.assertNotIn(b"Yes", response.body)
+        self.assertNotIn(b"Public", response.body)
+        self.assertNotIn(b'data-autosave="segment"', response.body)
+        self.assertNotIn(b"class=\"leg-summary-input\"", response.body)
+        mock_get.assert_called_once_with("colorado-weekend")
 
     def test_health_returns_plain_text(self) -> None:
         response = health()

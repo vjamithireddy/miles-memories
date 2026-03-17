@@ -93,6 +93,7 @@ def _render_public_homepage(trips: List[dict]) -> str:
         feature_trip = trips[0]
         feature_title = escape(feature_trip.get("trip_name") or "Untitled trip")
         feature_destination = escape(feature_trip.get("primary_destination_name") or "Destination pending")
+        feature_href = f"/trips/{escape(feature_trip.get('trip_slug') or str(feature_trip.get('id') or ''))}"
         feature_summary = escape(
             feature_trip.get("summary_text")
             or "A published trip from the MilesMemories archive."
@@ -102,12 +103,15 @@ def _render_public_homepage(trips: List[dict]) -> str:
             f"{escape(_format_local_datetime(feature_trip['end_time']))}"
         )
         feature_trip_type = escape((feature_trip.get("trip_type") or "trip").replace("_", " "))
+        feature_link_markup = f'<div><a class="trip-card-link" href="{feature_href}"><span class="trip-chip">Open trip details</span></a></div>'
     else:
         feature_title = "Published trips will appear here"
         feature_destination = "MilesMemories archive"
+        feature_href = ""
         feature_summary = "Trips you publish from the admin workflow will appear on this landing page."
         feature_timing = "Publish a reviewed trip to open the public archive."
         feature_trip_type = "Published archive"
+        feature_link_markup = ""
 
     cards = []
     for trip in trips:
@@ -116,9 +120,11 @@ def _render_public_homepage(trips: List[dict]) -> str:
         summary = escape(trip.get("summary_text") or "Published from the MilesMemories archive.")
         trip_type = escape((trip.get("trip_type") or "trip").replace("_", " "))
         timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
+        trip_href = f"/trips/{escape(trip.get('trip_slug') or str(trip.get('id') or ''))}"
         cards.append(
             f"""
             <article class="trip-card">
+              <a class="trip-card-link" href="{trip_href}" aria-label="Open {title}">
               <div class="trip-card-top">
                 <span class="trip-chip">{trip_type}</span>
                 <span class="trip-chip muted">{timing}</span>
@@ -126,6 +132,7 @@ def _render_public_homepage(trips: List[dict]) -> str:
               <h3>{title}</h3>
               <p class="trip-destination">{destination}</p>
               <p>{summary}</p>
+              </a>
             </article>
             """
         )
@@ -310,6 +317,16 @@ def _render_public_homepage(trips: List[dict]) -> str:
       padding: 22px;
       background: rgba(255,255,255,0.58);
     }}
+    .trip-card-link {{
+      display: grid;
+      gap: 12px;
+      color: inherit;
+      text-decoration: none;
+      height: 100%;
+    }}
+    .trip-card-link:hover h3 {{
+      color: var(--accent-dark);
+    }}
 
     .trip-card-top {{
       display: flex;
@@ -382,6 +399,7 @@ def _render_public_homepage(trips: List[dict]) -> str:
           <span class="trip-chip">{feature_trip_type}</span>
           <span class="trip-chip muted">{feature_timing}</span>
         </div>
+        {feature_link_markup}
       </article>
       <article class="panel feature-card">
         <span class="eyebrow">How It Works</span>
@@ -413,6 +431,405 @@ def _render_public_homepage(trips: List[dict]) -> str:
 def homepage() -> HTMLResponse:
     trips = trip_admin.list_published_trips(limit=12)
     return _html_response(_render_public_homepage(trips))
+
+
+def _render_public_trip_detail_page(trip: dict) -> str:
+    title = escape(trip["trip_name"] or "Untitled trip")
+    summary = escape(trip["summary_text"] or "A published trip from the MilesMemories archive.")
+    destination = escape(trip["primary_destination_name"] or "Destination pending")
+    trip_type = escape((trip["trip_type"] or "trip").replace("_", " "))
+    timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
+    map_points = [
+        {
+            "lat": item["latitude"],
+            "lon": item["longitude"],
+        }
+        for item in trip["timeline"]
+        if item.get("latitude") is not None and item.get("longitude") is not None
+    ]
+    travel_legs = trip.get("travel_legs", [])
+    if not map_points:
+        for item in travel_legs:
+            path_points = item.get("path_points") or []
+            if path_points:
+                map_points.extend(
+                    {"lat": point["lat"], "lon": point["lon"]}
+                    for point in path_points
+                    if point.get("lat") is not None and point.get("lon") is not None
+                )
+            elif item.get("start_latitude") is not None and item.get("start_longitude") is not None:
+                map_points.append({"lat": item["start_latitude"], "lon": item["start_longitude"]})
+                if item.get("end_latitude") is not None and item.get("end_longitude") is not None:
+                    map_points.append({"lat": item["end_latitude"], "lon": item["end_longitude"]})
+    trip_map_markup = _render_route_map_preview(
+        map_points,
+        aria_label="Published trip route map preview",
+    )
+    leg_count = len(travel_legs)
+    travel_leg_items = "".join(
+        f"""
+        <article class="public-leg-card">
+          <header class="public-leg-header">
+            <div class="public-leg-headline">
+              <h3>{escape(_travel_leg_comment(item))}</h3>
+              <span class="public-leg-tag">{escape(item['label'])}</span>
+            </div>
+            <p class="public-leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</p>
+          </header>
+          <div class="public-leg-body">
+            <div class="public-leg-copy">
+              <p>{escape(_travel_leg_comment(item))}</p>
+              <p class="public-leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+            </div>
+            <div class="public-leg-map">{_render_leg_map_preview(item)}</div>
+          </div>
+        </article>
+        """
+        for item in travel_legs
+    ) or """
+      <article class="public-leg-card empty-state">
+        <header class="public-leg-header">
+          <h3>Travel legs coming soon</h3>
+        </header>
+        <div class="public-leg-body">
+          <div class="public-leg-copy">
+            <p>This published trip does not have inferred leg segments yet.</p>
+          </div>
+        </div>
+      </article>
+    """
+    timeline_items = "".join(
+        f"""
+        <li class="timeline-item">
+          <div class="timeline-time">{escape(_format_local_datetime(item['event_time']))}</div>
+          <div>
+            <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
+            <p>{escape(item['event_type'])}{f" · {item['latitude']:.5f}, {item['longitude']:.5f}" if item.get('latitude') is not None and item.get('longitude') is not None else ""}</p>
+          </div>
+        </li>
+        """
+        for item in trip["timeline"][:30]
+    ) or """
+      <li class="timeline-item">
+        <div>
+          <strong>No public timeline yet.</strong>
+          <p>This trip currently only exposes the published story and route summary.</p>
+        </div>
+      </li>
+    """
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} · MilesMemories</title>
+  <style>
+    :root {{
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.94);
+      --ink: #1d2430;
+      --muted: #5f6b7a;
+      --line: #d8c9b3;
+      --accent: #c8643b;
+      --accent-dark: #8e3f22;
+      --shadow: rgba(50, 33, 15, 0.12);
+      --good: #275d4f;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
+        radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
+        linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 38px 20px 80px;
+      display: grid;
+      gap: 22px;
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 28px;
+    }}
+    .hero {{
+      display: grid;
+      gap: 18px;
+    }}
+    .eyebrow {{
+      display: inline-block;
+      font-size: 0.8rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent-dark);
+    }}
+    h1, h2, h3 {{
+      margin: 0;
+      line-height: 1.04;
+      font-weight: 700;
+    }}
+    h1 {{
+      font-size: clamp(2.3rem, 4.8vw, 4.6rem);
+      max-width: 12ch;
+    }}
+    h2 {{
+      font-size: clamp(1.55rem, 2vw, 2.2rem);
+      margin-bottom: 12px;
+    }}
+    h3 {{
+      font-size: 1.35rem;
+    }}
+    p {{
+      margin: 0;
+      line-height: 1.65;
+      color: var(--muted);
+      font-size: 1rem;
+    }}
+    .meta-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .trip-chip {{
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      text-transform: capitalize;
+      background: rgba(200,100,59,0.14);
+      color: var(--accent-dark);
+    }}
+    .trip-chip.muted {{
+      background: rgba(29,36,48,0.06);
+      color: var(--muted);
+    }}
+    .button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 18px;
+    }}
+    .feature-grid {{
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 20px;
+    }}
+    .trip-map-static {{
+      background: #efe5d7;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }}
+    .trip-map-static .leg-map-frame {{
+      max-width: 100%;
+      min-height: 420px;
+    }}
+    details.public-legs {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,0.56);
+      overflow: clip;
+    }}
+    details.public-legs > summary {{
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      cursor: pointer;
+      padding: 18px 22px;
+      list-style: none;
+      background: rgba(255, 248, 239, 0.98);
+      border-bottom: 1px solid transparent;
+    }}
+    details.public-legs > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    details.public-legs[open] > summary {{
+      border-bottom-color: var(--line);
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.08);
+    }}
+    .collapse-copy {{
+      display: grid;
+      gap: 4px;
+    }}
+    .collapse-copy strong {{
+      font-size: 1.05rem;
+    }}
+    .collapse-hint {{
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
+    .public-legs-list {{
+      display: grid;
+      gap: 16px;
+      padding: 18px;
+    }}
+    .public-leg-card {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,0.72);
+      overflow: hidden;
+    }}
+    .public-leg-header {{
+      position: sticky;
+      top: 72px;
+      z-index: 2;
+      display: grid;
+      gap: 8px;
+      padding: 18px;
+      background: rgba(255, 248, 239, 0.96);
+      border-bottom: 1px solid var(--line);
+    }}
+    .public-leg-headline {{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }}
+    .public-leg-tag {{
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(184,95,53,0.12);
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }}
+    .public-leg-meta {{
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.94rem;
+    }}
+    .public-leg-body {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      padding: 18px;
+    }}
+    .public-leg-copy {{
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }}
+    .public-leg-source {{
+      font-size: 0.92rem;
+    }}
+    .public-leg-map .leg-map-frame {{
+      min-height: 300px;
+    }}
+    .timeline-list {{
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 12px;
+    }}
+    .timeline-item {{
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.5);
+    }}
+    .timeline-time {{
+      color: var(--accent);
+      font-weight: 700;
+    }}
+    @media (max-width: 980px) {{
+      .feature-grid,
+      .public-leg-body,
+      .timeline-item {{
+        grid-template-columns: 1fr;
+      }}
+      .public-leg-header {{
+        top: 0;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel hero">
+      <span class="eyebrow">Published Trip</span>
+      <h1>{title}</h1>
+      <p>{summary}</p>
+      <div class="meta-row">
+        <span class="trip-chip">{trip_type}</span>
+        <span class="trip-chip">{destination}</span>
+        <span class="trip-chip muted">{timing}</span>
+      </div>
+      <div><a class="button" href="/">Back to published trips</a></div>
+    </section>
+
+    <section class="feature-grid">
+      <article class="panel">
+        <h2>Trip map</h2>
+        <p>Published route preview built from linked trip coordinates and inferred travel legs.</p>
+        <div class="trip-map-static">{trip_map_markup}</div>
+      </article>
+      <article class="panel">
+        <h2>Trip details</h2>
+        <p>This is the public version of the trip story. Review controls, raw admin metadata, and editing tools are kept off this page.</p>
+        <div class="meta-row">
+          <span class="trip-chip">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
+          <span class="trip-chip muted">{leg_count} travel leg{"s" if leg_count != 1 else ""}</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Travel legs</h2>
+      <details class="public-legs">
+        <summary>
+          <span class="collapse-copy">
+            <strong>{leg_count} travel leg{"s" if leg_count != 1 else ""}</strong>
+            <span class="collapse-hint">Expand to browse the full journey. The section header stays pinned so you can collapse it again without scrolling back up.</span>
+          </span>
+          <span class="trip-chip muted">Expand / collapse</span>
+        </summary>
+        <div class="public-legs-list">
+          {travel_leg_items}
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Trip timeline</h2>
+      <p>The latest published trip points are shown here as a read-only timeline snapshot.</p>
+      <ul class="timeline-list">
+        {timeline_items}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+@app.get("/trips/{trip_slug}", response_class=HTMLResponse)
+def public_trip_detail_page(trip_slug: str) -> HTMLResponse:
+    trip = trip_admin.get_public_trip_by_slug(trip_slug)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return _html_response(_render_public_trip_detail_page(trip))
 
 
 def _trip_badge_class(value: str) -> str:
