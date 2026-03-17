@@ -633,6 +633,61 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       overflow: hidden;
       border: 1px solid var(--line);
     }}
+    .leg-map-frame {{
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 320px;
+      background: #efe5d7;
+      overflow: hidden;
+    }}
+    .leg-map-tile {{
+      position: absolute;
+      display: block;
+      max-width: none;
+      user-select: none;
+      pointer-events: none;
+    }}
+    .leg-map-svg {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }}
+    .leg-map-legend {{
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      display: inline-flex;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 248, 239, 0.92);
+      border: 1px solid rgba(219, 202, 177, 0.9);
+      color: var(--ink);
+      font-size: 0.82rem;
+      font-weight: 600;
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .leg-map-legend span {{
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }}
+    .legend-dot {{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }}
+    .legend-start {{
+      background: #c8643b;
+    }}
+    .legend-end {{
+      background: #2f6c5b;
+    }}
     .trip-map-static .leg-map-frame {{
       max-width: 100%;
       min-height: 520px;
