@@ -257,7 +257,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"No", response.body)
         self.assertIn(b"Public", response.body)
         self.assertIn(b"Private", response.body)
-        self.assertIn(b"Save details", response.body)
+        self.assertNotIn(b"Save details", response.body)
+        self.assertIn(b"Text edits autosave when you leave a field.", response.body)
+        self.assertIn(b'is-current', response.body)
         self.assertNotIn(b"Review action", response.body)
         self.assertNotIn(b"Publish state", response.body)
         self.assertIn(b"Visibility", response.body)
@@ -339,7 +341,30 @@ class AppApiTests(unittest.TestCase):
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=review")
+        self.assertEqual(response.headers["location"], "/admin/trip/7?saved=details")
+        mock_review.assert_called_once_with(
+            7,
+            action="save",
+            reviewer_name="Venkat",
+            review_notes=None,
+            trip_name="Colorado Weekend",
+            summary_text="Late winter trip.",
+            primary_destination_name=None,
+            is_private=None,
+            publish_ready=None,
+        )
+
+    def test_review_trip_from_form_returns_no_content_for_fetch_save(self) -> None:
+        class FakeRequest:
+            headers = {"x-requested-with": "fetch"}
+
+            async def body(self) -> bytes:
+                return b"reviewer_name=Venkat&trip_name=Colorado+Weekend&summary_text=Late+winter+trip."
+
+        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+            response = asyncio.run(review_trip_from_form(7, FakeRequest()))
+
+        self.assertEqual(response.status_code, 204)
         mock_review.assert_called_once_with(
             7,
             action="save",

@@ -376,6 +376,7 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
         "published": "Trip published and marked ready.",
         "privacy": "Trip visibility updated.",
         "segment": "Travel leg saved.",
+        "details": "Trip details saved.",
     }
     message = messages.get(saved_key, "Update saved.")
     return f"""
@@ -388,6 +389,24 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
 def _travel_leg_comment(item: dict) -> str:
     comment = item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
     return comment.rstrip(".")
+
+
+def _trip_review_state(trip: dict) -> Optional[str]:
+    review = (trip.get("review_decision") or "").lower()
+    status = (trip.get("status") or "").lower()
+    if review == "confirmed" or status == "published":
+        return "yes"
+    if review in {"rejected", "ignored"} or status == "ignored":
+        return "no"
+    return None
+
+
+def _trip_visibility_state(trip: dict) -> Optional[str]:
+    if trip.get("is_private"):
+        return "private"
+    if trip.get("publish_ready"):
+        return "public"
+    return None
 
 
 def _format_duration(start: datetime, end: datetime) -> str:
@@ -1395,6 +1414,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
     toast_markup = _build_trip_toast(saved)
     detail_badges = _render_trip_badges(trip)
+    review_state = _trip_review_state(trip)
+    visibility_state = _trip_visibility_state(trip)
     return_to = f"/admin/trip/{trip['id']}"
     destination_href = f"/admin/trip/{trip['id']}/destination-context?{urlencode({'return_to': return_to})}"
 
@@ -1610,8 +1631,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       border: 0;
       border-radius: 0;
       background: transparent;
-      font-size: clamp(2.8rem, 5vw, 5.8rem);
-      line-height: 0.95;
+      font-size: clamp(2.1rem, 4.1vw, 4.2rem);
+      line-height: 1.02;
       font-weight: 700;
       color: var(--ink);
       box-shadow: none;
@@ -1648,6 +1669,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .quick-actions button {{
       min-width: 138px;
+    }}
+    .quick-actions button.is-current {{
+      color: white;
+      background: var(--accent);
+      box-shadow: 0 10px 22px rgba(184, 95, 53, 0.18);
     }}
     .workflow-help {{
       margin-top: -4px;
@@ -1963,6 +1989,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       transform: translateY(-8px);
       pointer-events: none;
     }}
+    .trip-overview-form[data-save-state="saving"] {{
+      box-shadow: inset 0 0 0 1px rgba(39,93,79,0.18);
+      border-radius: 20px;
+    }}
+    .trip-overview-form[data-save-state="saved"] {{
+      box-shadow: inset 0 0 0 1px rgba(39,93,79,0.28);
+      border-radius: 20px;
+    }}
     @media (max-width: 920px) {{
       .hero, .grid, .timeline-item, .two-up, .review-form-grid, .detail-grid {{
         grid-template-columns: 1fr;
@@ -2036,21 +2070,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <textarea name="review_notes" placeholder="What changed? Why is this correct?"></textarea>
             </label>
           </div>
-          <div class="workflow-help">Review the trip first with a simple yes/no decision. Once it is reviewed, choose whether it should stay private or be made public.</div>
+          <div class="workflow-help">Review the trip first with a simple yes/no decision. Once it is reviewed, choose whether it should stay private or be made public. Text edits autosave when you leave a field.</div>
           <div class="quick-actions">
             <div class="action-group">
               <span class="action-group-label">Review</span>
-              <button class="button" type="submit" name="action" value="confirm">Yes</button>
-              <button class="button" type="submit" name="action" value="reject">No</button>
+              <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm">Yes</button>
+              <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject">No</button>
             </div>
             <div class="action-group">
               <span class="action-group-label">Visibility</span>
-              <button class="button" type="submit" name="action" value="publish">Public</button>
-              <button class="button" type="submit" name="action" value="mark_private">Private</button>
-            </div>
-            <div class="action-group">
-              <span class="action-group-label">Details</span>
-              <button class="primary" type="submit" name="action" value="save">Save details</button>
+              <button class="button{' is-current' if visibility_state == 'public' else ''}" type="submit" name="action" value="publish">Public</button>
+              <button class="button{' is-current' if visibility_state == 'private' else ''}" type="submit" name="action" value="mark_private">Private</button>
             </div>
           </div>
         </form>
@@ -2147,7 +2177,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         }});
       }});
 
-      const autosaveSegment = async (form) => {{
+      const autosaveForm = async (form) => {{
         if (!form || form.dataset.saveState === "saving") {{
           return;
         }}
@@ -2165,6 +2195,26 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             throw new Error(`Save failed with ${{response.status}}`);
           }}
           form.dataset.saveState = "saved";
+          const savedKey = form.dataset.savedKey;
+          if (savedKey) {{
+            const toastTitle = {{
+              segment: "Travel leg saved.",
+              details: "Trip details saved."
+            }}[savedKey] || "Saved.";
+            const existing = document.querySelector("[data-toast]");
+            if (existing) {{
+              existing.remove();
+            }}
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.dataset.toast = savedKey;
+            toast.textContent = toastTitle;
+            document.body.appendChild(toast);
+            window.setTimeout(() => {{
+              toast.classList.add("is-hiding");
+              window.setTimeout(() => toast.remove(), 240);
+            }}, 2200);
+          }}
           window.setTimeout(() => {{
             if (form.dataset.saveState === "saved") {{
               delete form.dataset.saveState;
@@ -2177,14 +2227,25 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       }};
 
       document.querySelectorAll("form[data-autosave=\"segment\"]").forEach((form) => {{
+        form.dataset.savedKey = "segment";
         const summaryField = form.querySelector(".leg-summary-input");
         if (summaryField) {{
-          summaryField.addEventListener("blur", () => autosaveSegment(form));
+          summaryField.addEventListener("blur", () => autosaveForm(form));
         }}
         form.querySelectorAll("input[name=\"rating\"]").forEach((field) => {{
-          field.addEventListener("change", () => autosaveSegment(form));
+          field.addEventListener("change", () => autosaveForm(form));
         }});
       }});
+
+      const overviewForm = document.querySelector(".trip-overview-form");
+      if (overviewForm) {{
+        overviewForm.dataset.savedKey = "details";
+        overviewForm
+          .querySelectorAll('input[name="trip_name"], input[name="reviewer_name"], textarea[name="summary_text"], textarea[name="review_notes"]')
+          .forEach((field) => {{
+            field.addEventListener("blur", () => autosaveForm(overviewForm));
+          }});
+      }}
 
       const toast = document.querySelector("[data-toast]");
       if (toast) {{
@@ -2311,8 +2372,9 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
 
 
 @app.post("/admin/trip/{trip_id}/review")
-async def review_trip_from_form(trip_id: int, request: Request) -> RedirectResponse:
+async def review_trip_from_form(trip_id: int, request: Request) -> Response:
     payload = parse_qs((await request.body()).decode("utf-8"))
+    request_headers = getattr(request, "headers", {}) or {}
     action = (payload.get("action") or ["save"])[0].strip() or "save"
     reviewer_name = (payload.get("reviewer_name") or [""])[0].strip() or None
     review_notes = (payload.get("review_notes") or [""])[0].strip() or None
@@ -2337,11 +2399,15 @@ async def review_trip_from_form(trip_id: int, request: Request) -> RedirectRespo
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip not found")
-    saved_key = "review"
+    if request_headers.get("x-requested-with") == "fetch" and action == "save":
+        return Response(status_code=204)
+    saved_key = "details"
     if action == "publish":
         saved_key = "published"
     elif action == "mark_private":
         saved_key = "privacy"
+    elif action in {"confirm", "reject"}:
+        saved_key = "review"
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved={saved_key}", status_code=303)
 
 
