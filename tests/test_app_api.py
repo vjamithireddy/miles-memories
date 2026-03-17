@@ -395,6 +395,38 @@ class AppApiTests(unittest.TestCase):
             publish_ready=None,
         )
 
+    def test_review_trip_from_form_returns_json_for_fetch_action(self) -> None:
+        updated_trip = _trip_detail()
+        updated_trip["review_decision"] = "confirmed"
+        updated_trip["status"] = "confirmed"
+        updated_trip["is_private"] = False
+        updated_trip["publish_ready"] = True
+
+        class FakeRequest:
+            headers = {"x-requested-with": "fetch"}
+
+            async def body(self) -> bytes:
+                return b"action=publish&reviewer_name=Venkat"
+
+        with patch("app.main.trip_admin.record_review", return_value=updated_trip) as mock_review:
+            response = asyncio.run(review_trip_from_form(7, FakeRequest()))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'"saved":"published"', response.body)
+        self.assertIn(b'"visibility_state":"public"', response.body)
+        self.assertIn(b'"review_state":"yes"', response.body)
+        mock_review.assert_called_once_with(
+            7,
+            action="publish",
+            reviewer_name="Venkat",
+            review_notes=None,
+            trip_name=None,
+            summary_text=None,
+            primary_destination_name=None,
+            is_private=None,
+            publish_ready=None,
+        )
+
     def test_update_trip_segment_from_form_uses_repository(self) -> None:
         class FakeRequest:
             headers = {}

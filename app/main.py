@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap import get_user_timezone
@@ -1376,6 +1376,48 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         for item in trip["timeline"]
         if item.get("latitude") is not None and item.get("longitude") is not None
     ]
+    if not map_points:
+        for index, item in enumerate(travel_legs, start=1):
+            path_points = item.get("path_points") or []
+            if path_points:
+                for point in path_points:
+                    lat = point.get("lat")
+                    lon = point.get("lon")
+                    if lat is None or lon is None:
+                        continue
+                    map_points.append(
+                        {
+                            "lat": lat,
+                            "lon": lon,
+                            "label": item.get("segment_summary") or item.get("label") or f"Leg {index}",
+                            "time": str(item.get("start_time") or ""),
+                        }
+                    )
+                continue
+            start_lat = item.get("start_latitude")
+            start_lon = item.get("start_longitude")
+            end_lat = item.get("end_latitude")
+            end_lon = item.get("end_longitude")
+            if start_lat is not None and start_lon is not None:
+                map_points.append(
+                    {
+                        "lat": start_lat,
+                        "lon": start_lon,
+                        "label": item.get("segment_summary") or item.get("label") or f"Leg {index}",
+                        "time": str(item.get("start_time") or ""),
+                    }
+                )
+            if end_lat is not None and end_lon is not None:
+                end_point = {
+                    "lat": end_lat,
+                    "lon": end_lon,
+                    "label": item.get("segment_summary") or item.get("label") or f"Leg {index}",
+                    "time": str(item.get("end_time") or ""),
+                }
+                if not map_points or (
+                    map_points[-1]["lat"] != end_point["lat"] or map_points[-1]["lon"] != end_point["lon"]
+                ):
+                    map_points.append(end_point)
     map_payload = escape(json.dumps(map_points))
     travel_legs = trip.get("travel_legs", [])
 
@@ -2155,7 +2197,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <textarea name="summary_text">{escape(trip['summary_text'] or '')}</textarea>
           </label>
           <div class="meta-row">
-            {detail_badges}
+            <span class="review-badge-slot">{detail_badges}</span>
             <span class="badge">Confidence {confidence}</span>
           </div>
           <div class="detail-grid">
@@ -2355,6 +2397,67 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           .forEach((field) => {{
             field.addEventListener("blur", () => autosaveForm(overviewForm));
           }});
+
+        overviewForm.querySelectorAll(".segmented-control button[name=\"action\"]").forEach((button) => {{
+          button.addEventListener("click", async (event) => {{
+            event.preventDefault();
+            if (overviewForm.dataset.saveState === "saving") {{
+              return;
+            }}
+            const body = new URLSearchParams(new FormData(overviewForm));
+            body.set("action", button.value);
+            overviewForm.dataset.saveState = "saving";
+            try {{
+              const response = await fetch(overviewForm.action, {{
+                method: "POST",
+                headers: {{
+                  "X-Requested-With": "fetch"
+                }},
+                body
+              }});
+              if (!response.ok) {{
+                throw new Error(`Action failed with ${{response.status}}`);
+              }}
+              const payload = await response.json();
+              overviewForm.dataset.saveState = "saved";
+              const badgeSlot = overviewForm.querySelector(".review-badge-slot");
+              if (badgeSlot && payload.badge_html) {{
+                badgeSlot.innerHTML = payload.badge_html;
+              }}
+              overviewForm.querySelectorAll('[aria-label="Review decision"] button').forEach((node) => {{
+                const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
+                node.classList.toggle("is-current", active);
+                node.setAttribute("aria-pressed", active ? "true" : "false");
+              }});
+              overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
+                const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
+                node.classList.toggle("is-current", active);
+                node.setAttribute("aria-pressed", active ? "true" : "false");
+              }});
+              const existing = document.querySelector("[data-toast]");
+              if (existing) {{
+                existing.remove();
+              }}
+              const toast = document.createElement("div");
+              toast.className = "toast";
+              toast.dataset.toast = payload.saved || "review";
+              toast.textContent = payload.message || "Update saved.";
+              document.body.appendChild(toast);
+              window.setTimeout(() => {{
+                toast.classList.add("is-hiding");
+                window.setTimeout(() => toast.remove(), 240);
+              }}, 2200);
+              window.setTimeout(() => {{
+                if (overviewForm.dataset.saveState === "saved") {{
+                  delete overviewForm.dataset.saveState;
+                }}
+              }}, 1600);
+            }} catch (error) {{
+              delete overviewForm.dataset.saveState;
+              console.error(error);
+            }}
+          }});
+        }});
       }}
 
       const toast = document.querySelector("[data-toast]");
@@ -2509,8 +2612,29 @@ async def review_trip_from_form(trip_id: int, request: Request) -> Response:
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip not found")
-    if request_headers.get("x-requested-with") == "fetch" and action == "save":
-        return Response(status_code=204)
+    if request_headers.get("x-requested-with") == "fetch":
+        if action == "save":
+            return Response(status_code=204)
+        saved_key = "details"
+        message = "Trip details saved."
+        if action == "publish":
+            saved_key = "published"
+            message = "Trip published and marked ready."
+        elif action == "mark_private":
+            saved_key = "privacy"
+            message = "Trip visibility updated."
+        elif action in {"confirm", "reject"}:
+            saved_key = "review"
+            message = "Review saved."
+        return JSONResponse(
+            {
+                "saved": saved_key,
+                "message": message,
+                "review_state": _trip_review_state(updated),
+                "visibility_state": _trip_visibility_state(updated),
+                "badge_html": _render_trip_badges(updated),
+            }
+        )
     saved_key = "details"
     if action == "publish":
         saved_key = "published"
