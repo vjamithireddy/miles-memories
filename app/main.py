@@ -690,7 +690,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .trip-map-static .leg-map-frame {{
       max-width: 100%;
-      min-height: 520px;
+      min-height: 0;
+      aspect-ratio: 16 / 9;
+      height: auto;
     }}
     details.public-legs {{
       border: 1px solid var(--line);
