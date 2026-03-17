@@ -2376,13 +2376,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         }}
       }};
 
-      document.querySelectorAll("form[data-autosave=\"segment\"]").forEach((form) => {{
+      document.querySelectorAll('form[data-autosave="segment"]').forEach((form) => {{
         form.dataset.savedKey = "segment";
         const summaryField = form.querySelector(".leg-summary-input");
         if (summaryField) {{
           summaryField.addEventListener("blur", () => autosaveForm(form));
         }}
-        form.querySelectorAll("input[name=\"rating\"]").forEach((field) => {{
+        form.querySelectorAll('input[name="rating"]').forEach((field) => {{
           field.addEventListener("change", () => autosaveForm(form));
         }});
       }});
@@ -2396,7 +2396,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             field.addEventListener("blur", () => autosaveForm(overviewForm));
           }});
 
-        overviewForm.querySelectorAll(".segmented-control button[name=\"action\"]").forEach((button) => {{
+        overviewForm.querySelectorAll('.segmented-control button[name="action"]').forEach((button) => {{
           button.addEventListener("click", async (event) => {{
             event.preventDefault();
             if (overviewForm.dataset.saveState === "saving") {{
