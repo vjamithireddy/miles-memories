@@ -349,22 +349,14 @@ def _trip_badge_label(value: str) -> str:
 
 
 def _render_trip_badges(trip: dict) -> str:
-    badges: list[tuple[str, str]] = []
     status = trip["status"]
     review = trip["review_decision"]
-    if status == review:
-        badges.append((_trip_badge_label(status), _trip_badge_class(status)))
-    else:
-        badges.append((_trip_badge_label(status), _trip_badge_class(status)))
-        review_label = _trip_badge_label(review)
-        status_label = _trip_badge_label(status)
-        if review_label != status_label:
-            badges.append((review_label, _trip_badge_class(review)))
-    badges.append(("Private" if trip["is_private"] else "Visible", ""))
-    badges.append(("Public" if trip["publish_ready"] else "Not Ready", ""))
-    return "".join(
-        f'<span class="badge {badge_class}">{escape(label)}</span>' for label, badge_class in badges
-    )
+    preferred = review or status
+    if status == "published":
+        preferred = "published"
+    label = _trip_badge_label(preferred)
+    badge_class = _trip_badge_class(preferred)
+    return f'<span class="badge {badge_class}">{escape(label)}</span>'
 
 
 def _build_trip_toast(saved: Union[bool, str]) -> str:
@@ -1670,10 +1662,35 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .quick-actions button {{
       min-width: 138px;
     }}
+    .segmented-control {{
+      display: inline-flex;
+      align-items: stretch;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.82);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+    }}
+    .segmented-control button {{
+      min-width: 132px;
+      border: 0;
+      border-right: 1px solid rgba(184,95,53,0.22);
+      border-radius: 0;
+      margin: 0;
+      background: transparent;
+      color: var(--accent);
+      box-shadow: none;
+    }}
+    .segmented-control button:last-child {{
+      border-right: 0;
+    }}
     .quick-actions button.is-current {{
       color: white;
       background: var(--accent);
-      box-shadow: 0 10px 22px rgba(184, 95, 53, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(184,95,53,0.2);
+    }}
+    .segmented-control button:not(.is-current):hover {{
+      background: rgba(184,95,53,0.08);
     }}
     .workflow-help {{
       margin-top: -4px;
@@ -2074,13 +2091,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           <div class="quick-actions">
             <div class="action-group">
               <span class="action-group-label">Review</span>
-              <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm">Yes</button>
-              <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject">No</button>
+              <div class="segmented-control" role="group" aria-label="Review decision">
+                <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm" aria-pressed="{'true' if review_state == 'yes' else 'false'}">Yes</button>
+                <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject" aria-pressed="{'true' if review_state == 'no' else 'false'}">No</button>
+              </div>
             </div>
             <div class="action-group">
               <span class="action-group-label">Visibility</span>
-              <button class="button{' is-current' if visibility_state == 'public' else ''}" type="submit" name="action" value="publish">Public</button>
-              <button class="button{' is-current' if visibility_state == 'private' else ''}" type="submit" name="action" value="mark_private">Private</button>
+              <div class="segmented-control" role="group" aria-label="Visibility">
+                <button class="button{' is-current' if visibility_state == 'public' else ''}" type="submit" name="action" value="publish" aria-pressed="{'true' if visibility_state == 'public' else 'false'}">Public</button>
+                <button class="button{' is-current' if visibility_state == 'private' else ''}" type="submit" name="action" value="mark_private" aria-pressed="{'true' if visibility_state == 'private' else 'false'}">Private</button>
+              </div>
             </div>
           </div>
         </form>
