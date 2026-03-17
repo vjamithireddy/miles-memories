@@ -720,6 +720,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       grid-template-columns: 1fr;
       gap: 18px;
       padding: 18px;
+      align-items: start;
     }}
     .public-leg-copy {{
       display: grid;
@@ -731,9 +732,16 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .public-leg-map {{
       order: -1;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: #efe5d7;
     }}
     .public-leg-map .leg-map-frame {{
-      min-height: 280px;
+      width: 100%;
+      min-height: 0;
+      aspect-ratio: 16 / 9;
+      height: auto;
     }}
     .timeline-list {{
       list-style: none;
