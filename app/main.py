@@ -439,6 +439,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     destination = escape(trip["primary_destination_name"] or "Destination pending")
     trip_type = escape((trip["trip_type"] or "trip").replace("_", " "))
     timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
+    short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
     map_points = [
         {
             "lat": item["latitude"],
@@ -576,8 +577,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       font-weight: 700;
     }}
     h1 {{
-      font-size: clamp(2.3rem, 4.8vw, 4.6rem);
-      max-width: 12ch;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      max-width: 16ch;
     }}
     h2 {{
       font-size: clamp(1.55rem, 2vw, 2.2rem);
@@ -623,7 +624,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .feature-grid {{
       display: grid;
-      grid-template-columns: 1.05fr 0.95fr;
+      grid-template-columns: 1fr;
       gap: 20px;
     }}
     .trip-map-static {{
@@ -634,7 +635,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .trip-map-static .leg-map-frame {{
       max-width: 100%;
-      min-height: 420px;
+      min-height: 520px;
     }}
     details.public-legs {{
       border: 1px solid var(--line);
@@ -686,9 +687,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       overflow: hidden;
     }}
     .public-leg-header {{
-      position: sticky;
-      top: 72px;
-      z-index: 2;
       display: grid;
       gap: 8px;
       padding: 18px;
@@ -719,7 +717,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .public-leg-body {{
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+      grid-template-columns: 1fr;
       gap: 18px;
       padding: 18px;
     }}
@@ -731,8 +729,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     .public-leg-source {{
       font-size: 0.92rem;
     }}
+    .public-leg-map {{
+      order: -1;
+    }}
     .public-leg-map .leg-map-frame {{
-      min-height: 300px;
+      min-height: 280px;
     }}
     .timeline-list {{
       list-style: none;
@@ -759,9 +760,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       .public-leg-body,
       .timeline-item {{
         grid-template-columns: 1fr;
-      }}
-      .public-leg-header {{
-        top: 0;
       }}
     }}
   </style>
@@ -790,7 +788,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         <h2>Trip details</h2>
         <p>This is the public version of the trip story. Review controls, raw admin metadata, and editing tools are kept off this page.</p>
         <div class="meta-row">
-          <span class="trip-chip">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</span>
+          <span class="trip-chip">{short_timing}</span>
           <span class="trip-chip muted">{leg_count} travel leg{"s" if leg_count != 1 else ""}</span>
         </div>
       </article>
@@ -802,7 +800,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         <summary>
           <span class="collapse-copy">
             <strong>{leg_count} travel leg{"s" if leg_count != 1 else ""}</strong>
-            <span class="collapse-hint">Expand to browse the full journey. The section header stays pinned so you can collapse it again without scrolling back up.</span>
+            <span class="collapse-hint">Expand to browse the full journey, then collapse the section again when you want to skip down to the timeline.</span>
           </span>
           <span class="trip-chip muted">Expand / collapse</span>
         </summary>
