@@ -1104,7 +1104,8 @@ def _render_route_map_preview(
             tile_height = (tile_size / map_pixel_height) * height
             tiles.append(
                 f'<img class="leg-map-tile" src="https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png" '
-                f'alt="" loading="lazy" style="left:{left:.2f}px;top:{top:.2f}px;width:{tile_width:.2f}px;height:{tile_height:.2f}px;">'
+                f'alt="" loading="lazy" style="left:{(left / width) * 100:.4f}%;top:{(top / height) * 100:.4f}%;'
+                f'width:{(tile_width / width) * 100:.4f}%;height:{(tile_height / height) * 100:.4f}%;">'
             )
     return f"""
     <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}">
