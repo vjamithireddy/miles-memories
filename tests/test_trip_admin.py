@@ -340,9 +340,16 @@ class TripAdminTests(unittest.TestCase):
             },
         ]
 
+        def fake_leg_point_place_name(latitude: float | None, longitude: float | None) -> str | None:
+            if latitude is None or longitude is None:
+                return None
+            if longitude < -94.3:
+                return "Kansas City"
+            return "Cottleville"
+
         with patch(
             "app.trip_admin._leg_point_place_name",
-            side_effect=["Kansas City", "Cottleville"],
+            side_effect=fake_leg_point_place_name,
         ):
             legs = _build_travel_legs(rows)
 

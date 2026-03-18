@@ -544,7 +544,33 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
 
 
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_segment: dict[int, dict[str, Any]] = {}
+    legs: list[dict[str, Any]] = []
+    current_leg: dict[str, Any] | None = None
+
+    def _new_leg(movement_type: str, event_time: datetime) -> dict[str, Any]:
+        label_type, label = LEG_LABELS[movement_type]
+        return {
+            "leg_type": label_type,
+            "label": label,
+            "start_time": event_time,
+            "end_time": event_time,
+            "start_latitude": None,
+            "start_longitude": None,
+            "end_latitude": None,
+            "end_longitude": None,
+            "source_event_id": movement_type,
+            "path_points": [],
+            "start_place_name": None,
+            "end_place_name": None,
+        }
+
+    def _append_point(leg: dict[str, Any], latitude: Any, longitude: Any) -> None:
+        if latitude is None or longitude is None:
+            return
+        point = {"lat": float(latitude), "lon": float(longitude)}
+        if not leg["path_points"] or leg["path_points"][-1] != point:
+            leg["path_points"].append(point)
+
     for row in rows:
         raw_payload = row["raw_payload_json"]
         if isinstance(raw_payload, str):
@@ -552,78 +578,53 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raw_payload = json.loads(raw_payload)
             except json.JSONDecodeError:
                 raw_payload = None
-        if not isinstance(raw_payload, dict):
-            continue
-        segment_index = raw_payload.get("semanticSegmentIndex")
-        if segment_index is None:
-            continue
-        existing = by_segment.setdefault(
-            int(segment_index),
-            {
-                "leg_type": None,
-                "label": None,
-                "start_time": row["event_time"],
-                "end_time": row["event_time"],
-                "start_latitude": None,
-                "start_longitude": None,
-                "end_latitude": None,
-                "end_longitude": None,
-                "source_event_id": None,
-                "path_points": [],
-                "start_place_name": None,
-                "end_place_name": None,
-            },
-        )
-        if row["event_time"] < existing["start_time"]:
-            existing["start_time"] = row["event_time"]
-        if row["event_time"] > existing["end_time"]:
-            existing["end_time"] = row["event_time"]
-        latitude = row.get("latitude")
-        longitude = row.get("longitude")
-        if latitude is not None and longitude is not None:
-            point = {"lat": float(latitude), "lon": float(longitude)}
-            if not existing["path_points"] or existing["path_points"][-1] != point:
-                existing["path_points"].append(point)
+        raw_payload = raw_payload if isinstance(raw_payload, dict) else {}
 
         activity = raw_payload.get("activity")
-        if not isinstance(activity, dict):
-            continue
+        activity = activity if isinstance(activity, dict) else {}
         top_candidate = activity.get("topCandidate") or {}
-        movement_type = top_candidate.get("type") or row["source_event_id"]
-        if movement_type not in LEG_LABELS:
+        candidate_type = top_candidate.get("type")
+        anchor_type = row["source_event_id"] if row["source_event_id"] in LEG_LABELS else None
+        movement_type = anchor_type or (candidate_type if current_leg is None and candidate_type in LEG_LABELS else None)
+        if movement_type in LEG_LABELS and anchor_type:
+            if current_leg is not None:
+                legs.append(current_leg)
+            current_leg = _new_leg(movement_type, row["event_time"])
+        elif movement_type in LEG_LABELS and current_leg is None:
+            current_leg = _new_leg(movement_type, row["event_time"])
+        elif current_leg is None:
             continue
-        label_type, label = LEG_LABELS[movement_type]
+
         start = activity.get("start") or {}
         end = activity.get("end") or {}
-        existing.update({
-            "leg_type": label_type,
-            "label": label,
-            "source_event_id": movement_type,
-        })
+        if row["event_time"] < current_leg["start_time"]:
+            current_leg["start_time"] = row["event_time"]
+        if row["event_time"] > current_leg["end_time"]:
+            current_leg["end_time"] = row["event_time"]
+        _append_point(current_leg, row.get("latitude"), row.get("longitude"))
         if start.get("latLng"):
             lat, lon = start["latLng"].replace("°", "").split(",")
-            existing["start_latitude"] = float(lat.strip())
-            existing["start_longitude"] = float(lon.strip())
+            current_leg["start_latitude"] = float(lat.strip())
+            current_leg["start_longitude"] = float(lon.strip())
         if end.get("latLng"):
             lat, lon = end["latLng"].replace("°", "").split(",")
-            existing["end_latitude"] = float(lat.strip())
-            existing["end_longitude"] = float(lon.strip())
+            current_leg["end_latitude"] = float(lat.strip())
+            current_leg["end_longitude"] = float(lon.strip())
         start_time = activity.get("startTime")
         end_time = activity.get("endTime")
         if start_time:
             parsed_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            if parsed_start < existing["start_time"]:
-                existing["start_time"] = parsed_start
+            if parsed_start < current_leg["start_time"]:
+                current_leg["start_time"] = parsed_start
         if end_time:
             parsed_end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-            if parsed_end > existing["end_time"]:
-                existing["end_time"] = parsed_end
+            if parsed_end > current_leg["end_time"]:
+                current_leg["end_time"] = parsed_end
 
-    legs = []
-    for key in sorted(by_segment):
-        leg = by_segment[key]
-        if not leg["leg_type"]:
-            continue
+    if current_leg is not None:
+        legs.append(current_leg)
+
+    for leg in legs:
         if leg["start_latitude"] is None or leg["start_longitude"] is None:
             first_point = leg["path_points"][0] if leg["path_points"] else None
             if first_point:
@@ -651,7 +652,6 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             leg.get("end_latitude"),
             leg.get("end_longitude"),
         )
-        legs.append(leg)
     _apply_trip_context_place_inference(legs)
     return legs
 
