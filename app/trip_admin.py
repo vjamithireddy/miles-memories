@@ -300,6 +300,55 @@ def _apply_trip_context_place_inference(legs: list[dict[str, Any]]) -> None:
                 leg["context_end_name"] = inferred_end
 
 
+def _merge_leg_path_points(target: dict[str, Any], extra_points: list[dict[str, Any]] | None) -> None:
+    for point in extra_points or []:
+        lat = point.get("lat")
+        lon = point.get("lon")
+        if lat is None or lon is None:
+            continue
+        candidate = {"lat": float(lat), "lon": float(lon)}
+        if not target["path_points"] or target["path_points"][-1] != candidate:
+            target["path_points"].append(candidate)
+
+
+def _should_merge_adjacent_legs(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if left.get("leg_type") != right.get("leg_type"):
+        return False
+    left_start = _clean_segment_place_name(left.get("start_place_name"))
+    left_end = _clean_segment_place_name(left.get("end_place_name"))
+    right_start = _clean_segment_place_name(right.get("start_place_name"))
+    right_end = _clean_segment_place_name(right.get("end_place_name"))
+    if not left_start or not left_end or not right_start or not right_end:
+        return False
+    if left_start != right_start or left_end != right_end:
+        return False
+    left_end_time = left.get("end_time")
+    right_start_time = right.get("start_time")
+    if not left_end_time or not right_start_time:
+        return False
+    gap_minutes = max(0, int((right_start_time - left_end_time).total_seconds() // 60))
+    return gap_minutes <= 10
+
+
+def _merge_adjacent_duplicate_route_legs(legs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for leg in legs:
+        if merged and _should_merge_adjacent_legs(merged[-1], leg):
+            previous = merged[-1]
+            if leg.get("end_time") and leg["end_time"] > previous["end_time"]:
+                previous["end_time"] = leg["end_time"]
+            if leg.get("end_latitude") is not None:
+                previous["end_latitude"] = leg["end_latitude"]
+            if leg.get("end_longitude") is not None:
+                previous["end_longitude"] = leg["end_longitude"]
+            if leg.get("end_place_name"):
+                previous["end_place_name"] = leg["end_place_name"]
+            _merge_leg_path_points(previous, leg.get("path_points"))
+            continue
+        merged.append(leg)
+    return merged
+
+
 def _leg_default_summary(
     leg: dict[str, Any],
     *,
@@ -678,6 +727,7 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             leg["end_place_name"] = leg["_last_place_hint"]
         leg.pop("_first_place_hint", None)
         leg.pop("_last_place_hint", None)
+    legs = _merge_adjacent_duplicate_route_legs(legs)
     _apply_trip_context_place_inference(legs)
     return legs
 
@@ -817,6 +867,7 @@ def _sync_trip_segments(
         existing_by_key[key] = row
 
     synced = []
+    synced_ids: set[int] = set()
     for index, leg in enumerate(legs):
         key = (
             leg["leg_type"],
@@ -890,12 +941,19 @@ def _sync_trip_segments(
         else:
             auto_summary = not persisted.get("notes")
         leg["segment_id"] = int(persisted["id"])
+        synced_ids.add(int(persisted["id"]))
         leg["segment_name"] = persisted.get("segment_name") or leg["label"]
         leg["segment_summary"] = persisted.get("notes") or default_summary
         leg["segment_rating"] = persisted.get("rating")
         leg["segment_summary_auto"] = auto_summary
         synced.append(leg)
     _apply_duplicate_leg_summary_disambiguation(cur, synced)
+    stale_ids = [int(row["id"]) for row in existing_rows if int(row["id"]) not in synced_ids]
+    if stale_ids:
+        cur.execute(
+            "DELETE FROM trip_segments WHERE id = ANY(%s)",
+            (stale_ids,),
+        )
     return synced
 
 

@@ -373,6 +373,64 @@ class TripAdminTests(unittest.TestCase):
         self.assertEqual(legs[0]["start_latitude"], 39.106569)
         self.assertEqual(legs[0]["end_longitude"], -94.0786674)
 
+    def test_build_travel_legs_merges_adjacent_same_route_car_segments(self) -> None:
+        rows = [
+            {
+                "event_time": datetime(2025, 7, 28, 13, 19, 14, tzinfo=timezone.utc),
+                "latitude": 40.5000,
+                "longitude": -89.0000,
+                "source_event_id": "IN_PASSENGER_VEHICLE",
+                "raw_payload_json": {
+                    "activity": {
+                        "topCandidate": {"type": "IN_PASSENGER_VEHICLE"},
+                        "startTime": "2025-07-28T13:19:14Z",
+                        "endTime": "2025-07-28T13:19:14Z",
+                    },
+                },
+            },
+            {
+                "event_time": datetime(2025, 7, 28, 13, 23, 0, tzinfo=timezone.utc),
+                "latitude": 40.4000,
+                "longitude": -88.9000,
+                "source_event_id": "timeline_path:1",
+                "raw_payload_json": {"timelinePoint": {"time": "2025-07-28T08:23:00.000-05:00"}},
+            },
+            {
+                "event_time": datetime(2025, 7, 28, 13, 25, 32, tzinfo=timezone.utc),
+                "latitude": 40.5000,
+                "longitude": -89.0000,
+                "source_event_id": "IN_PASSENGER_VEHICLE",
+                "raw_payload_json": {
+                    "activity": {
+                        "topCandidate": {"type": "IN_PASSENGER_VEHICLE"},
+                        "startTime": "2025-07-28T13:25:32Z",
+                        "endTime": "2025-07-28T13:25:32Z",
+                    },
+                },
+            },
+            {
+                "event_time": datetime(2025, 7, 28, 13, 26, 0, tzinfo=timezone.utc),
+                "latitude": 40.4000,
+                "longitude": -88.9000,
+                "source_event_id": "timeline_path:2",
+                "raw_payload_json": {"timelinePoint": {"time": "2025-07-28T08:26:00.000-05:00"}},
+            },
+        ]
+
+        with patch(
+            "app.trip_admin._leg_point_place_name",
+            side_effect=["Normal", "Towanda", "Normal", "Towanda"],
+        ):
+            legs = _build_travel_legs(rows)
+
+        self.assertEqual(len(legs), 1)
+        self.assertEqual(legs[0]["start_place_name"], "Normal")
+        self.assertEqual(legs[0]["end_place_name"], "Towanda")
+        self.assertEqual(
+            legs[0]["end_time"],
+            datetime(2025, 7, 28, 13, 26, 0, tzinfo=timezone.utc),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
