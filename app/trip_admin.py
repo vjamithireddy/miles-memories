@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import re
 from typing import Any
@@ -601,6 +601,9 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     legs: list[dict[str, Any]] = []
     current_leg: dict[str, Any] | None = None
+    pending_path_rows: list[dict[str, Any]] = []
+    gap_split_threshold = timedelta(minutes=90)
+    pending_attach_threshold = timedelta(minutes=15)
 
     def _new_leg(movement_type: str, event_time: datetime) -> dict[str, Any]:
         label_type, label = LEG_LABELS[movement_type]
@@ -628,7 +631,28 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not leg["path_points"] or leg["path_points"][-1] != point:
             leg["path_points"].append(point)
 
+    def _append_path_row_to_leg(leg: dict[str, Any], row: dict[str, Any]) -> None:
+        event_time = row["event_time"]
+        if event_time < leg["start_time"]:
+            leg["start_time"] = event_time
+        if event_time > leg["end_time"]:
+            leg["end_time"] = event_time
+        _append_point(leg, row.get("latitude"), row.get("longitude"))
+        if leg["start_latitude"] is None or leg["start_longitude"] is None:
+            if row.get("latitude") is not None and row.get("longitude") is not None:
+                leg["start_latitude"] = float(row["latitude"])
+                leg["start_longitude"] = float(row["longitude"])
+        if row.get("latitude") is not None and row.get("longitude") is not None:
+            leg["end_latitude"] = float(row["latitude"])
+            leg["end_longitude"] = float(row["longitude"])
+
+    def _is_timeline_path_row(row: dict[str, Any]) -> bool:
+        return str(row.get("source_event_id") or "").startswith("timeline_path:")
+
     for row in rows:
+        if pending_path_rows and (row["event_time"] - pending_path_rows[-1]["event_time"]) > gap_split_threshold:
+            pending_path_rows = []
+
         raw_payload = row["raw_payload_json"]
         if isinstance(raw_payload, str):
             try:
@@ -643,12 +667,32 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         candidate_type = top_candidate.get("type")
         anchor_type = row["source_event_id"] if row["source_event_id"] in LEG_LABELS else None
         movement_type = anchor_type or (candidate_type if current_leg is None and candidate_type in LEG_LABELS else None)
+
+        if current_leg is not None and (row["event_time"] - current_leg["end_time"]) > gap_split_threshold:
+            legs.append(current_leg)
+            current_leg = None
+            if _is_timeline_path_row(row):
+                pending_path_rows = [row]
+                continue
+
+        if current_leg is None and _is_timeline_path_row(row):
+            pending_path_rows.append(row)
+            continue
+
         if movement_type in LEG_LABELS and anchor_type:
             if current_leg is not None:
                 legs.append(current_leg)
             current_leg = _new_leg(movement_type, row["event_time"])
+            if pending_path_rows and (row["event_time"] - pending_path_rows[-1]["event_time"]) <= pending_attach_threshold:
+                for pending_row in pending_path_rows:
+                    _append_path_row_to_leg(current_leg, pending_row)
+            pending_path_rows = []
         elif movement_type in LEG_LABELS and current_leg is None:
             current_leg = _new_leg(movement_type, row["event_time"])
+            if pending_path_rows and (row["event_time"] - pending_path_rows[-1]["event_time"]) <= pending_attach_threshold:
+                for pending_row in pending_path_rows:
+                    _append_path_row_to_leg(current_leg, pending_row)
+            pending_path_rows = []
         elif current_leg is None:
             continue
 

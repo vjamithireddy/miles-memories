@@ -242,8 +242,6 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Published trip route map preview", response.body)
         self.assertIn(b"grid-template-columns: 1fr;", response.body)
         self.assertIn(b"Each leg can also be opened individually.", response.body)
-        self.assertIn(b"Trip moments", response.body)
-        self.assertIn(b"not a full minute-by-minute timeline", response.body)
         self.assertIn(b"Back to published trips", response.body)
         self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
         self.assertNotIn(b"Reviewer name", response.body)
@@ -251,6 +249,7 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b"Public", response.body)
         self.assertNotIn(b'data-autosave="segment"', response.body)
         self.assertNotIn(b"class=\"leg-summary-input\"", response.body)
+        self.assertNotIn(b"Trip moments", response.body)
         mock_get.assert_called_once_with("colorado-weekend")
         mock_route.assert_called_once_with(trip["id"], append_home_if_close=True)
 

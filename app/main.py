@@ -491,25 +491,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         </div>
       </article>
     """
-    timeline_items = "".join(
-        f"""
-        <li class="timeline-item">
-          <div class="timeline-time">{escape(_format_local_datetime(item['event_time']))}</div>
-          <div>
-            <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
-            <p>{escape(item['event_type'])}{f" · {item['latitude']:.5f}, {item['longitude']:.5f}" if item.get('latitude') is not None and item.get('longitude') is not None else ""}</p>
-          </div>
-        </li>
-        """
-        for item in trip["timeline"][:30]
-    ) or """
-      <li class="timeline-item">
-        <div>
-          <strong>No public timeline yet.</strong>
-          <p>This trip currently only exposes the published story and route summary.</p>
-        </div>
-      </li>
-    """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -836,30 +817,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       aspect-ratio: 16 / 9;
       height: auto;
     }}
-    .timeline-list {{
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 12px;
-    }}
-    .timeline-item {{
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: 14px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 14px 16px;
-      background: rgba(255,255,255,0.5);
-    }}
-    .timeline-time {{
-      color: var(--accent);
-      font-weight: 700;
-    }}
     @media (max-width: 980px) {{
       .feature-grid,
-      .public-leg-body,
-      .timeline-item {{
+      .public-leg-body {{
         grid-template-columns: 1fr;
       }}
     }}
@@ -910,14 +870,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           {travel_leg_items}
         </div>
       </details>
-    </section>
-
-    <section class="panel">
-      <h2>Trip moments</h2>
-      <p>This is a read-only sample of recorded stops and timestamps from the trip, not a full minute-by-minute timeline.</p>
-      <ul class="timeline-list">
-        {timeline_items}
-      </ul>
     </section>
   </main>
 </body>
