@@ -308,6 +308,57 @@ class TripAdminTests(unittest.TestCase):
         self.assertEqual(legs[0]["start_place_name"], "Whitefish Village")
         self.assertEqual(legs[0]["end_place_name"], "Avalanche Trailhead")
 
+    def test_build_travel_legs_uses_path_points_for_missing_endpoints_and_keeps_latest_end_time(self) -> None:
+        rows = [
+            {
+                "event_time": datetime(2025, 8, 11, 20, 4, 13, tzinfo=timezone.utc),
+                "latitude": 39.106569,
+                "longitude": -94.5853046,
+                "source_event_id": "IN_PASSENGER_VEHICLE",
+                "raw_payload_json": {
+                    "semanticSegmentIndex": 9377,
+                    "activity": {
+                        "topCandidate": {"type": "IN_PASSENGER_VEHICLE"},
+                        "startTime": "2025-08-11T20:04:13Z",
+                        "endTime": "2025-08-11T20:04:13Z",
+                    },
+                },
+            },
+            {
+                "event_time": datetime(2025, 8, 11, 20, 30, 0, tzinfo=timezone.utc),
+                "latitude": 39.0115507,
+                "longitude": -94.0786674,
+                "source_event_id": "timeline_path:9377",
+                "raw_payload_json": {
+                    "semanticSegmentIndex": 9377,
+                    "activity": {
+                        "topCandidate": {"type": "IN_PASSENGER_VEHICLE"},
+                        "startTime": "2025-08-11T20:04:13Z",
+                        "endTime": "2025-08-11T20:04:13Z",
+                    },
+                },
+            },
+        ]
+
+        with patch(
+            "app.trip_admin._leg_point_place_name",
+            side_effect=["Kansas City", "Cottleville"],
+        ):
+            legs = _build_travel_legs(rows)
+
+        self.assertEqual(legs[0]["start_place_name"], "Kansas City")
+        self.assertEqual(legs[0]["end_place_name"], "Cottleville")
+        self.assertEqual(
+            legs[0]["start_time"],
+            datetime(2025, 8, 11, 20, 4, 13, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            legs[0]["end_time"],
+            datetime(2025, 8, 11, 20, 30, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(legs[0]["start_latitude"], 39.106569)
+        self.assertEqual(legs[0]["end_longitude"], -94.0786674)
+
 
 if __name__ == "__main__":
     unittest.main()

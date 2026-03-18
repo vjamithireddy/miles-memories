@@ -611,19 +611,29 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         start_time = activity.get("startTime")
         end_time = activity.get("endTime")
         if start_time:
-            existing["start_time"] = datetime.fromisoformat(
-                start_time.replace("Z", "+00:00")
-            )
+            parsed_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            if parsed_start < existing["start_time"]:
+                existing["start_time"] = parsed_start
         if end_time:
-            existing["end_time"] = datetime.fromisoformat(
-                end_time.replace("Z", "+00:00")
-            )
+            parsed_end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+            if parsed_end > existing["end_time"]:
+                existing["end_time"] = parsed_end
 
     legs = []
     for key in sorted(by_segment):
         leg = by_segment[key]
         if not leg["leg_type"]:
             continue
+        if leg["start_latitude"] is None or leg["start_longitude"] is None:
+            first_point = leg["path_points"][0] if leg["path_points"] else None
+            if first_point:
+                leg["start_latitude"] = float(first_point["lat"])
+                leg["start_longitude"] = float(first_point["lon"])
+        if leg["end_latitude"] is None or leg["end_longitude"] is None:
+            last_point = leg["path_points"][-1] if leg["path_points"] else None
+            if last_point:
+                leg["end_latitude"] = float(last_point["lat"])
+                leg["end_longitude"] = float(last_point["lon"])
         if not leg["path_points"]:
             if leg["start_latitude"] is not None and leg["start_longitude"] is not None:
                 leg["path_points"].append(
