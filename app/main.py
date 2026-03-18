@@ -440,28 +440,30 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     trip_type = escape((trip["trip_type"] or "trip").replace("_", " "))
     timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
     short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
-    map_points = [
-        {
-            "lat": item["latitude"],
-            "lon": item["longitude"],
-        }
-        for item in trip["timeline"]
-        if item.get("latitude") is not None and item.get("longitude") is not None
-    ]
     travel_legs = trip.get("travel_legs", [])
+    map_points: list[dict[str, float]] = []
+    for item in travel_legs:
+        path_points = item.get("path_points") or []
+        if path_points:
+            map_points.extend(
+                {"lat": point["lat"], "lon": point["lon"]}
+                for point in path_points
+                if point.get("lat") is not None and point.get("lon") is not None
+            )
+            continue
+        if item.get("start_latitude") is not None and item.get("start_longitude") is not None:
+            map_points.append({"lat": item["start_latitude"], "lon": item["start_longitude"]})
+        if item.get("end_latitude") is not None and item.get("end_longitude") is not None:
+            map_points.append({"lat": item["end_latitude"], "lon": item["end_longitude"]})
     if not map_points:
-        for item in travel_legs:
-            path_points = item.get("path_points") or []
-            if path_points:
-                map_points.extend(
-                    {"lat": point["lat"], "lon": point["lon"]}
-                    for point in path_points
-                    if point.get("lat") is not None and point.get("lon") is not None
-                )
-            elif item.get("start_latitude") is not None and item.get("start_longitude") is not None:
-                map_points.append({"lat": item["start_latitude"], "lon": item["start_longitude"]})
-                if item.get("end_latitude") is not None and item.get("end_longitude") is not None:
-                    map_points.append({"lat": item["end_latitude"], "lon": item["end_longitude"]})
+        map_points = [
+            {
+                "lat": item["latitude"],
+                "lon": item["longitude"],
+            }
+            for item in trip["timeline"]
+            if item.get("latitude") is not None and item.get("longitude") is not None
+        ]
     trip_map_markup = _render_route_map_preview(
         map_points,
         aria_label="Published trip route map preview",
@@ -469,29 +471,32 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     leg_count = len(travel_legs)
     travel_leg_items = "".join(
         f"""
-        <article class="public-leg-card">
-          <header class="public-leg-header">
+        <details class="public-leg-card">
+          <summary class="public-leg-header">
             <div class="public-leg-headline">
               <h3>{escape(_travel_leg_comment(item))}</h3>
               <span class="public-leg-tag">{escape(item['label'])}</span>
             </div>
-            <p class="public-leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</p>
-          </header>
+            <div class="public-leg-summary-row">
+              <p class="public-leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</p>
+              <span class="public-leg-toggle"><span class="toggle-icon">+</span><span>Expand</span></span>
+            </div>
+          </summary>
           <div class="public-leg-body">
+            <div class="public-leg-map">{_render_leg_map_preview(item)}</div>
             <div class="public-leg-copy">
               <p>{escape(_travel_leg_comment(item))}</p>
               <p class="public-leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
             </div>
-            <div class="public-leg-map">{_render_leg_map_preview(item)}</div>
           </div>
-        </article>
+        </details>
         """
         for item in travel_legs
     ) or """
       <article class="public-leg-card empty-state">
-        <header class="public-leg-header">
+        <div class="public-leg-header">
           <h3>Travel legs coming soon</h3>
-        </header>
+        </div>
         <div class="public-leg-body">
           <div class="public-leg-copy">
             <p>This published trip does not have inferred leg segments yet.</p>
@@ -748,6 +753,13 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       gap: 8px;
       padding: 18px;
       background: rgba(255, 248, 239, 0.96);
+      cursor: pointer;
+      list-style: none;
+    }}
+    .public-leg-header::-webkit-details-marker {{
+      display: none;
+    }}
+    .public-leg-card[open] .public-leg-header {{
       border-bottom: 1px solid var(--line);
     }}
     .public-leg-headline {{
@@ -755,6 +767,13 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       flex-wrap: wrap;
       align-items: center;
       gap: 12px;
+    }}
+    .public-leg-summary-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
     }}
     .public-leg-tag {{
       display: inline-flex;
@@ -771,6 +790,36 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       color: var(--muted);
       font-weight: 600;
       font-size: 0.94rem;
+    }}
+    .public-leg-toggle {{
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(29,36,48,0.06);
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }}
+    .toggle-icon {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1rem;
+      font-weight: 700;
+    }}
+    .public-leg-card[open] .toggle-icon,
+    details.public-legs[open] .toggle-icon {{
+      transform: translateY(-1px);
+    }}
+    .public-leg-card[open] .public-leg-toggle .toggle-icon::before,
+    details.public-legs[open] > summary .toggle-icon::before {{
+      content: "-";
+    }}
+    .public-leg-card:not([open]) .public-leg-toggle .toggle-icon::before,
+    details.public-legs:not([open]) > summary .toggle-icon::before {{
+      content: "+";
     }}
     .public-leg-body {{
       display: grid;
@@ -843,19 +892,20 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       <div><a class="button" href="/">Back to published trips</a></div>
     </section>
 
+    <section class="panel">
+      <h2>Trip details</h2>
+      <p>This is the public version of the trip story. Review controls, admin metadata, and editing tools are kept off this page.</p>
+      <div class="meta-row">
+        <span class="trip-chip">{short_timing}</span>
+        <span class="trip-chip muted">{leg_count} travel leg{"s" if leg_count != 1 else ""}</span>
+      </div>
+    </section>
+
     <section class="feature-grid">
       <article class="panel">
         <h2>Trip map</h2>
-        <p>Published route preview built from linked trip coordinates and inferred travel legs.</p>
+        <p>Published route preview built from the full inferred travel-leg path for the trip.</p>
         <div class="trip-map-static">{trip_map_markup}</div>
-      </article>
-      <article class="panel">
-        <h2>Trip details</h2>
-        <p>This is the public version of the trip story. Review controls, raw admin metadata, and editing tools are kept off this page.</p>
-        <div class="meta-row">
-          <span class="trip-chip">{short_timing}</span>
-          <span class="trip-chip muted">{leg_count} travel leg{"s" if leg_count != 1 else ""}</span>
-        </div>
       </article>
     </section>
 
@@ -865,9 +915,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         <summary>
           <span class="collapse-copy">
             <strong>{leg_count} travel leg{"s" if leg_count != 1 else ""}</strong>
-            <span class="collapse-hint">Expand to browse the full journey, then collapse the section again when you want to skip down to the timeline.</span>
+            <span class="collapse-hint">Expand to browse the full journey. Each leg can also be opened individually.</span>
           </span>
-          <span class="trip-chip muted">Expand / collapse</span>
+          <span class="public-leg-toggle"><span class="toggle-icon"></span><span>Expand / Collapse</span></span>
         </summary>
         <div class="public-legs-list">
           {travel_leg_items}
@@ -876,8 +926,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     </section>
 
     <section class="panel">
-      <h2>Trip timeline</h2>
-      <p>The latest published trip points are shown here as a read-only timeline snapshot.</p>
+      <h2>Trip moments</h2>
+      <p>This is a read-only sample of recorded stops and timestamps from the trip, not a full minute-by-minute timeline.</p>
       <ul class="timeline-list">
         {timeline_items}
       </ul>
