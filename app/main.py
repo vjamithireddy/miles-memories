@@ -441,20 +441,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
     short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
     travel_legs = trip.get("travel_legs", [])
-    map_points: list[dict[str, float]] = []
-    for item in travel_legs:
-        path_points = item.get("path_points") or []
-        if path_points:
-            map_points.extend(
-                {"lat": point["lat"], "lon": point["lon"]}
-                for point in path_points
-                if point.get("lat") is not None and point.get("lon") is not None
-            )
-            continue
-        if item.get("start_latitude") is not None and item.get("start_longitude") is not None:
-            map_points.append({"lat": item["start_latitude"], "lon": item["start_longitude"]})
-        if item.get("end_latitude") is not None and item.get("end_longitude") is not None:
-            map_points.append({"lat": item["end_latitude"], "lon": item["end_longitude"]})
+    map_points = trip_admin.get_trip_route_points(trip["id"], append_home_if_close=True)
     if not map_points:
         map_points = [
             {
@@ -479,7 +466,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             </div>
             <div class="public-leg-summary-row">
               <p class="public-leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</p>
-              <span class="public-leg-toggle"><span class="toggle-icon">+</span><span>Expand</span></span>
+              <span class="public-leg-toggle"><span class="toggle-icon"></span><span>Expand</span></span>
             </div>
           </summary>
           <div class="public-leg-body">

@@ -8,10 +8,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from psycopg.rows import dict_row
 
-from app.bootstrap import get_user_timezone
+from app.bootstrap import get_home_profile, get_user_timezone
 from app.db import get_conn
 from trip_engine.detector import (
     _destination_title,
+    _haversine_km,
     _resolve_destination_profile,
 )
 
@@ -562,6 +563,8 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "path_points": [],
             "start_place_name": None,
             "end_place_name": None,
+            "_first_place_hint": None,
+            "_last_place_hint": None,
         }
 
     def _append_point(leg: dict[str, Any], latitude: Any, longitude: Any) -> None:
@@ -594,6 +597,18 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             current_leg = _new_leg(movement_type, row["event_time"])
         elif current_leg is None:
             continue
+
+        if (
+            current_leg is not None
+            and row.get("source_event_id")
+            and row["source_event_id"] not in LEG_LABELS
+            and not str(row["source_event_id"]).startswith("timeline_path:")
+        ):
+            place_hint = _leg_point_place_name(row.get("latitude"), row.get("longitude"))
+            if place_hint:
+                if not current_leg.get("_first_place_hint"):
+                    current_leg["_first_place_hint"] = place_hint
+                current_leg["_last_place_hint"] = place_hint
 
         start = activity.get("start") or {}
         end = activity.get("end") or {}
@@ -652,8 +667,61 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             leg.get("end_latitude"),
             leg.get("end_longitude"),
         )
+        if not leg.get("start_place_name") and leg.get("_first_place_hint"):
+            leg["start_place_name"] = leg["_first_place_hint"]
+        if not leg.get("end_place_name") and leg.get("_last_place_hint"):
+            leg["end_place_name"] = leg["_last_place_hint"]
+        leg.pop("_first_place_hint", None)
+        leg.pop("_last_place_hint", None)
     _apply_trip_context_place_inference(legs)
     return legs
+
+
+def get_trip_route_points(trip_id: int, *, append_home_if_close: bool = False) -> list[dict[str, float]]:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT le.latitude, le.longitude
+                FROM trip_events te
+                JOIN location_events le
+                    ON te.event_type = 'location_event'
+                   AND le.id = te.event_ref_id
+                WHERE te.trip_id = %s
+                  AND le.latitude IS NOT NULL
+                  AND le.longitude IS NOT NULL
+                ORDER BY te.event_time ASC, te.id ASC
+                """,
+                (trip_id,),
+            )
+            points = [
+                {"lat": float(row["latitude"]), "lon": float(row["longitude"])}
+                for row in cur.fetchall()
+            ]
+
+    if append_home_if_close and points:
+        home_lat, home_lon, home_radius_meters = get_home_profile()
+        if home_lat is not None and home_lon is not None:
+            last_point = points[-1]
+            distance_km = _haversine_km(
+                float(last_point["lat"]),
+                float(last_point["lon"]),
+                float(home_lat),
+                float(home_lon),
+            )
+            if distance_km <= (float(home_radius_meters or 16093) / 1000.0):
+                home_point = {"lat": float(home_lat), "lon": float(home_lon)}
+                if points[-1] != home_point:
+                    points.append(home_point)
+
+    if len(points) <= 900:
+        return points
+
+    step = max(1, len(points) // 900)
+    sampled = points[::step]
+    if sampled[-1] != points[-1]:
+        sampled.append(points[-1])
+    return sampled
 
 
 def enrich_trip_leg_places(trip_id: int) -> int:

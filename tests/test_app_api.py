@@ -221,6 +221,13 @@ class AppApiTests(unittest.TestCase):
         trip["status"] = "published"
 
         with patch("app.main.trip_admin.get_public_trip_by_slug", return_value=trip) as mock_get, \
+             patch(
+                 "app.main.trip_admin.get_trip_route_points",
+                 return_value=[
+                     {"lat": 38.6, "lon": -90.2},
+                     {"lat": 39.1, "lon": -94.5},
+                 ],
+             ) as mock_route, \
              patch("app.main.get_user_timezone", return_value="America/Chicago"):
             response = public_trip_detail_page("colorado-weekend")
 
@@ -245,6 +252,7 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b'data-autosave="segment"', response.body)
         self.assertNotIn(b"class=\"leg-summary-input\"", response.body)
         mock_get.assert_called_once_with("colorado-weekend")
+        mock_route.assert_called_once_with(trip["id"], append_home_if_close=True)
 
     def test_health_returns_plain_text(self) -> None:
         response = health()
