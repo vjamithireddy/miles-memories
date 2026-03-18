@@ -14,6 +14,7 @@ from app.trip_admin import (
     _is_placeholder_segment_summary,
     _leg_default_summary,
     _place_candidate_score,
+    _preferred_segment_place,
     _prefer_locality_over_region,
     _should_refresh_segment_summary,
 )
@@ -52,6 +53,12 @@ class TripAdminTests(unittest.TestCase):
         self.assertGreater(
             _place_candidate_score("Flathead County", "Whitefish"),
             _place_candidate_score("Flathead County", "Flathead County"),
+        )
+
+    def test_preferred_segment_place_skips_regional_name_when_specific_name_exists(self) -> None:
+        self.assertEqual(
+            _preferred_segment_place("Flathead County", "Kansas City", fallback_trip_name="Road Trip"),
+            "Kansas City",
         )
 
     def test_best_nearby_place_name_prefers_specific_locality_over_county(self) -> None:

@@ -111,10 +111,15 @@ def _preferred_segment_place(
     *names: str | None,
     fallback_trip_name: str | None = None,
 ) -> str | None:
+    regional_fallback: str | None = None
     for name in names:
         cleaned = _clean_segment_place_name(name)
-        if cleaned:
+        if cleaned and not _is_regional_place(cleaned):
             return cleaned
+        if cleaned and regional_fallback is None:
+            regional_fallback = cleaned
+    if regional_fallback:
+        return regional_fallback
     return _trip_context_name(fallback_trip_name)
 
 
