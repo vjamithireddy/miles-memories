@@ -1,9 +1,10 @@
 import base64
 import binascii
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape
 import json
 import math
+import re
 import secrets
 from typing import List, Optional, Union
 from urllib.parse import parse_qs
@@ -440,7 +441,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     trip_type = escape((trip["trip_type"] or "trip").replace("_", " "))
     timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
     short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
-    travel_legs = trip.get("travel_legs", [])
+    travel_legs = _coalesce_public_story_legs(trip.get("travel_legs", []))
     trip_duration = escape(_format_duration(trip["start_time"], trip["end_time"]))
     map_points = trip_admin.get_trip_route_points(trip["id"], append_home_if_close=True)
     if not map_points:
@@ -1008,6 +1009,67 @@ def _build_trip_toast(saved: Union[bool, str]) -> str:
 def _travel_leg_comment(item: dict) -> str:
     comment = item.get("segment_summary") or f"{item['label']} inferred from timeline activity data."
     return comment.rstrip(".")
+
+
+def _public_leg_base_comment(item: dict) -> str:
+    comment = _travel_leg_comment(item)
+    return re.sub(r"\s+\(\d+\)$", "", comment).strip()
+
+
+def _merge_public_leg_path_points(target: dict, source_points: Optional[List[dict]]) -> None:
+    for point in source_points or []:
+        lat = point.get("lat")
+        lon = point.get("lon")
+        if lat is None or lon is None:
+            continue
+        candidate = {"lat": float(lat), "lon": float(lon)}
+        if not target["path_points"] or target["path_points"][-1] != candidate:
+            target["path_points"].append(candidate)
+
+
+def _should_merge_public_story_legs(left: dict, right: dict) -> bool:
+    if left.get("leg_type") != right.get("leg_type"):
+        return False
+    left_start = (left.get("start_place_name") or "").strip()
+    left_end = (left.get("end_place_name") or "").strip()
+    right_start = (right.get("start_place_name") or "").strip()
+    right_end = (right.get("end_place_name") or "").strip()
+    title_match = _public_leg_base_comment(left) == _public_leg_base_comment(right)
+    route_match = bool(left_start and left_end and right_start and right_end) and (
+        left_start == right_start and left_end == right_end
+    )
+    if not (title_match or route_match):
+        return False
+    left_end_time = left.get("end_time")
+    right_start_time = right.get("start_time")
+    if not left_end_time or not right_start_time:
+        return False
+    gap = right_start_time - left_end_time
+    return timedelta(0) <= gap <= timedelta(minutes=45)
+
+
+def _coalesce_public_story_legs(travel_legs: List[dict]) -> List[dict]:
+    merged: List[dict] = []
+    for item in travel_legs:
+        leg = {
+            **item,
+            "path_points": [dict(point) for point in item.get("path_points", [])],
+        }
+        leg["segment_summary"] = _public_leg_base_comment(leg)
+        if merged and _should_merge_public_story_legs(merged[-1], leg):
+            previous = merged[-1]
+            if leg.get("end_time") and leg["end_time"] > previous["end_time"]:
+                previous["end_time"] = leg["end_time"]
+            if leg.get("end_latitude") is not None:
+                previous["end_latitude"] = leg["end_latitude"]
+            if leg.get("end_longitude") is not None:
+                previous["end_longitude"] = leg["end_longitude"]
+            if leg.get("end_place_name"):
+                previous["end_place_name"] = leg["end_place_name"]
+            _merge_public_leg_path_points(previous, leg.get("path_points"))
+            continue
+        merged.append(leg)
+    return merged
 
 
 def _trip_review_state(trip: dict) -> Optional[str]:

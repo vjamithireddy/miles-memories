@@ -257,6 +257,52 @@ class AppApiTests(unittest.TestCase):
         mock_get.assert_called_once_with("colorado-weekend")
         mock_route.assert_called_once_with(trip["id"], append_home_if_close=True)
 
+    def test_public_trip_detail_coalesces_adjacent_duplicate_legs(self) -> None:
+        trip = _trip_detail()
+        trip["trip_slug"] = "road-trip"
+        trip["is_private"] = False
+        trip["publish_ready"] = True
+        trip["status"] = "published"
+        trip["travel_legs"] = [
+            {
+                "leg_type": "car",
+                "label": "Car travel",
+                "start_time": datetime(2026, 3, 1, 8, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 3, 1, 9, 0, tzinfo=timezone.utc),
+                "start_latitude": 38.0,
+                "start_longitude": -90.0,
+                "end_latitude": 39.0,
+                "end_longitude": -89.0,
+                "start_place_name": "Normal",
+                "end_place_name": "Towanda",
+                "segment_summary": "Monday Morning drive from Normal to Towanda (1).",
+                "path_points": [{"lat": 38.0, "lon": -90.0}, {"lat": 39.0, "lon": -89.0}],
+            },
+            {
+                "leg_type": "car",
+                "label": "Car travel",
+                "start_time": datetime(2026, 3, 1, 9, 5, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 3, 1, 9, 20, tzinfo=timezone.utc),
+                "start_latitude": 38.0,
+                "start_longitude": -90.0,
+                "end_latitude": 39.0,
+                "end_longitude": -89.0,
+                "start_place_name": "Normal",
+                "end_place_name": "Towanda",
+                "segment_summary": "Monday Morning drive from Normal to Towanda (2).",
+                "path_points": [{"lat": 39.0, "lon": -89.0}],
+            },
+        ]
+
+        with patch("app.main.trip_admin.get_public_trip_by_slug", return_value=trip), \
+             patch("app.main.trip_admin.get_trip_route_points", return_value=[]), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = public_trip_detail_page("road-trip")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.body.count(b"Monday Morning drive from Normal to Towanda"), 2)
+        self.assertNotIn(b"(2)", response.body)
+
     def test_health_returns_plain_text(self) -> None:
         response = health()
 
