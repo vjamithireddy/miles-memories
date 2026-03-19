@@ -681,6 +681,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       min-height: 320px;
       background: #efe5d7;
       overflow: hidden;
+      cursor: grab;
     }}
     .leg-map-viewport {{
       position: absolute;
@@ -1412,20 +1413,44 @@ def _render_map_interactions_script() -> str:
         const viewport = frame.querySelector("[data-map-viewport]");
         if (!viewport) return;
         let scale = 1;
-        let clustersExpanded = false;
+        let translateX = 0;
+        let translateY = 0;
+        let isDragging = false;
+        let dragPointerId = null;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let dragOriginX = 0;
+        let dragOriginY = 0;
+        const expandedClusters = new Set();
+        const markerClusterId = new Map();
+        frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
+          const clusterId = cluster.dataset.clusterId || "";
+          const memberIds = (cluster.dataset.memberIds || "").split(",").filter(Boolean);
+          memberIds.forEach((memberId) => markerClusterId.set(memberId, clusterId));
+        });
+        const syncPanCursor = () => {
+          frame.style.cursor = isDragging ? "grabbing" : "grab";
+        };
+        const applyViewportTransform = () => {
+          viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        };
         const syncClusters = () => {
-          const showMembers = clustersExpanded || scale >= 1.75;
+          const autoExpand = scale >= 1.75;
           frame.querySelectorAll(".map-stop-marker[data-clustered='true']").forEach((marker) => {
-            marker.style.display = showMembers ? "" : "none";
+            const clusterId = marker.dataset.clusterId || "";
+            const showMarker = autoExpand || expandedClusters.has(clusterId);
+            marker.style.display = showMarker ? "" : "none";
           });
           frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
-            cluster.style.display = showMembers ? "none" : "";
+            const clusterId = cluster.dataset.clusterId || "";
+            const hideCluster = autoExpand || expandedClusters.has(clusterId);
+            cluster.style.display = hideCluster ? "none" : "";
           });
         };
         const applyScale = () => {
-          viewport.style.transform = `scale(${scale})`;
+          applyViewportTransform();
           frame.dataset.mapScale = String(scale.toFixed(2));
-          if (scale <= 1.25) clustersExpanded = false;
+          if (scale <= 1.25) expandedClusters.clear();
           syncClusters();
         };
         frame.querySelectorAll("[data-map-zoom]").forEach((button) => {
@@ -1438,7 +1463,9 @@ def _render_map_interactions_script() -> str:
               scale = clamp(scale - 0.25, 1, 5);
             } else {
               scale = 1;
-              clustersExpanded = false;
+              translateX = 0;
+              translateY = 0;
+              expandedClusters.clear();
             }
             applyScale();
           });
@@ -1482,17 +1509,52 @@ def _render_map_interactions_script() -> str:
         frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
           const activate = () => {
             frame.querySelectorAll(".map-stop-marker.is-active").forEach((node) => node.classList.remove("is-active"));
+            frame.querySelectorAll(".map-stop-cluster.is-active").forEach((node) => node.classList.remove("is-active"));
+            cluster.classList.add("is-active");
             setTooltip(cluster.dataset.label || "");
           };
           cluster.addEventListener("mouseenter", activate);
           cluster.addEventListener("focus", activate);
           cluster.addEventListener("click", (event) => {
             event.preventDefault();
-            clustersExpanded = true;
-            applyScale();
+            const clusterId = cluster.dataset.clusterId || "";
+            if (clusterId) {
+              expandedClusters.add(clusterId);
+            }
+            syncClusters();
             activate();
           });
         });
+        frame.addEventListener("pointerdown", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest(".map-zoom-btn") || target.closest(".map-stop-marker") || target.closest(".map-stop-cluster")) {
+            return;
+          }
+          isDragging = true;
+          dragPointerId = event.pointerId;
+          dragStartX = event.clientX;
+          dragStartY = event.clientY;
+          dragOriginX = translateX;
+          dragOriginY = translateY;
+          viewport.setPointerCapture?.(event.pointerId);
+          syncPanCursor();
+        });
+        frame.addEventListener("pointermove", (event) => {
+          if (!isDragging || dragPointerId !== event.pointerId) return;
+          translateX = dragOriginX + (event.clientX - dragStartX);
+          translateY = dragOriginY + (event.clientY - dragStartY);
+          applyViewportTransform();
+        });
+        const endDrag = (event) => {
+          if (!isDragging || dragPointerId !== event.pointerId) return;
+          isDragging = false;
+          dragPointerId = null;
+          syncPanCursor();
+        };
+        frame.addEventListener("pointerup", endDrag);
+        frame.addEventListener("pointercancel", endDrag);
+        syncPanCursor();
         applyScale();
       });
     })();
@@ -1659,6 +1721,11 @@ def _render_route_map_preview(
         single_markers, cluster_markers = _cluster_scaled_stop_markers(scaled_markers)
     rendered_stop_markers = []
     clustered_ids = {member_id for cluster in cluster_markers for member_id in cluster["member_ids"]}
+    marker_cluster_lookup = {
+        member_id: cluster["id"]
+        for cluster in cluster_markers
+        for member_id in cluster["member_ids"]
+    }
     for marker in scaled_markers:
         markup = _render_route_stop_marker(
             marker["x"],
@@ -1669,7 +1736,8 @@ def _render_route_map_preview(
             is_end=marker["is_end"],
         )
         if marker["id"] in clustered_ids:
-            markup = markup.replace('class="map-stop-marker', 'class="map-stop-marker').replace('tabindex="0"', 'data-clustered="true" tabindex="0"')
+            cluster_id = marker_cluster_lookup.get(marker["id"], "")
+            markup = markup.replace('tabindex="0"', f'data-clustered="true" data-cluster-id="{escape(cluster_id)}" tabindex="0"')
         rendered_stop_markers.append(markup)
     rendered_clusters = "".join(_render_route_cluster_marker(cluster) for cluster in cluster_markers)
     tiles = []
@@ -3120,6 +3188,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       min-height: 320px;
       background: #efe5d7;
       overflow: hidden;
+      cursor: grab;
     }}
     .leg-map-viewport {{
       position: absolute;
