@@ -748,6 +748,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       color: var(--ink);
       font-size: 0.84rem;
       line-height: 1.4;
+      white-space: pre-line;
       box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
     }}
     .map-stop-marker {{
@@ -1215,15 +1216,15 @@ def _trip_visibility_state(trip: dict) -> Optional[str]:
 
 
 START_MARKER_STYLES = {
-    "airport": {"fill": "#2f6cb3", "symbol": "A"},
-    "fuel": {"fill": "#cc6b2c", "symbol": "G"},
-    "park": {"fill": "#2f6c5b", "symbol": "P"},
-    "camp": {"fill": "#587d32", "symbol": "C"},
-    "lodging": {"fill": "#7b4da3", "symbol": "L"},
-    "food": {"fill": "#b34747", "symbol": "F"},
+    "airport": {"fill": "#2f6cb3", "symbol": "AP"},
+    "fuel": {"fill": "#cc6b2c", "symbol": "GS"},
+    "park": {"fill": "#2f6c5b", "symbol": "TR"},
+    "camp": {"fill": "#587d32", "symbol": "CG"},
+    "lodging": {"fill": "#7b4da3", "symbol": "IN"},
+    "food": {"fill": "#b34747", "symbol": "FD"},
     "parking": {"fill": "#6e7886", "symbol": "PK"},
-    "school": {"fill": "#7a5a30", "symbol": "S"},
-    "default": {"fill": "#c8643b", "symbol": "•"},
+    "school": {"fill": "#7a5a30", "symbol": "SC"},
+    "default": {"fill": "#c8643b", "symbol": "ST"},
 }
 
 OVERALL_TRIP_MAP_MARKER_KINDS = {
@@ -1314,7 +1315,7 @@ def _route_stop_label(item: dict, marker_kind: str) -> str:
         or item.get("primary_destination_name")
         or "Trip stop"
     ) or "Trip stop"
-    return f"{place} · {_route_stop_type_label(marker_kind)}"
+    return f"{place}\n{_route_stop_type_label(marker_kind)}"
 
 
 def _build_trip_stop_markers(travel_legs: List[dict], *, include_kinds: Optional[set[str]] = None) -> list[dict[str, Any]]:
@@ -1607,7 +1608,7 @@ def _render_route_map_preview(
     aria_label: str = "Route map preview",
     show_route_endpoints: bool = True,
     show_legend: bool = True,
-    reset_label: str = "Reset",
+    reset_label: str = "Fit",
     cluster_stop_markers: bool = False,
 ) -> str:
     points: list[tuple[float, float]] = []
