@@ -441,6 +441,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     timing = f"{escape(_format_local_datetime(trip['start_time']))} → {escape(_format_local_datetime(trip['end_time']))}"
     short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
     travel_legs = trip.get("travel_legs", [])
+    trip_duration = escape(_format_duration(trip["start_time"], trip["end_time"]))
     map_points = trip_admin.get_trip_route_points(trip["id"], append_home_if_close=True)
     if not map_points:
         map_points = [
@@ -456,6 +457,21 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         aria_label="Published trip route map preview",
     )
     leg_count = len(travel_legs)
+    distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
+    travel_modes = ", ".join(distinct_leg_labels[:4]) if distinct_leg_labels else "Story moments pending"
+    if len(distinct_leg_labels) > 4:
+        travel_modes = f"{travel_modes}, +{len(distinct_leg_labels) - 4} more"
+    public_origin = "Journey start recorded"
+    public_destination = trip["primary_destination_name"] or "Destination pending"
+    if travel_legs:
+        first_start = (travel_legs[0].get("start_place_name") or "").strip()
+        last_end = (travel_legs[-1].get("end_place_name") or "").strip()
+        if first_start:
+            public_origin = first_start
+        if last_end:
+            public_destination = last_end
+    public_origin = escape(public_origin)
+    public_destination = escape(public_destination)
     travel_leg_items = "".join(
         f"""
         <details class="public-leg-card">
@@ -473,7 +489,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             <div class="public-leg-map">{_render_leg_map_preview(item)}</div>
             <div class="public-leg-copy">
               <p>{escape(_travel_leg_comment(item))}</p>
-              <p class="public-leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+              <p class="public-leg-caption">Part of the published journey route.</p>
             </div>
           </div>
         </details>
@@ -537,6 +553,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       display: grid;
       gap: 18px;
     }}
+    .hero-copy {{
+      max-width: 42rem;
+      display: grid;
+      gap: 12px;
+    }}
     .eyebrow {{
       display: inline-block;
       font-size: 0.8rem;
@@ -599,6 +620,33 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       display: grid;
       grid-template-columns: 1fr;
       gap: 20px;
+    }}
+    .story-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }}
+    .story-card {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px 20px;
+      background: rgba(255,255,255,0.52);
+      display: grid;
+      gap: 8px;
+    }}
+    .story-card-label {{
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }}
+    .story-card-value {{
+      font-size: clamp(1.15rem, 2vw, 1.55rem);
+      font-weight: 700;
+      line-height: 1.2;
+    }}
+    .story-card-note {{
+      font-size: 0.94rem;
     }}
     .trip-map-static {{
       background: #efe5d7;
@@ -801,7 +849,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       align-content: start;
       gap: 12px;
     }}
-    .public-leg-source {{
+    .public-leg-caption {{
       font-size: 0.92rem;
     }}
     .public-leg-map {{
@@ -819,7 +867,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     @media (max-width: 980px) {{
       .feature-grid,
-      .public-leg-body {{
+      .public-leg-body,
+      .story-grid {{
         grid-template-columns: 1fr;
       }}
     }}
@@ -828,23 +877,43 @@ def _render_public_trip_detail_page(trip: dict) -> str:
 <body>
   <main>
     <section class="panel hero">
-      <span class="eyebrow">Published Trip</span>
-      <h1>{title}</h1>
-      <p>{summary}</p>
-      <div class="meta-row">
-        <span class="trip-chip">{trip_type}</span>
-        <span class="trip-chip">{destination}</span>
-        <span class="trip-chip muted">{timing}</span>
+      <div class="hero-copy">
+        <span class="eyebrow">Published Trip</span>
+        <h1>{title}</h1>
+        <p>{summary}</p>
+        <div class="meta-row">
+          <span class="trip-chip">{trip_type}</span>
+          <span class="trip-chip">{destination}</span>
+          <span class="trip-chip muted">{timing}</span>
+        </div>
       </div>
       <div><a class="button" href="/">Back to published trips</a></div>
     </section>
 
     <section class="panel">
       <h2>Trip details</h2>
-      <p>This is the public version of the trip story. Review controls, admin metadata, and editing tools are kept off this page.</p>
-      <div class="meta-row">
-        <span class="trip-chip">{short_timing}</span>
-        <span class="trip-chip muted">{leg_count} travel leg{"s" if leg_count != 1 else ""}</span>
+      <p>This public page focuses on the story of the trip: where it went, how long it lasted, and how the journey unfolded.</p>
+      <div class="story-grid">
+        <article class="story-card">
+          <span class="story-card-label">When</span>
+          <div class="story-card-value">{short_timing}</div>
+          <p class="story-card-note">{trip_duration} total</p>
+        </article>
+        <article class="story-card">
+          <span class="story-card-label">Route</span>
+          <div class="story-card-value">{public_origin} → {public_destination}</div>
+          <p class="story-card-note">Start and finish from the published travel record.</p>
+        </article>
+        <article class="story-card">
+          <span class="story-card-label">Travel modes</span>
+          <div class="story-card-value">{escape(travel_modes)}</div>
+          <p class="story-card-note">Based on inferred travel legs.</p>
+        </article>
+        <article class="story-card">
+          <span class="story-card-label">Journey size</span>
+          <div class="story-card-value">{leg_count} travel leg{"s" if leg_count != 1 else ""}</div>
+          <p class="story-card-note">Expand the leg list below to browse the trip step by step.</p>
+        </article>
       </div>
     </section>
 
