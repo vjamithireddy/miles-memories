@@ -457,6 +457,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         map_points,
         stop_markers=_build_trip_stop_markers(travel_legs),
         aria_label="Published trip route map preview",
+        show_route_endpoints=False,
+        show_legend=False,
     )
     leg_count = len(travel_legs)
     distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
@@ -746,30 +748,25 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .map-stop-marker {{
       cursor: pointer;
-      transition: filter 140ms ease;
+      transition: filter 140ms ease, transform 140ms ease;
     }}
-    .map-stop-marker .map-stop-ring,
+    .map-stop-marker .map-stop-pin,
     .map-stop-marker .map-stop-core {{
-      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease;
+      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease, filter 140ms ease;
       transform-origin: center;
       transform-box: fill-box;
     }}
-    .map-stop-marker:hover .map-stop-ring,
-    .map-stop-marker.is-active .map-stop-ring {{
-      stroke-width: 4;
-      opacity: 1;
+    .map-stop-marker:hover .map-stop-pin,
+    .map-stop-marker.is-active .map-stop-pin {{
+      filter: brightness(1.05);
     }}
     .map-stop-marker:hover .map-stop-core,
     .map-stop-marker.is-active .map-stop-core {{
-      transform: scale(1.14);
+      transform: scale(1.1);
     }}
-    .map-stop-ring {{
-      opacity: 0.72;
-      stroke-dasharray: 2 4;
-    }}
-    .map-stop-ring-start,
-    .map-stop-ring-end {{
-      stroke-dasharray: none;
+    .map-stop-marker:hover,
+    .map-stop-marker.is-active {{
+      filter: drop-shadow(0 7px 12px rgba(37, 28, 14, 0.22));
     }}
     .leg-map-legend {{
       position: absolute;
@@ -1202,15 +1199,15 @@ def _trip_visibility_state(trip: dict) -> Optional[str]:
 
 
 START_MARKER_STYLES = {
-    "airport": {"fill": "#2f6cb3", "label": "AIR"},
-    "fuel": {"fill": "#cc6b2c", "label": "GAS"},
-    "park": {"fill": "#2f6c5b", "label": "REC"},
-    "camp": {"fill": "#587d32", "label": "CAMP"},
-    "lodging": {"fill": "#7b4da3", "label": "HOTEL"},
-    "food": {"fill": "#b34747", "label": "FOOD"},
-    "parking": {"fill": "#6e7886", "label": "P"},
-    "school": {"fill": "#7a5a30", "label": "SCH"},
-    "default": {"fill": "#c8643b", "label": "START"},
+    "airport": {"fill": "#2f6cb3", "symbol": "A"},
+    "fuel": {"fill": "#cc6b2c", "symbol": "G"},
+    "park": {"fill": "#2f6c5b", "symbol": "R"},
+    "camp": {"fill": "#587d32", "symbol": "C"},
+    "lodging": {"fill": "#7b4da3", "symbol": "L"},
+    "food": {"fill": "#b34747", "symbol": "F"},
+    "parking": {"fill": "#6e7886", "symbol": "P"},
+    "school": {"fill": "#7a5a30", "symbol": "S"},
+    "default": {"fill": "#c8643b", "symbol": "•"},
 }
 
 
@@ -1240,16 +1237,14 @@ def _start_marker_kind_for_leg(item: dict) -> str:
 
 def _render_route_start_marker(x: float, y: float, marker_kind: str) -> str:
     marker = START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])
-    label = marker["label"]
+    symbol = marker["symbol"]
     fill = marker["fill"]
-    font_size = 7 if len(label) > 3 else 8
-    label_y = -7 if len(label) > 1 else -6
     return f"""
     <g data-marker-kind="{escape(marker_kind)}" transform="translate({x} {y})">
       <path d="M0 -18 C10 -18 17 -11 17 -2 C17 11 3 24 0 27 C-3 24 -17 11 -17 -2 C-17 -11 -10 -18 0 -18 Z"
         fill="{fill}" stroke="#fff8ef" stroke-width="4" />
       <circle cx="0" cy="-7" r="8.8" fill="#fff8ef" opacity="0.96" />
-      <text x="0" y="{label_y}" text-anchor="middle" font-family="Arial, sans-serif" font-size="{font_size}" font-weight="700" fill="{fill}">{escape(label)}</text>
+      <text x="0" y="-4.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="{fill}">{escape(symbol)}</text>
     </g>
     """
 
@@ -1317,14 +1312,13 @@ def _render_route_stop_marker(
 ) -> str:
     marker = START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])
     fill = marker["fill"]
-    short = marker["label"]
-    ring_class = " map-stop-ring-start" if is_start else " map-stop-ring-end" if is_end else ""
+    symbol = marker["symbol"]
     state_class = " is-route-start" if is_start else " is-route-end" if is_end else ""
     return f"""
     <g class="map-stop-marker{state_class}" data-marker-kind="{escape(marker_kind)}" data-label="{escape(label)}" tabindex="0">
-      <circle class="map-stop-ring{ring_class}" cx="{x}" cy="{y}" r="14" fill="none" stroke="{fill}" stroke-width="2.5" />
-      <circle class="map-stop-core" cx="{x}" cy="{y}" r="8.5" fill="#fff8ef" stroke="{fill}" stroke-width="5" />
-      <text x="{x}" y="{y + 3}" text-anchor="middle" font-family="Arial, sans-serif" font-size="6.2" font-weight="700" fill="{fill}">{escape(short[:4])}</text>
+      <path class="map-stop-pin" d="M {x} {y - 16} C {x + 10} {y - 16} {x + 16} {y - 9} {x + 16} {y + 1} C {x + 16} {y + 12} {x + 4} {y + 22} {x} {y + 25} C {x - 4} {y + 22} {x - 16} {y + 12} {x - 16} {y + 1} C {x - 16} {y - 9} {x - 10} {y - 16} {x} {y - 16} Z" fill="{fill}" />
+      <circle class="map-stop-core" cx="{x}" cy="{y}" r="9.5" fill="#fff8ef" stroke="{fill}" stroke-width="4" />
+      <text x="{x}" y="{y + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8.1" font-weight="700" fill="{fill}">{escape(symbol)}</text>
       <title>{escape(label)}</title>
     </g>
     """
@@ -1430,6 +1424,9 @@ def _render_route_map_preview(
     start_marker_kind: str = "default",
     stop_markers: Optional[List[dict[str, Any]]] = None,
     aria_label: str = "Route map preview",
+    show_route_endpoints: bool = True,
+    show_legend: bool = True,
+    reset_label: str = "Reset",
 ) -> str:
     points: list[tuple[float, float]] = []
     for point in raw_points or []:
@@ -1560,12 +1557,27 @@ def _render_route_map_preview(
                 f'alt="" loading="lazy" style="left:{(left / width) * 100:.4f}%;top:{(top / height) * 100:.4f}%;'
                 f'width:{(tile_width / width) * 100:.4f}%;height:{(tile_height / height) * 100:.4f}%;">'
             )
-    start_marker = _render_route_start_marker(start_x, start_y, start_marker_kind)
+    start_marker = _render_route_start_marker(start_x, start_y, start_marker_kind) if show_route_endpoints else ""
+    end_marker = (
+        f'<circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />'
+        if show_route_endpoints
+        else ""
+    )
+    legend_markup = (
+        """
+      <div class="leg-map-legend">
+        <span><i class="legend-dot legend-start"></i>Start</span>
+        <span><i class="legend-dot legend-end"></i>End</span>
+      </div>
+        """
+        if show_legend
+        else ""
+    )
     return f"""
     <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}" data-map-frame>
       <div class="leg-map-controls" aria-label="Map zoom controls">
         <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out">−</button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom">100%</button>
+        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom">{escape(reset_label)}</button>
         <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in">+</button>
       </div>
       <div class="leg-map-tooltip" data-map-tooltip hidden></div>
@@ -1577,13 +1589,10 @@ def _render_route_map_preview(
         <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
         {''.join(scaled_markers)}
         {start_marker}
-        <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />
+        {end_marker}
       </svg>
       </div>
-      <div class="leg-map-legend">
-        <span><i class="legend-dot legend-start"></i>Start</span>
-        <span><i class="legend-dot legend-end"></i>End</span>
-      </div>
+      {legend_markup}
     </div>
     """
 
@@ -2390,6 +2399,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         [{"lat": point["lat"], "lon": point["lon"]} for point in map_points],
         stop_markers=_build_trip_stop_markers(travel_legs),
         aria_label="Trip route map preview",
+        show_route_endpoints=False,
+        show_legend=False,
     )
 
     timeline_items = "".join(
@@ -3052,30 +3063,25 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .map-stop-marker {{
       cursor: pointer;
-      transition: filter 140ms ease;
+      transition: filter 140ms ease, transform 140ms ease;
     }}
-    .map-stop-marker .map-stop-ring,
+    .map-stop-marker .map-stop-pin,
     .map-stop-marker .map-stop-core {{
-      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease;
+      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease, filter 140ms ease;
       transform-origin: center;
       transform-box: fill-box;
     }}
-    .map-stop-marker:hover .map-stop-ring,
-    .map-stop-marker.is-active .map-stop-ring {{
-      stroke-width: 4;
-      opacity: 1;
+    .map-stop-marker:hover .map-stop-pin,
+    .map-stop-marker.is-active .map-stop-pin {{
+      filter: brightness(1.05);
     }}
     .map-stop-marker:hover .map-stop-core,
     .map-stop-marker.is-active .map-stop-core {{
-      transform: scale(1.14);
+      transform: scale(1.1);
     }}
-    .map-stop-ring {{
-      opacity: 0.72;
-      stroke-dasharray: 2 4;
-    }}
-    .map-stop-ring-start,
-    .map-stop-ring-end {{
-      stroke-dasharray: none;
+    .map-stop-marker:hover,
+    .map-stop-marker.is-active {{
+      filter: drop-shadow(0 7px 12px rgba(37, 28, 14, 0.22));
     }}
     .leg-map-legend {{
       position: absolute;
