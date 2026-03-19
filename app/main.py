@@ -1267,15 +1267,29 @@ def _map_is_regional_place(name: Optional[str]) -> bool:
     return any(token in lowered for token in ("county", "state", "region"))
 
 
-def _route_stop_label(item: dict) -> str:
-    place = (
+def _route_stop_type_label(marker_kind: str) -> str:
+    return {
+        "airport": "Airport",
+        "fuel": "Fuel stop",
+        "park": "Park or trail stop",
+        "camp": "Campground",
+        "lodging": "Lodging",
+        "food": "Food stop",
+        "parking": "Parking",
+        "school": "School or university",
+        "default": "Road stop",
+    }.get(marker_kind, "Trip stop")
+
+
+def _route_stop_label(item: dict, marker_kind: str) -> str:
+    place = _map_clean_place_name(
         item.get("start_place_name")
         or item.get("end_place_name")
         or item.get("primary_destination_name")
         or item.get("label")
         or "Trip stop"
-    )
-    return f"{_public_leg_base_comment(item)} · {place}".strip(" ·")
+    ) or "Trip stop"
+    return f"{place} · {_route_stop_type_label(marker_kind)}"
 
 
 def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
@@ -1296,7 +1310,7 @@ def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
                 "lat": float(latitude),
                 "lon": float(longitude),
                 "kind": marker_kind,
-                "label": _route_stop_label(item),
+                "label": _route_stop_label(item, marker_kind),
             }
         )
     return markers
