@@ -478,7 +478,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         <details class="public-leg-card">
           <summary class="public-leg-header">
             <div class="public-leg-headline">
-              <h3>{escape(_travel_leg_comment(item))}</h3>
+              <h3>{escape(_public_leg_base_comment(item))}</h3>
               <span class="public-leg-tag">{escape(item['label'])}</span>
             </div>
             <div class="public-leg-summary-row">
@@ -489,7 +489,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <div class="public-leg-body">
             <div class="public-leg-map">{_render_leg_map_preview(item)}</div>
             <div class="public-leg-copy">
-              <p>{escape(_travel_leg_comment(item))}</p>
+              <p>{escape(_public_leg_base_comment(item))}</p>
               <p class="public-leg-caption">Part of the published journey route.</p>
             </div>
           </div>
@@ -1045,7 +1045,7 @@ def _should_merge_public_story_legs(left: dict, right: dict) -> bool:
     if not left_end_time or not right_start_time:
         return False
     gap = right_start_time - left_end_time
-    return timedelta(0) <= gap <= timedelta(minutes=45)
+    return timedelta(0) <= gap <= timedelta(minutes=90)
 
 
 def _coalesce_public_story_legs(travel_legs: List[dict]) -> List[dict]:
