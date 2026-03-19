@@ -240,11 +240,17 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'class="public-legs"', response.body)
         self.assertIn(b"Expand / Collapse", response.body)
         self.assertIn(b'class="public-leg-header"', response.body)
+        self.assertIn(b"Trip highlights", response.body)
+        self.assertIn(b"Journey arc", response.body)
+        self.assertIn(b"Key stops", response.body)
         self.assertIn(b"Trip details", response.body)
         self.assertIn(b"Travel modes", response.body)
         self.assertIn(b"Journey size", response.body)
         self.assertIn(b"Back to published trips", response.body)
         self.assertIn(b"Published trip route map preview", response.body)
+        self.assertIn(b'data-map-zoom="in"', response.body)
+        self.assertIn(b'data-map-zoom="out"', response.body)
+        self.assertIn(b'data-map-tooltip', response.body)
         self.assertIn(b"grid-template-columns: 1fr;", response.body)
         self.assertIn(b"Each leg can also be opened individually.", response.body)
         self.assertIn(b"Back to published trips", response.body)
@@ -304,8 +310,13 @@ class AppApiTests(unittest.TestCase):
             response = public_trip_detail_page("road-trip")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.body.count(b"Monday Morning drive from Normal to Towanda"), 2)
-        self.assertNotIn(b"(2)", response.body)
+        self.assertIn(b"Monday Morning drive from Normal to Towanda", response.body)
+        self.assertNotIn(
+            b"Monday Morning drive from Normal to Towanda (1)", response.body
+        )
+        self.assertNotIn(
+            b"Monday Morning drive from Normal to Towanda (2)", response.body
+        )
 
     def test_health_returns_plain_text(self) -> None:
         response = health()
@@ -359,6 +370,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"(3h 15m)", response.body)
         self.assertIn(b"class=\"trip-map-static\"", response.body)
         self.assertIn(b"Trip route map preview", response.body)
+        self.assertIn(b'data-map-zoom="in"', response.body)
+        self.assertIn(b'data-map-zoom="out"', response.body)
+        self.assertIn(b'data-map-tooltip', response.body)
         self.assertIn(b"Trip Overview", response.body)
         self.assertIn(b"Destination context", response.body)
         self.assertIn(b"Expand full timeline", response.body)

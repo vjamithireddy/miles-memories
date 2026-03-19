@@ -6,7 +6,7 @@ import json
 import math
 import re
 import secrets
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -455,6 +455,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         ]
     trip_map_markup = _render_route_map_preview(
         map_points,
+        stop_markers=_build_trip_stop_markers(travel_legs),
         aria_label="Published trip route map preview",
     )
     leg_count = len(travel_legs)
@@ -473,6 +474,21 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             public_destination = last_end
     public_origin = escape(public_origin)
     public_destination = escape(public_destination)
+    notable_places = []
+    for item in travel_legs:
+        for name in (item.get("start_place_name"), item.get("end_place_name")):
+            cleaned = _map_clean_place_name(name)
+            if not cleaned or _map_is_regional_place(cleaned):
+                continue
+            if cleaned in notable_places:
+                continue
+            notable_places.append(cleaned)
+    highlight_places = " · ".join(escape(name) for name in notable_places[:4]) if notable_places else destination
+    highlight_copy = [
+        ("Journey arc", f"{public_origin} → {public_destination}", "Start and finish from the inferred trip route."),
+        ("Key stops", highlight_places, "Selected from distinct recorded places along the trip."),
+        ("Travel modes", escape(travel_modes), f"{leg_count} travel leg{'s' if leg_count != 1 else ''} across the published journey."),
+    ]
     travel_leg_items = "".join(
         f"""
         <details class="public-leg-card">
@@ -663,6 +679,12 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       background: #efe5d7;
       overflow: hidden;
     }}
+    .leg-map-viewport {{
+      position: absolute;
+      inset: 0;
+      transform-origin: center center;
+      transition: transform 180ms ease;
+    }}
     .leg-map-tile {{
       position: absolute;
       display: block;
@@ -676,6 +698,78 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       width: 100%;
       height: 100%;
       display: block;
+    }}
+    .leg-map-controls {{
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 5;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(255, 248, 239, 0.92);
+      border: 1px solid rgba(219, 202, 177, 0.9);
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .map-zoom-btn {{
+      border: 0;
+      border-radius: 999px;
+      min-width: 40px;
+      min-height: 34px;
+      padding: 0 12px;
+      background: rgba(29,36,48,0.06);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .map-zoom-btn:hover {{
+      background: rgba(184,95,53,0.12);
+      color: var(--accent-dark);
+    }}
+    .leg-map-tooltip {{
+      position: absolute;
+      top: 64px;
+      right: 14px;
+      z-index: 5;
+      max-width: min(280px, calc(100% - 28px));
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(255, 248, 239, 0.96);
+      border: 1px solid rgba(219, 202, 177, 0.94);
+      color: var(--ink);
+      font-size: 0.84rem;
+      line-height: 1.4;
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .map-stop-marker {{
+      cursor: pointer;
+      transition: filter 140ms ease;
+    }}
+    .map-stop-marker .map-stop-ring,
+    .map-stop-marker .map-stop-core {{
+      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease;
+      transform-origin: center;
+      transform-box: fill-box;
+    }}
+    .map-stop-marker:hover .map-stop-ring,
+    .map-stop-marker.is-active .map-stop-ring {{
+      stroke-width: 4;
+      opacity: 1;
+    }}
+    .map-stop-marker:hover .map-stop-core,
+    .map-stop-marker.is-active .map-stop-core {{
+      transform: scale(1.14);
+    }}
+    .map-stop-ring {{
+      opacity: 0.72;
+      stroke-dasharray: 2 4;
+    }}
+    .map-stop-ring-start,
+    .map-stop-ring-end {{
+      stroke-dasharray: none;
     }}
     .leg-map-legend {{
       position: absolute;
@@ -892,6 +986,22 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     </section>
 
     <section class="panel">
+      <h2>Trip highlights</h2>
+      <div class="story-grid">
+        {''.join(
+            f'''
+        <article class="story-card">
+          <span class="story-card-label">{label}</span>
+          <div class="story-card-value">{value}</div>
+          <p class="story-card-note">{note}</p>
+        </article>
+        '''
+            for label, value, note in highlight_copy
+        )}
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Trip details</h2>
       <p>This public page focuses on the story of the trip: where it went, how long it lasted, and how the journey unfolded.</p>
       <div class="story-grid">
@@ -942,6 +1052,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       </details>
     </section>
   </main>
+  {_render_map_interactions_script()}
 </body>
 </html>"""
 
@@ -1143,6 +1254,152 @@ def _render_route_start_marker(x: float, y: float, marker_kind: str) -> str:
     """
 
 
+def _map_clean_place_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = value.strip()
+    lowered = cleaned.lower()
+    if "rental car facility" in lowered:
+        cleaned = re.sub(r"\s+rental car facility\b", "", cleaned, flags=re.IGNORECASE).strip(" -,")
+    return cleaned or None
+
+
+def _map_is_regional_place(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    lowered = name.lower()
+    return any(token in lowered for token in ("county", "state", "region"))
+
+
+def _route_stop_label(item: dict) -> str:
+    place = (
+        item.get("start_place_name")
+        or item.get("end_place_name")
+        or item.get("primary_destination_name")
+        or item.get("label")
+        or "Trip stop"
+    )
+    return f"{_public_leg_base_comment(item)} · {place}".strip(" ·")
+
+
+def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    seen: set[tuple[float, float, str]] = set()
+    for item in travel_legs:
+        latitude = item.get("start_latitude")
+        longitude = item.get("start_longitude")
+        if latitude is None or longitude is None:
+            continue
+        marker_kind = _start_marker_kind_for_leg(item)
+        key = (round(float(latitude), 4), round(float(longitude), 4), marker_kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        markers.append(
+            {
+                "lat": float(latitude),
+                "lon": float(longitude),
+                "kind": marker_kind,
+                "label": _route_stop_label(item),
+            }
+        )
+    return markers
+
+
+def _render_route_stop_marker(
+    x: float,
+    y: float,
+    marker_kind: str,
+    *,
+    label: str,
+    is_start: bool = False,
+    is_end: bool = False,
+) -> str:
+    marker = START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])
+    fill = marker["fill"]
+    short = marker["label"]
+    ring_class = " map-stop-ring-start" if is_start else " map-stop-ring-end" if is_end else ""
+    state_class = " is-route-start" if is_start else " is-route-end" if is_end else ""
+    return f"""
+    <g class="map-stop-marker{state_class}" data-marker-kind="{escape(marker_kind)}" data-label="{escape(label)}" tabindex="0">
+      <circle class="map-stop-ring{ring_class}" cx="{x}" cy="{y}" r="14" fill="none" stroke="{fill}" stroke-width="2.5" />
+      <circle class="map-stop-core" cx="{x}" cy="{y}" r="8.5" fill="#fff8ef" stroke="{fill}" stroke-width="5" />
+      <text x="{x}" y="{y + 3}" text-anchor="middle" font-family="Arial, sans-serif" font-size="6.2" font-weight="700" fill="{fill}">{escape(short[:4])}</text>
+      <title>{escape(label)}</title>
+    </g>
+    """
+
+
+def _render_map_interactions_script() -> str:
+    return """
+  <script>
+    (() => {
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      document.querySelectorAll("[data-map-frame]").forEach((frame) => {
+        const viewport = frame.querySelector("[data-map-viewport]");
+        if (!viewport) return;
+        let scale = 1;
+        const applyScale = () => {
+          viewport.style.transform = `scale(${scale})`;
+          frame.dataset.mapScale = String(scale.toFixed(2));
+        };
+        frame.querySelectorAll("[data-map-zoom]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.preventDefault();
+            const direction = button.dataset.mapZoom;
+            if (direction === "in") {
+              scale = clamp(scale + 0.25, 1, 3);
+            } else if (direction === "out") {
+              scale = clamp(scale - 0.25, 1, 3);
+            } else {
+              scale = 1;
+            }
+            applyScale();
+          });
+        });
+        const tooltip = frame.querySelector("[data-map-tooltip]");
+        const setTooltip = (label) => {
+          if (!tooltip) return;
+          if (!label) {
+            tooltip.hidden = true;
+            tooltip.textContent = "";
+            return;
+          }
+          tooltip.textContent = label;
+          tooltip.hidden = false;
+        };
+        frame.querySelectorAll(".map-stop-marker").forEach((marker) => {
+          const activate = () => {
+            frame.querySelectorAll(".map-stop-marker.is-active").forEach((node) => {
+              if (node !== marker) node.classList.remove("is-active");
+            });
+            marker.classList.add("is-active");
+            setTooltip(marker.dataset.label || "");
+          };
+          marker.addEventListener("mouseenter", activate);
+          marker.addEventListener("focus", activate);
+          marker.addEventListener("click", (event) => {
+            event.preventDefault();
+            activate();
+          });
+          marker.addEventListener("mouseleave", () => {
+            if (!marker.classList.contains("is-active")) {
+              setTooltip("");
+            }
+          });
+          marker.addEventListener("blur", () => {
+            if (!marker.classList.contains("is-active")) {
+              setTooltip("");
+            }
+          });
+        });
+        applyScale();
+      });
+    })();
+  </script>
+"""
+
+
 def _review_step_hint(review_state: Optional[str]) -> str:
     if review_state == "yes":
         return "Review complete. Choose whether this trip should stay private or be visible on the public site."
@@ -1171,6 +1428,7 @@ def _render_route_map_preview(
     end_latitude: Optional[float] = None,
     end_longitude: Optional[float] = None,
     start_marker_kind: str = "default",
+    stop_markers: Optional[List[dict[str, Any]]] = None,
     aria_label: str = "Route map preview",
 ) -> str:
     points: list[tuple[float, float]] = []
@@ -1269,6 +1527,27 @@ def _render_route_map_preview(
     )
     start_x, start_y = scaled[0]
     end_x, end_y = scaled[-1]
+    scaled_markers: list[str] = []
+    for marker in stop_markers or []:
+        lat = marker.get("lat")
+        lon = marker.get("lon")
+        if lat is None or lon is None:
+            continue
+        marker_x, marker_y = scale((float(lat), float(lon)))
+        label = str(marker.get("label") or "Trip stop")
+        kind = str(marker.get("kind") or "default")
+        is_start = math.isclose(marker_x, start_x, abs_tol=1.0) and math.isclose(marker_y, start_y, abs_tol=1.0)
+        is_end = math.isclose(marker_x, end_x, abs_tol=1.0) and math.isclose(marker_y, end_y, abs_tol=1.0)
+        scaled_markers.append(
+            _render_route_stop_marker(
+                marker_x,
+                marker_y,
+                kind,
+                label=label,
+                is_start=is_start,
+                is_end=is_end,
+            )
+        )
     tiles = []
     for tile_x in range(tile_min_x, tile_max_x + 1):
         for tile_y in range(tile_min_y, tile_max_y + 1):
@@ -1283,15 +1562,24 @@ def _render_route_map_preview(
             )
     start_marker = _render_route_start_marker(start_x, start_y, start_marker_kind)
     return f"""
-    <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}">
+    <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}" data-map-frame>
+      <div class="leg-map-controls" aria-label="Map zoom controls">
+        <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom">100%</button>
+        <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <div class="leg-map-tooltip" data-map-tooltip hidden></div>
+      <div class="leg-map-viewport" data-map-viewport>
       {''.join(tiles)}
       <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}">
         <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
         <path d="{path_d}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
         <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        {''.join(scaled_markers)}
         {start_marker}
         <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />
       </svg>
+      </div>
       <div class="leg-map-legend">
         <span><i class="legend-dot legend-start"></i>Start</span>
         <span><i class="legend-dot legend-end"></i>End</span>
@@ -2097,11 +2385,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                     map_points[-1]["lat"] != end_point["lat"] or map_points[-1]["lon"] != end_point["lon"]
                 ):
                     map_points.append(end_point)
+    travel_legs = trip.get("travel_legs", [])
     trip_map_markup = _render_route_map_preview(
         [{"lat": point["lat"], "lon": point["lon"]} for point in map_points],
+        stop_markers=_build_trip_stop_markers(travel_legs),
         aria_label="Trip route map preview",
     )
-    travel_legs = trip.get("travel_legs", [])
 
     timeline_items = "".join(
         f"""
@@ -2690,6 +2979,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       height: 100%;
       min-height: 320px;
       background: #efe5d7;
+      overflow: hidden;
+    }}
+    .leg-map-viewport {{
+      position: absolute;
+      inset: 0;
+      transform-origin: center center;
+      transition: transform 180ms ease;
     }}
     .leg-map-tile {{
       position: absolute;
@@ -2708,6 +3004,78 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       width: 100%;
       height: 100%;
       display: block;
+    }}
+    .leg-map-controls {{
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 5;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(255, 248, 239, 0.92);
+      border: 1px solid rgba(219, 202, 177, 0.9);
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .map-zoom-btn {{
+      border: 0;
+      border-radius: 999px;
+      min-width: 40px;
+      min-height: 34px;
+      padding: 0 12px;
+      background: rgba(29,36,48,0.06);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .map-zoom-btn:hover {{
+      background: rgba(184,95,53,0.12);
+      color: var(--accent-dark);
+    }}
+    .leg-map-tooltip {{
+      position: absolute;
+      top: 64px;
+      right: 14px;
+      z-index: 5;
+      max-width: min(280px, calc(100% - 28px));
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(255, 248, 239, 0.96);
+      border: 1px solid rgba(219, 202, 177, 0.94);
+      color: var(--ink);
+      font-size: 0.84rem;
+      line-height: 1.4;
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.12);
+    }}
+    .map-stop-marker {{
+      cursor: pointer;
+      transition: filter 140ms ease;
+    }}
+    .map-stop-marker .map-stop-ring,
+    .map-stop-marker .map-stop-core {{
+      transition: transform 140ms ease, stroke-width 140ms ease, opacity 140ms ease;
+      transform-origin: center;
+      transform-box: fill-box;
+    }}
+    .map-stop-marker:hover .map-stop-ring,
+    .map-stop-marker.is-active .map-stop-ring {{
+      stroke-width: 4;
+      opacity: 1;
+    }}
+    .map-stop-marker:hover .map-stop-core,
+    .map-stop-marker.is-active .map-stop-core {{
+      transform: scale(1.14);
+    }}
+    .map-stop-ring {{
+      opacity: 0.72;
+      stroke-dasharray: 2 4;
+    }}
+    .map-stop-ring-start,
+    .map-stop-ring-end {{
+      stroke-dasharray: none;
     }}
     .leg-map-legend {{
       position: absolute;
