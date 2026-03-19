@@ -488,12 +488,21 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             if cleaned in notable_places:
                 continue
             notable_places.append(cleaned)
-    highlight_places = " · ".join(escape(name) for name in notable_places[:4]) if notable_places else destination
-    highlight_copy = [
-        ("Journey arc", f"{public_origin} → {public_destination}", "Start and finish from the inferred trip route."),
-        ("Key stops", highlight_places, "Selected from distinct recorded places along the trip."),
-        ("Travel modes", escape(travel_modes), f"{leg_count} travel leg{'s' if leg_count != 1 else ''} across the published journey."),
-    ]
+    route_places: list[str] = []
+    for candidate in [public_origin, *notable_places, public_destination]:
+        if not candidate:
+            continue
+        if route_places and route_places[-1] == candidate:
+            continue
+        route_places.append(candidate)
+    if len(route_places) > 6:
+        route_places = [*route_places[:4], "…", route_places[-1]]
+    route_summary = " → ".join(route_places) if route_places else f"{public_origin} → {public_destination}"
+    route_note = (
+        f"Key stops selected from {len(notable_places)} distinct recorded place{'s' if len(notable_places) != 1 else ''}."
+        if notable_places
+        else "Start and finish from the published travel record."
+    )
     travel_leg_items = "".join(
         f"""
         <details class="public-leg-card">
@@ -1000,22 +1009,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     </section>
 
     <section class="panel">
-      <h2>Trip highlights</h2>
-      <div class="story-grid">
-        {''.join(
-            f'''
-        <article class="story-card">
-          <span class="story-card-label">{label}</span>
-          <div class="story-card-value">{value}</div>
-          <p class="story-card-note">{note}</p>
-        </article>
-        '''
-            for label, value, note in highlight_copy
-        )}
-      </div>
-    </section>
-
-    <section class="panel">
       <h2>Trip details</h2>
       <p>This public page focuses on the story of the trip: where it went, how long it lasted, and how the journey unfolded.</p>
       <div class="story-grid">
@@ -1026,8 +1019,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         </article>
         <article class="story-card">
           <span class="story-card-label">Route</span>
-          <div class="story-card-value">{public_origin} → {public_destination}</div>
-          <p class="story-card-note">Start and finish from the published travel record.</p>
+          <div class="story-card-value">{escape(route_summary)}</div>
+          <p class="story-card-note">{escape(route_note)}</p>
         </article>
         <article class="story-card">
           <span class="story-card-label">Travel modes</span>
