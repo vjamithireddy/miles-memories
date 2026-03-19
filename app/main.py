@@ -459,6 +459,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         aria_label="Published trip route map preview",
         show_route_endpoints=False,
         show_legend=False,
+        cluster_stop_markers=True,
     )
     leg_count = len(travel_legs)
     distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
@@ -767,6 +768,18 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     .map-stop-marker:hover,
     .map-stop-marker.is-active {{
       filter: drop-shadow(0 7px 12px rgba(37, 28, 14, 0.22));
+    }}
+    .map-stop-cluster {{
+      cursor: pointer;
+      transition: transform 140ms ease, filter 140ms ease;
+    }}
+    .map-stop-cluster:hover,
+    .map-stop-cluster:focus,
+    .map-stop-cluster.is-active {{
+      filter: drop-shadow(0 8px 16px rgba(37, 28, 14, 0.24));
+      transform: scale(1.05);
+      transform-origin: center;
+      transform-box: fill-box;
     }}
     .leg-map-legend {{
       position: absolute;
@@ -1316,6 +1329,41 @@ def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
     return markers
 
 
+def _cluster_scaled_stop_markers(markers: List[dict[str, Any]], radius: float = 34.0) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if len(markers) < 2:
+        return markers, []
+    clusters: list[dict[str, Any]] = []
+    singles: list[dict[str, Any]] = []
+    used: set[int] = set()
+    for index, marker in enumerate(markers):
+        if index in used:
+            continue
+        members = [marker]
+        for inner_index in range(index + 1, len(markers)):
+            if inner_index in used:
+                continue
+            candidate = markers[inner_index]
+            distance = math.hypot(candidate["x"] - marker["x"], candidate["y"] - marker["y"])
+            if distance <= radius:
+                members.append(candidate)
+                used.add(inner_index)
+        if len(members) == 1:
+            singles.append(marker)
+            continue
+        used.add(index)
+        clusters.append(
+            {
+                "id": f"cluster-{len(clusters)}",
+                "x": round(sum(item["x"] for item in members) / len(members), 2),
+                "y": round(sum(item["y"] for item in members) / len(members), 2),
+                "count": len(members),
+                "labels": [str(item["label"]) for item in members],
+                "member_ids": [str(item["id"]) for item in members],
+            }
+        )
+    return singles, clusters
+
+
 def _render_route_stop_marker(
     x: float,
     y: float,
@@ -1331,10 +1379,25 @@ def _render_route_stop_marker(
     state_class = " is-route-start" if is_start else " is-route-end" if is_end else ""
     font_size = 7 if len(symbol) > 1 else 8.1
     return f"""
-    <g class="map-stop-marker{state_class}" data-marker-kind="{escape(marker_kind)}" data-label="{escape(label)}" tabindex="0">
+    <g class="map-stop-marker{state_class}" data-marker-id="{escape(str(label))}" data-marker-kind="{escape(marker_kind)}" data-label="{escape(label)}" tabindex="0">
       <path class="map-stop-pin" d="M {x} {y - 16} C {x + 10} {y - 16} {x + 16} {y - 9} {x + 16} {y + 1} C {x + 16} {y + 12} {x + 4} {y + 22} {x} {y + 25} C {x - 4} {y + 22} {x - 16} {y + 12} {x - 16} {y + 1} C {x - 16} {y - 9} {x - 10} {y - 16} {x} {y - 16} Z" fill="{fill}" />
       <circle class="map-stop-core" cx="{x}" cy="{y}" r="9.5" fill="#fff8ef" stroke="{fill}" stroke-width="4" />
       <text x="{x}" y="{y + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="{font_size}" font-weight="700" fill="{fill}">{escape(symbol)}</text>
+      <title>{escape(label)}</title>
+    </g>
+    """
+
+
+def _render_route_cluster_marker(cluster: dict[str, Any]) -> str:
+    label = f"{cluster['count']} stops"
+    labels = " | ".join(cluster["labels"][:5])
+    if cluster["count"] > 5:
+        labels = f"{labels} | +{cluster['count'] - 5} more"
+    return f"""
+    <g class="map-stop-cluster" data-cluster-id="{escape(cluster['id'])}" data-member-ids="{escape(','.join(cluster['member_ids']))}" data-label="{escape(labels or label)}" tabindex="0">
+      <circle cx="{cluster['x']}" cy="{cluster['y']}" r="17" fill="#fff8ef" stroke="#d06b39" stroke-width="6" />
+      <circle cx="{cluster['x']}" cy="{cluster['y']}" r="9" fill="#d06b39" />
+      <text x="{cluster['x']}" y="{cluster['y'] + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="#fff8ef">{cluster['count']}</text>
       <title>{escape(label)}</title>
     </g>
     """
@@ -1349,20 +1412,33 @@ def _render_map_interactions_script() -> str:
         const viewport = frame.querySelector("[data-map-viewport]");
         if (!viewport) return;
         let scale = 1;
+        let clustersExpanded = false;
+        const syncClusters = () => {
+          const showMembers = clustersExpanded || scale >= 1.75;
+          frame.querySelectorAll(".map-stop-marker[data-clustered='true']").forEach((marker) => {
+            marker.style.display = showMembers ? "" : "none";
+          });
+          frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
+            cluster.style.display = showMembers ? "none" : "";
+          });
+        };
         const applyScale = () => {
           viewport.style.transform = `scale(${scale})`;
           frame.dataset.mapScale = String(scale.toFixed(2));
+          if (scale <= 1.25) clustersExpanded = false;
+          syncClusters();
         };
         frame.querySelectorAll("[data-map-zoom]").forEach((button) => {
           button.addEventListener("click", (event) => {
             event.preventDefault();
             const direction = button.dataset.mapZoom;
             if (direction === "in") {
-              scale = clamp(scale + 0.25, 1, 3);
+              scale = clamp(scale + 0.25, 1, 5);
             } else if (direction === "out") {
-              scale = clamp(scale - 0.25, 1, 3);
+              scale = clamp(scale - 0.25, 1, 5);
             } else {
               scale = 1;
+              clustersExpanded = false;
             }
             applyScale();
           });
@@ -1401,6 +1477,20 @@ def _render_map_interactions_script() -> str:
             if (!marker.classList.contains("is-active")) {
               setTooltip("");
             }
+          });
+        });
+        frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
+          const activate = () => {
+            frame.querySelectorAll(".map-stop-marker.is-active").forEach((node) => node.classList.remove("is-active"));
+            setTooltip(cluster.dataset.label || "");
+          };
+          cluster.addEventListener("mouseenter", activate);
+          cluster.addEventListener("focus", activate);
+          cluster.addEventListener("click", (event) => {
+            event.preventDefault();
+            clustersExpanded = true;
+            applyScale();
+            activate();
           });
         });
         applyScale();
@@ -1443,6 +1533,7 @@ def _render_route_map_preview(
     show_route_endpoints: bool = True,
     show_legend: bool = True,
     reset_label: str = "Reset",
+    cluster_stop_markers: bool = False,
 ) -> str:
     points: list[tuple[float, float]] = []
     for point in raw_points or []:
@@ -1540,7 +1631,7 @@ def _render_route_map_preview(
     )
     start_x, start_y = scaled[0]
     end_x, end_y = scaled[-1]
-    scaled_markers: list[str] = []
+    scaled_markers: list[dict[str, Any]] = []
     for marker in stop_markers or []:
         lat = marker.get("lat")
         lon = marker.get("lon")
@@ -1552,15 +1643,35 @@ def _render_route_map_preview(
         is_start = show_route_endpoints and math.isclose(marker_x, start_x, abs_tol=1.0) and math.isclose(marker_y, start_y, abs_tol=1.0)
         is_end = show_route_endpoints and math.isclose(marker_x, end_x, abs_tol=1.0) and math.isclose(marker_y, end_y, abs_tol=1.0)
         scaled_markers.append(
-            _render_route_stop_marker(
-                marker_x,
-                marker_y,
-                kind,
-                label=label,
-                is_start=is_start,
-                is_end=is_end,
-            )
+            {
+                "id": f"marker-{len(scaled_markers)}",
+                "x": marker_x,
+                "y": marker_y,
+                "kind": kind,
+                "label": label,
+                "is_start": is_start,
+                "is_end": is_end,
+            }
         )
+    single_markers = scaled_markers
+    cluster_markers: list[dict[str, Any]] = []
+    if cluster_stop_markers:
+        single_markers, cluster_markers = _cluster_scaled_stop_markers(scaled_markers)
+    rendered_stop_markers = []
+    clustered_ids = {member_id for cluster in cluster_markers for member_id in cluster["member_ids"]}
+    for marker in scaled_markers:
+        markup = _render_route_stop_marker(
+            marker["x"],
+            marker["y"],
+            marker["kind"],
+            label=marker["label"],
+            is_start=marker["is_start"],
+            is_end=marker["is_end"],
+        )
+        if marker["id"] in clustered_ids:
+            markup = markup.replace('class="map-stop-marker', 'class="map-stop-marker').replace('tabindex="0"', 'data-clustered="true" tabindex="0"')
+        rendered_stop_markers.append(markup)
+    rendered_clusters = "".join(_render_route_cluster_marker(cluster) for cluster in cluster_markers)
     tiles = []
     for tile_x in range(tile_min_x, tile_max_x + 1):
         for tile_y in range(tile_min_y, tile_max_y + 1):
@@ -1603,7 +1714,8 @@ def _render_route_map_preview(
         <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
         <path d="{path_d}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
         <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-        {''.join(scaled_markers)}
+        {''.join(rendered_stop_markers)}
+        {rendered_clusters}
         {start_marker}
         {end_marker}
       </svg>
@@ -2417,6 +2529,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         aria_label="Trip route map preview",
         show_route_endpoints=False,
         show_legend=False,
+        cluster_stop_markers=True,
     )
 
     timeline_items = "".join(
@@ -3098,6 +3211,18 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .map-stop-marker:hover,
     .map-stop-marker.is-active {{
       filter: drop-shadow(0 7px 12px rgba(37, 28, 14, 0.22));
+    }}
+    .map-stop-cluster {{
+      cursor: pointer;
+      transition: transform 140ms ease, filter 140ms ease;
+    }}
+    .map-stop-cluster:hover,
+    .map-stop-cluster:focus,
+    .map-stop-cluster.is-active {{
+      filter: drop-shadow(0 8px 16px rgba(37, 28, 14, 0.24));
+      transform: scale(1.05);
+      transform-origin: center;
+      transform-box: fill-box;
     }}
     .leg-map-legend {{
       position: absolute;
