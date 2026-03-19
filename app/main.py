@@ -455,7 +455,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         ]
     trip_map_markup = _render_route_map_preview(
         map_points,
-        stop_markers=_build_trip_stop_markers(travel_legs),
+        stop_markers=_build_trip_stop_markers(
+            travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS
+        ),
         aria_label="Published trip route map preview",
         show_route_endpoints=False,
         show_legend=False,
@@ -1224,6 +1226,16 @@ START_MARKER_STYLES = {
     "default": {"fill": "#c8643b", "symbol": "•"},
 }
 
+OVERALL_TRIP_MAP_MARKER_KINDS = {
+    "airport",
+    "park",
+    "camp",
+    "lodging",
+    "food",
+    "parking",
+    "school",
+}
+
 
 def _start_marker_kind_for_leg(item: dict) -> str:
     place_type = (item.get("start_place_type") or "").strip().lower()
@@ -1300,13 +1312,12 @@ def _route_stop_label(item: dict, marker_kind: str) -> str:
         item.get("start_place_name")
         or item.get("end_place_name")
         or item.get("primary_destination_name")
-        or item.get("label")
         or "Trip stop"
     ) or "Trip stop"
     return f"{place} · {_route_stop_type_label(marker_kind)}"
 
 
-def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
+def _build_trip_stop_markers(travel_legs: List[dict], *, include_kinds: Optional[set[str]] = None) -> list[dict[str, Any]]:
     markers: list[dict[str, Any]] = []
     seen: set[tuple[float, float, str]] = set()
     for item in travel_legs:
@@ -1315,6 +1326,8 @@ def _build_trip_stop_markers(travel_legs: List[dict]) -> list[dict[str, Any]]:
         if latitude is None or longitude is None:
             continue
         marker_kind = _start_marker_kind_for_leg(item)
+        if include_kinds is not None and marker_kind not in include_kinds:
+            continue
         key = (round(float(latitude), 4), round(float(longitude), 4), marker_kind)
         if key in seen:
             continue
@@ -1458,9 +1471,9 @@ def _render_map_interactions_script() -> str:
             event.preventDefault();
             const direction = button.dataset.mapZoom;
             if (direction === "in") {
-              scale = clamp(scale + 0.25, 1, 5);
+              scale = clamp(scale + 0.35, 1, 8);
             } else if (direction === "out") {
-              scale = clamp(scale - 0.25, 1, 5);
+              scale = clamp(scale - 0.35, 1, 8);
             } else {
               scale = 1;
               translateX = 0;
@@ -2593,7 +2606,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     travel_legs = trip.get("travel_legs", [])
     trip_map_markup = _render_route_map_preview(
         [{"lat": point["lat"], "lon": point["lon"]} for point in map_points],
-        stop_markers=_build_trip_stop_markers(travel_legs),
+        stop_markers=_build_trip_stop_markers(
+            travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS
+        ),
         aria_label="Trip route map preview",
         show_route_endpoints=False,
         show_legend=False,
