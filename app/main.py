@@ -1201,11 +1201,11 @@ def _trip_visibility_state(trip: dict) -> Optional[str]:
 START_MARKER_STYLES = {
     "airport": {"fill": "#2f6cb3", "symbol": "A"},
     "fuel": {"fill": "#cc6b2c", "symbol": "G"},
-    "park": {"fill": "#2f6c5b", "symbol": "R"},
+    "park": {"fill": "#2f6c5b", "symbol": "P"},
     "camp": {"fill": "#587d32", "symbol": "C"},
     "lodging": {"fill": "#7b4da3", "symbol": "L"},
     "food": {"fill": "#b34747", "symbol": "F"},
-    "parking": {"fill": "#6e7886", "symbol": "P"},
+    "parking": {"fill": "#6e7886", "symbol": "PK"},
     "school": {"fill": "#7a5a30", "symbol": "S"},
     "default": {"fill": "#c8643b", "symbol": "•"},
 }
@@ -1239,12 +1239,13 @@ def _render_route_start_marker(x: float, y: float, marker_kind: str) -> str:
     marker = START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])
     symbol = marker["symbol"]
     fill = marker["fill"]
+    font_size = 7 if len(symbol) > 1 else 8
     return f"""
     <g data-marker-kind="{escape(marker_kind)}" transform="translate({x} {y})">
       <path d="M0 -18 C10 -18 17 -11 17 -2 C17 11 3 24 0 27 C-3 24 -17 11 -17 -2 C-17 -11 -10 -18 0 -18 Z"
         fill="{fill}" stroke="#fff8ef" stroke-width="4" />
       <circle cx="0" cy="-7" r="8.8" fill="#fff8ef" opacity="0.96" />
-      <text x="0" y="-4.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="{fill}">{escape(symbol)}</text>
+      <text x="0" y="-4.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="{font_size}" font-weight="700" fill="{fill}">{escape(symbol)}</text>
     </g>
     """
 
@@ -1314,11 +1315,12 @@ def _render_route_stop_marker(
     fill = marker["fill"]
     symbol = marker["symbol"]
     state_class = " is-route-start" if is_start else " is-route-end" if is_end else ""
+    font_size = 7 if len(symbol) > 1 else 8.1
     return f"""
     <g class="map-stop-marker{state_class}" data-marker-kind="{escape(marker_kind)}" data-label="{escape(label)}" tabindex="0">
       <path class="map-stop-pin" d="M {x} {y - 16} C {x + 10} {y - 16} {x + 16} {y - 9} {x + 16} {y + 1} C {x + 16} {y + 12} {x + 4} {y + 22} {x} {y + 25} C {x - 4} {y + 22} {x - 16} {y + 12} {x - 16} {y + 1} C {x - 16} {y - 9} {x - 10} {y - 16} {x} {y - 16} Z" fill="{fill}" />
       <circle class="map-stop-core" cx="{x}" cy="{y}" r="9.5" fill="#fff8ef" stroke="{fill}" stroke-width="4" />
-      <text x="{x}" y="{y + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8.1" font-weight="700" fill="{fill}">{escape(symbol)}</text>
+      <text x="{x}" y="{y + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="{font_size}" font-weight="700" fill="{fill}">{escape(symbol)}</text>
       <title>{escape(label)}</title>
     </g>
     """
@@ -1533,8 +1535,8 @@ def _render_route_map_preview(
         marker_x, marker_y = scale((float(lat), float(lon)))
         label = str(marker.get("label") or "Trip stop")
         kind = str(marker.get("kind") or "default")
-        is_start = math.isclose(marker_x, start_x, abs_tol=1.0) and math.isclose(marker_y, start_y, abs_tol=1.0)
-        is_end = math.isclose(marker_x, end_x, abs_tol=1.0) and math.isclose(marker_y, end_y, abs_tol=1.0)
+        is_start = show_route_endpoints and math.isclose(marker_x, start_x, abs_tol=1.0) and math.isclose(marker_y, start_y, abs_tol=1.0)
+        is_end = show_route_endpoints and math.isclose(marker_x, end_x, abs_tol=1.0) and math.isclose(marker_y, end_y, abs_tol=1.0)
         scaled_markers.append(
             _render_route_stop_marker(
                 marker_x,
