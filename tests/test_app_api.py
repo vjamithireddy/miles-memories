@@ -88,6 +88,7 @@ def _trip_detail() -> dict:
             "end_latitude": 36.0570,
             "end_longitude": -112.1438,
             "source_event_id": "HIKING",
+            "start_place_type": "path",
             "segment_id": 40,
             "segment_name": "South Kaibab hike",
             "segment_summary": "Inner canyon hiking: South Kaibab -> Phantom Ranch -> Tonto -> Bright Angel.",
@@ -110,6 +111,8 @@ def _trip_detail() -> dict:
             "end_latitude": 36.0866,
             "end_longitude": -115.1385,
             "source_event_id": "FLYING",
+            "start_place_name": "St. Louis Lambert Airport",
+            "start_place_type": "aerodrome",
             "segment_id": 41,
             "segment_name": "Flight to Las Vegas",
             "segment_summary": "Flight from St. Louis to Las Vegas.",
@@ -247,6 +250,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Back to published trips", response.body)
         self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
         self.assertIn(b"Part of the published journey route.", response.body)
+        self.assertIn(b'data-marker-kind="airport"', response.body)
         self.assertNotIn(b"Reviewer name", response.body)
         self.assertNotIn(b"Yes", response.body)
         self.assertNotIn(b"Public", response.body)

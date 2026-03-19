@@ -210,12 +210,12 @@ def _candidate_distance_sq(
     return (float(candidate_latitude) - latitude) ** 2 + (float(candidate_longitude) - longitude) ** 2
 
 
-def _best_nearby_place_name(
+def _best_nearby_place_candidate(
     rows: list[dict[str, Any]],
     *,
     latitude: float,
     longitude: float,
-) -> str | None:
+) -> dict[str, str] | None:
     shortlisted = []
     for row in rows:
         preferred_name = _prefer_locality_over_region(row.get("place_name"), row.get("city"))
@@ -226,12 +226,28 @@ def _best_nearby_place_name(
                 _candidate_distance_sq(latitude, longitude, row.get("latitude"), row.get("longitude")),
                 -int(row.get("id") or 0),
                 preferred_name,
+                row.get("place_type") or "",
             )
         )
     if not shortlisted:
         return None
     shortlisted.sort()
-    return shortlisted[0][2]
+    return {
+        "name": shortlisted[0][2],
+        "place_type": shortlisted[0][3],
+    }
+
+
+def _best_nearby_place_name(
+    rows: list[dict[str, Any]],
+    *,
+    latitude: float,
+    longitude: float,
+) -> str | None:
+    candidate = _best_nearby_place_candidate(rows, latitude=latitude, longitude=longitude)
+    if not candidate:
+        return None
+    return candidate["name"]
 
 
 def _enrich_nearby_endpoint_places(latitude: float, longitude: float) -> int:
@@ -546,7 +562,7 @@ def _apply_duplicate_leg_summary_disambiguation(cur: Any, legs: list[dict[str, A
                 )
 
 
-def _leg_point_place_name(latitude: float | None, longitude: float | None) -> str | None:
+def _leg_point_place_details(latitude: float | None, longitude: float | None) -> dict[str, str] | None:
     if latitude is None or longitude is None:
         return None
     with get_conn() as conn:
@@ -575,7 +591,7 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
             )
             nearby_rows = cur.fetchall()
     if not rows:
-        return _best_nearby_place_name(nearby_rows, latitude=float(latitude), longitude=float(longitude))
+        return _best_nearby_place_candidate(nearby_rows, latitude=float(latitude), longitude=float(longitude))
     row = max(
         rows,
         key=lambda candidate: (
@@ -593,9 +609,30 @@ def _leg_point_place_name(latitude: float | None, longitude: float | None) -> st
     }
     title = _destination_title(profile)
     if title and not _is_regional_place(title):
-        return title
-    nearby_name = _best_nearby_place_name(nearby_rows, latitude=float(latitude), longitude=float(longitude))
-    return nearby_name or title
+        return {
+            "name": title,
+            "place_type": row.get("place_type") or "",
+        }
+    nearby_candidate = _best_nearby_place_candidate(
+        nearby_rows,
+        latitude=float(latitude),
+        longitude=float(longitude),
+    )
+    if nearby_candidate:
+        return nearby_candidate
+    if title:
+        return {
+            "name": title,
+            "place_type": row.get("place_type") or "",
+        }
+    return None
+
+
+def _leg_point_place_name(latitude: float | None, longitude: float | None) -> str | None:
+    details = _leg_point_place_details(latitude, longitude)
+    if not details:
+        return None
+    return details["name"]
 
 
 def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -619,7 +656,9 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "source_event_id": movement_type,
             "path_points": [],
             "start_place_name": None,
+            "start_place_type": None,
             "end_place_name": None,
+            "end_place_type": None,
             "_first_place_hint": None,
             "_last_place_hint": None,
         }
@@ -757,14 +796,18 @@ def _build_travel_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 end_point = {"lat": leg["end_latitude"], "lon": leg["end_longitude"]}
                 if not leg["path_points"] or leg["path_points"][-1] != end_point:
                     leg["path_points"].append(end_point)
-        leg["start_place_name"] = _leg_point_place_name(
+        start_place = _leg_point_place_details(
             leg.get("start_latitude"),
             leg.get("start_longitude"),
         )
-        leg["end_place_name"] = _leg_point_place_name(
+        end_place = _leg_point_place_details(
             leg.get("end_latitude"),
             leg.get("end_longitude"),
         )
+        leg["start_place_name"] = start_place["name"] if start_place else None
+        leg["start_place_type"] = start_place["place_type"] if start_place else None
+        leg["end_place_name"] = end_place["name"] if end_place else None
+        leg["end_place_type"] = end_place["place_type"] if end_place else None
         if not leg.get("start_place_name") and leg.get("_first_place_hint"):
             leg["start_place_name"] = leg["_first_place_hint"]
         if not leg.get("end_place_name") and leg.get("_last_place_hint"):

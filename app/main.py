@@ -1090,6 +1090,59 @@ def _trip_visibility_state(trip: dict) -> Optional[str]:
     return None
 
 
+START_MARKER_STYLES = {
+    "airport": {"fill": "#2f6cb3", "label": "AIR"},
+    "fuel": {"fill": "#cc6b2c", "label": "GAS"},
+    "park": {"fill": "#2f6c5b", "label": "REC"},
+    "camp": {"fill": "#587d32", "label": "CAMP"},
+    "lodging": {"fill": "#7b4da3", "label": "HOTEL"},
+    "food": {"fill": "#b34747", "label": "FOOD"},
+    "parking": {"fill": "#6e7886", "label": "P"},
+    "school": {"fill": "#7a5a30", "label": "SCH"},
+    "default": {"fill": "#c8643b", "label": "START"},
+}
+
+
+def _start_marker_kind_for_leg(item: dict) -> str:
+    place_type = (item.get("start_place_type") or "").strip().lower()
+    place_name = (item.get("start_place_name") or "").strip().lower()
+    if "airport" in place_name or place_type in {"aerodrome", "airport", "terminal"}:
+        return "airport"
+    if place_type in {"fuel"} or any(token in place_name for token in ("gas", "fuel", "truck stop")):
+        return "fuel"
+    if place_type in {"parking"} or "parking" in place_name:
+        return "parking"
+    if place_type in {"camp_site", "caravan_site"} or "camp" in place_name:
+        return "camp"
+    if place_type in {"hotel"} or any(token in place_name for token in ("hotel", "inn", "lodge", "resort")):
+        return "lodging"
+    if place_type in {"fast_food", "restaurant", "cafe", "picnic_site"} or any(token in place_name for token in ("restaurant", "cafe", "diner", "domino", "pizza")):
+        return "food"
+    if place_type in {"viewpoint", "park", "information", "path", "footway", "track", "picnic_site"} or any(
+        token in place_name for token in ("trail", "park", "viewpoint", "overlook", "visitor center", "rec", "recreation")
+    ):
+        return "park"
+    if place_type in {"school", "university"}:
+        return "school"
+    return "default"
+
+
+def _render_route_start_marker(x: float, y: float, marker_kind: str) -> str:
+    marker = START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])
+    label = marker["label"]
+    fill = marker["fill"]
+    font_size = 7 if len(label) > 3 else 8
+    label_y = -7 if len(label) > 1 else -6
+    return f"""
+    <g data-marker-kind="{escape(marker_kind)}" transform="translate({x} {y})">
+      <path d="M0 -18 C10 -18 17 -11 17 -2 C17 11 3 24 0 27 C-3 24 -17 11 -17 -2 C-17 -11 -10 -18 0 -18 Z"
+        fill="{fill}" stroke="#fff8ef" stroke-width="4" />
+      <circle cx="0" cy="-7" r="8.8" fill="#fff8ef" opacity="0.96" />
+      <text x="0" y="{label_y}" text-anchor="middle" font-family="Arial, sans-serif" font-size="{font_size}" font-weight="700" fill="{fill}">{escape(label)}</text>
+    </g>
+    """
+
+
 def _review_step_hint(review_state: Optional[str]) -> str:
     if review_state == "yes":
         return "Review complete. Choose whether this trip should stay private or be visible on the public site."
@@ -1117,6 +1170,7 @@ def _render_route_map_preview(
     start_longitude: Optional[float] = None,
     end_latitude: Optional[float] = None,
     end_longitude: Optional[float] = None,
+    start_marker_kind: str = "default",
     aria_label: str = "Route map preview",
 ) -> str:
     points: list[tuple[float, float]] = []
@@ -1227,6 +1281,7 @@ def _render_route_map_preview(
                 f'alt="" loading="lazy" style="left:{(left / width) * 100:.4f}%;top:{(top / height) * 100:.4f}%;'
                 f'width:{(tile_width / width) * 100:.4f}%;height:{(tile_height / height) * 100:.4f}%;">'
             )
+    start_marker = _render_route_start_marker(start_x, start_y, start_marker_kind)
     return f"""
     <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}">
       {''.join(tiles)}
@@ -1234,7 +1289,7 @@ def _render_route_map_preview(
         <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
         <path d="{path_d}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
         <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="{start_x}" cy="{start_y}" r="11" fill="#fff8ef" stroke="#c8643b" stroke-width="6" />
+        {start_marker}
         <circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />
       </svg>
       <div class="leg-map-legend">
@@ -1252,6 +1307,7 @@ def _render_leg_map_preview(item: dict) -> str:
         start_longitude=item.get("start_longitude"),
         end_latitude=item.get("end_latitude"),
         end_longitude=item.get("end_longitude"),
+        start_marker_kind=_start_marker_kind_for_leg(item),
         aria_label="Travel leg map preview",
     )
 
