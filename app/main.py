@@ -1968,50 +1968,6 @@ def _render_public_maplibre_script() -> str:
         }
         map.addControl(new HomeControl(), "top-right");
 
-        const buildStopIcon = (fill, label) => {
-          const size = 54;
-          const canvas = document.createElement("canvas");
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return canvas;
-          ctx.clearRect(0, 0, size, size);
-          ctx.fillStyle = fill;
-          ctx.beginPath();
-          ctx.arc(size / 2, size / 2, 19, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = "#fff8ef";
-          ctx.stroke();
-          ctx.fillStyle = "#fff8ef";
-          ctx.beginPath();
-          ctx.arc(size / 2, size / 2, 10, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = fill;
-          ctx.font = "700 11px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(label, size / 2, (size / 2) + 0.5);
-          return canvas;
-        };
-        const registerStopIcons = () => {
-          const icons = [
-            ["stop-airport", "#365f98", "AP"],
-            ["stop-fuel", "#c26a39", "G"],
-            ["stop-park", "#2f6c5b", "TR"],
-            ["stop-camp", "#5e8c37", "CG"],
-            ["stop-lodging", "#7f5ea7", "IN"],
-            ["stop-food", "#b84f51", "FD"],
-            ["stop-parking", "#6e7b8f", "PK"],
-            ["stop-school", "#8a6a34", "SC"],
-            ["stop-default", "#8f5f48", "ST"],
-          ];
-          icons.forEach(([name, fill, label]) => {
-            if (map.hasImage(name)) return;
-            map.addImage(name, buildStopIcon(fill, label), { pixelRatio: 2 });
-          });
-        };
-
         map.on("load", () => {
           if (typeof map.setProjection === "function") {
             map.setProjection({ name: "mercator" });
@@ -2022,14 +1978,6 @@ def _render_public_maplibre_script() -> str:
             type: "geojson",
             data: routeData,
           });
-          map.addSource("trip-stops", {
-            type: "geojson",
-            data: stopData,
-            cluster: true,
-            clusterRadius: 38,
-            clusterMaxZoom: 7,
-          });
-          registerStopIcons();
 
           map.addLayer({
             id: "trip-route-halo",
@@ -2058,63 +2006,40 @@ def _render_public_maplibre_script() -> str:
               "line-join": "round",
             },
           });
-          map.addLayer({
-            id: "trip-stops-clusters",
-            type: "circle",
-            source: "trip-stops",
-            filter: ["has", "point_count"],
-            paint: {
-              "circle-color": "#d06b39",
-              "circle-radius": [
-                "step",
-                ["get", "point_count"],
-                16,
-                8,
-                19,
-                20,
-                22
-              ],
-              "circle-stroke-color": "#fff8ef",
-              "circle-stroke-width": 3
-            }
-          });
-          map.addLayer({
-            id: "trip-stops-cluster-count",
-            type: "symbol",
-            source: "trip-stops",
-            filter: ["has", "point_count"],
-            layout: {
-              "text-field": ["get", "point_count_abbreviated"],
-              "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-              "text-size": 12
-            },
-            paint: {
-              "text-color": "#fff8ef"
-            }
-          });
-          map.addLayer({
-            id: "trip-stops-symbols",
-            type: "symbol",
-            source: "trip-stops",
-            filter: ["!", ["has", "point_count"]],
-            layout: {
-              "icon-image": [
-                "match",
-                ["get", "kind"],
-                "airport", "stop-airport",
-                "fuel", "stop-fuel",
-                "park", "stop-park",
-                "camp", "stop-camp",
-                "lodging", "stop-lodging",
-                "food", "stop-food",
-                "parking", "stop-parking",
-                "school", "stop-school",
-                "stop-default"
-              ],
-              "icon-size": 0.82,
-              "icon-anchor": "center",
-              "icon-allow-overlap": true
-            }
+          stopFeatures.forEach((feature) => {
+            const coords = feature?.geometry?.coordinates;
+            if (!Array.isArray(coords) || coords.length < 2) return;
+            const props = feature.properties || {};
+            const marker = document.createElement("button");
+            const markerKind = props.kind || "default";
+            marker.type = "button";
+            marker.className = `route-stop-marker route-stop-marker--${markerKind}`;
+            marker.setAttribute("aria-label", props.label || "Trip stop");
+            marker.textContent = props.kind_code || "ST";
+            marker.addEventListener("mouseenter", () => {
+              popup
+                .setLngLat(coords)
+                .setHTML(popupForFeature(feature))
+                .addTo(map);
+            });
+            marker.addEventListener("mouseleave", () => popup.remove());
+            marker.addEventListener("focus", () => {
+              popup
+                .setLngLat(coords)
+                .setHTML(popupForFeature(feature))
+                .addTo(map);
+            });
+            marker.addEventListener("blur", () => popup.remove());
+            marker.addEventListener("click", (event) => {
+              event.preventDefault();
+              popup
+                .setLngLat(coords)
+                .setHTML(popupForFeature(feature))
+                .addTo(map);
+            });
+            new maplibregl.Marker({ element: marker, anchor: "center" })
+              .setLngLat(coords)
+              .addTo(map);
           });
           fitTripBounds();
 
@@ -2135,53 +2060,6 @@ def _render_public_maplibre_script() -> str:
             map.getCanvas().style.cursor = "";
             popup.remove();
           });
-          map.on("mouseenter", "trip-stops-clusters", () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", "trip-stops-clusters", () => {
-            map.getCanvas().style.cursor = "";
-            popup.remove();
-          });
-          map.on("click", "trip-stops-clusters", (event) => {
-            const feature = event.features && event.features[0];
-            if (!feature) return;
-            const clusterId = feature.properties?.cluster_id;
-            const source = map.getSource("trip-stops");
-            if (!source || typeof source.getClusterExpansionZoom !== "function") return;
-            source.getClusterExpansionZoom(clusterId, (error, zoom) => {
-              if (error) return;
-              map.easeTo({
-                center: feature.geometry.coordinates,
-                zoom: Math.min(zoom, 8),
-                duration: 350,
-              });
-            });
-          });
-          map.on("mouseenter", "trip-stops-clusters", (event) => {
-            const feature = event.features && event.features[0];
-            if (!feature) return;
-            popup
-              .setLngLat(event.lngLat)
-              .setHTML(popupHtml(
-                `${feature.properties?.point_count || 0} nearby stops`,
-                "Click to expand this cluster"
-              ))
-              .addTo(map);
-          });
-          map.on("mouseenter", "trip-stops-symbols", () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", "trip-stops-symbols", () => {
-            map.getCanvas().style.cursor = "";
-            popup.remove();
-          });
-          const showStopPopup = (event) => {
-            const feature = event.features && event.features[0];
-            if (!feature) return;
-            popup.setLngLat(event.lngLat).setHTML(popupForFeature(feature)).addTo(map);
-          };
-          map.on("mouseenter", "trip-stops-symbols", showStopPopup);
-          map.on("click", "trip-stops-symbols", showStopPopup);
         });
       });
     })();
