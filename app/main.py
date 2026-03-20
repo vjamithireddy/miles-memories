@@ -480,21 +480,31 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     public_origin = escape(public_origin)
     public_destination = escape(public_destination)
     notable_places = []
+    route_places: list[str] = []
     for item in travel_legs:
-        for name in (item.get("start_place_name"), item.get("end_place_name")):
+        for name, place_type in (
+            (item.get("start_place_name"), item.get("start_place_type")),
+            (item.get("end_place_name"), item.get("end_place_type")),
+        ):
             cleaned = _map_clean_place_name(name)
             if not cleaned or _map_is_regional_place(cleaned):
                 continue
-            if cleaned in notable_places:
+            if cleaned not in notable_places:
+                notable_places.append(cleaned)
+            if not _is_route_flow_stop(cleaned, place_type):
                 continue
-            notable_places.append(cleaned)
-    route_places: list[str] = []
-    for candidate in [public_origin, *notable_places, public_destination]:
-        if not candidate:
-            continue
-        if route_places and route_places[-1] == candidate:
-            continue
-        route_places.append(candidate)
+            if route_places and route_places[-1] == cleaned:
+                continue
+            route_places.append(cleaned)
+    fallback_origin = _map_clean_place_name(public_origin)
+    fallback_destination = _map_clean_place_name(public_destination)
+    if not route_places:
+        route_places = [name for name in (fallback_origin, fallback_destination) if name]
+    else:
+        if fallback_origin and route_places[0] != fallback_origin:
+            route_places.insert(0, fallback_origin)
+        if fallback_destination and route_places[-1] != fallback_destination:
+            route_places.append(fallback_destination)
     if len(route_places) > 6:
         route_places = [*route_places[:4], "…", route_places[-1]]
     route_summary = " → ".join(route_places) if route_places else f"{public_origin} → {public_destination}"
@@ -1285,6 +1295,60 @@ def _map_is_regional_place(name: Optional[str]) -> bool:
         return False
     lowered = name.lower()
     return any(token in lowered for token in ("county", "state", "region"))
+
+
+def _is_route_flow_stop(
+    name: Optional[str],
+    place_type: Optional[str] = None,
+) -> bool:
+    cleaned = _map_clean_place_name(name)
+    if not cleaned or _map_is_regional_place(cleaned):
+        return False
+    lowered = cleaned.lower()
+    place_type = (place_type or "").strip().lower()
+    if place_type in {"fuel", "supermarket", "convenience", "grocery"}:
+        return False
+    excluded_tokens = (
+        "gas",
+        "fuel",
+        "truck stop",
+        "grocery",
+        "supermarket",
+        "market",
+        "parking",
+        "garage",
+        "campground",
+        "camp site",
+        "camp",
+        "trail",
+        "trailhead",
+        "visitor center",
+        "overlook",
+        "turnout",
+        "point",
+        "lodge",
+        "hotel",
+        "inn",
+        "resort",
+        "road",
+        "street",
+        "avenue",
+        "boulevard",
+        "drive",
+        "dr ",
+        "airport",
+        "terminal",
+        "restaurant",
+        "cafe",
+        "diner",
+        "pizza",
+        "subway",
+        "taco",
+        "domino",
+        "school",
+        "university",
+    )
+    return not any(token in lowered for token in excluded_tokens)
 
 
 def _route_stop_type_label(marker_kind: str) -> str:
