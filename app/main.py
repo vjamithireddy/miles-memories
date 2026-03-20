@@ -453,15 +453,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             for item in trip["timeline"]
             if item.get("latitude") is not None and item.get("longitude") is not None
         ]
-    trip_map_markup = _render_route_map_preview(
-        map_points,
-        stop_markers=_build_trip_stop_markers(
-            travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS
-        ),
-        aria_label="Published trip route map preview",
-        show_route_endpoints=False,
-        show_legend=False,
-        cluster_stop_markers=True,
+    trip_map_markup = _render_public_trip_map(
+        _build_public_trip_map_payload(trip, travel_legs, map_points)
     )
     leg_count = len(travel_legs)
     distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
@@ -552,6 +545,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} · MilesMemories</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
     :root {{
       --bg: #f4efe6;
@@ -695,6 +689,34 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       border-radius: 22px;
       overflow: hidden;
       border: 1px solid var(--line);
+    }}
+    .maplibre-shell {{
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #efe5d7;
+    }}
+    .maplibre-map {{
+      width: 100%;
+      height: 560px;
+    }}
+    .maplibregl-popup-content {{
+      border-radius: 18px;
+      border: 1px solid rgba(219, 202, 177, 0.94);
+      box-shadow: 0 10px 20px rgba(37, 28, 14, 0.16);
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+    }}
+    .map-popup-title {{
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.35;
+      margin-bottom: 4px;
+    }}
+    .map-popup-meta {{
+      font-size: 0.84rem;
+      color: var(--muted);
+      line-height: 1.35;
     }}
     .leg-map-frame {{
       position: relative;
@@ -1045,7 +1067,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       <article class="panel">
         <h2>Trip map</h2>
         <p>Published route preview built from the full inferred travel-leg path for the trip.</p>
-        <div class="trip-map-static">{trip_map_markup}</div>
+        {trip_map_markup}
       </article>
     </section>
 
@@ -1065,7 +1087,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       </details>
     </section>
   </main>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   {_render_map_interactions_script()}
+  {_render_public_maplibre_script()}
 </body>
 </html>"""
 
@@ -1371,6 +1395,142 @@ def _route_stop_label(item: dict, marker_kind: str) -> str:
     return f"{place}\n{_route_stop_type_label(marker_kind)}"
 
 
+def _route_stop_code(marker_kind: str) -> str:
+    return {
+        "airport": "AP",
+        "park": "TR",
+        "camp": "CG",
+        "lodging": "IN",
+        "food": "FD",
+        "parking": "PK",
+        "school": "SC",
+        "default": "ST",
+    }.get(marker_kind, "ST")
+
+
+def _route_stop_color(marker_kind: str) -> str:
+    return START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])["fill"]
+
+
+def _build_public_trip_map_payload(
+    trip: dict,
+    travel_legs: List[dict],
+    map_points: List[dict[str, float]],
+) -> dict[str, Any]:
+    line_features: list[dict[str, Any]] = []
+    line_coords: list[list[float]] = []
+    for item in travel_legs:
+        coords: list[list[float]] = []
+        for point in item.get("path_points") or []:
+            lat = point.get("lat")
+            lon = point.get("lon")
+            if lat is None or lon is None:
+                continue
+            candidate = [float(lon), float(lat)]
+            if not coords or coords[-1] != candidate:
+                coords.append(candidate)
+        if len(coords) < 2:
+            start_lat = item.get("start_latitude")
+            start_lon = item.get("start_longitude")
+            end_lat = item.get("end_latitude")
+            end_lon = item.get("end_longitude")
+            if start_lat is not None and start_lon is not None:
+                coords.append([float(start_lon), float(start_lat)])
+            if end_lat is not None and end_lon is not None:
+                candidate = [float(end_lon), float(end_lat)]
+                if not coords or coords[-1] != candidate:
+                    coords.append(candidate)
+        if len(coords) < 2:
+            continue
+        line_coords.extend(coords)
+        line_features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "label": _public_leg_base_comment(item),
+                    "leg_type": item.get("label") or "Travel leg",
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": coords,
+                },
+            }
+        )
+
+    if not line_features:
+        fallback_coords: list[list[float]] = []
+        for point in map_points:
+            lat = point.get("lat")
+            lon = point.get("lon")
+            if lat is None or lon is None:
+                continue
+            candidate = [float(lon), float(lat)]
+            if not fallback_coords or fallback_coords[-1] != candidate:
+                fallback_coords.append(candidate)
+        if len(fallback_coords) >= 2:
+            line_coords = fallback_coords[:]
+            line_features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "label": trip.get("trip_name") or "Trip route",
+                        "leg_type": "Trip route",
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": fallback_coords,
+                    },
+                }
+            )
+
+    stop_features: list[dict[str, Any]] = []
+    for marker in _build_trip_stop_markers(travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS):
+        lon = marker.get("lon")
+        lat = marker.get("lat")
+        if lon is None or lat is None:
+            continue
+        kind = str(marker.get("kind") or "default")
+        label = str(marker.get("label") or "Trip stop")
+        place, _, type_label = label.partition("\n")
+        stop_features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "label": place or "Trip stop",
+                    "type_label": type_label or _route_stop_type_label(kind),
+                    "kind": kind,
+                    "kind_code": _route_stop_code(kind),
+                    "color": _route_stop_color(kind),
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(lon), float(lat)],
+                },
+            }
+        )
+
+    coords_for_bounds = line_coords or [feature["geometry"]["coordinates"] for feature in stop_features]
+    lons = [coord[0] for coord in coords_for_bounds]
+    lats = [coord[1] for coord in coords_for_bounds]
+    if not lons or not lats:
+        bounds = None
+    else:
+        bounds = [[min(lons), min(lats)], [max(lons), max(lats)]]
+    return {
+        "bounds": bounds,
+        "route": {"type": "FeatureCollection", "features": line_features},
+        "stops": {"type": "FeatureCollection", "features": stop_features},
+    }
+
+
+def _render_public_trip_map(payload: dict[str, Any]) -> str:
+    return f"""
+    <div class="maplibre-shell">
+      <div class="maplibre-map" data-public-trip-map='{escape(json.dumps(payload, separators=(",", ":")))}'></div>
+    </div>
+    """
+
+
 def _build_trip_stop_markers(travel_legs: List[dict], *, include_kinds: Optional[set[str]] = None) -> list[dict[str, Any]]:
     markers: list[dict[str, Any]] = []
     seen: set[tuple[float, float, str]] = set()
@@ -1637,6 +1797,217 @@ def _render_map_interactions_script() -> str:
         frame.addEventListener("pointercancel", endDrag);
         syncPanCursor();
         applyScale();
+      });
+    })();
+  </script>
+"""
+
+
+def _render_public_maplibre_script() -> str:
+    return """
+  <script>
+    (() => {
+      if (!window.maplibregl) return;
+      const popup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        maxWidth: "280px",
+        offset: 14,
+      });
+      const popupHtml = (title, meta) => `
+        <div class="map-popup">
+          <div class="map-popup-title">${title}</div>
+          <div class="map-popup-meta">${meta}</div>
+        </div>
+      `;
+
+      document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
+        let payload = null;
+        try {
+          payload = JSON.parse(node.dataset.publicTripMap || "{}");
+        } catch (error) {
+          return;
+        }
+        const routeData = payload.route || { type: "FeatureCollection", features: [] };
+        const stopData = payload.stops || { type: "FeatureCollection", features: [] };
+        const bounds = payload.bounds || null;
+
+        const map = new maplibregl.Map({
+          container: node,
+          style: "https://demotiles.maplibre.org/style.json",
+          attributionControl: true,
+          cooperativeGestures: false,
+        });
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+        map.on("load", () => {
+          map.addSource("trip-route", {
+            type: "geojson",
+            data: routeData,
+          });
+          map.addSource("trip-stops", {
+            type: "geojson",
+            data: stopData,
+            cluster: true,
+            clusterMaxZoom: 7,
+            clusterRadius: 42,
+          });
+
+          map.addLayer({
+            id: "trip-route-halo",
+            type: "line",
+            source: "trip-route",
+            paint: {
+              "line-color": "#ffffff",
+              "line-width": 10,
+              "line-opacity": 0.68,
+            },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+            },
+          });
+          map.addLayer({
+            id: "trip-route-line",
+            type: "line",
+            source: "trip-route",
+            paint: {
+              "line-color": "#2f6c5b",
+              "line-width": 6,
+            },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+            },
+          });
+
+          map.addLayer({
+            id: "trip-stop-clusters",
+            type: "circle",
+            source: "trip-stops",
+            filter: ["has", "point_count"],
+            paint: {
+              "circle-color": "#c8643b",
+              "circle-radius": [
+                "step",
+                ["get", "point_count"],
+                16,
+                8, 18,
+                16, 21,
+                32, 24
+              ],
+              "circle-stroke-color": "#fff8ef",
+              "circle-stroke-width": 3,
+            },
+          });
+          map.addLayer({
+            id: "trip-stop-cluster-count",
+            type: "symbol",
+            source: "trip-stops",
+            filter: ["has", "point_count"],
+            layout: {
+              "text-field": ["get", "point_count_abbreviated"],
+              "text-size": 12,
+              "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+            },
+            paint: {
+              "text-color": "#fff8ef",
+            },
+          });
+
+          map.addLayer({
+            id: "trip-stop-points",
+            type: "circle",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
+            paint: {
+              "circle-color": ["get", "color"],
+              "circle-radius": 10,
+              "circle-stroke-color": "#fff8ef",
+              "circle-stroke-width": 3,
+            },
+          });
+          map.addLayer({
+            id: "trip-stop-labels",
+            type: "symbol",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              "text-field": ["get", "kind_code"],
+              "text-size": 11,
+              "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            },
+            paint: {
+              "text-color": "#fff8ef",
+            },
+          });
+
+          if (bounds && bounds.length === 2) {
+            map.fitBounds(bounds, { padding: 36, duration: 0, maxZoom: 6.5 });
+          }
+
+          map.on("mouseenter", "trip-route-line", (event) => {
+            map.getCanvas().style.cursor = "pointer";
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            const coordinates = event.lngLat;
+            popup
+              .setLngLat(coordinates)
+              .setHTML(popupHtml(
+                feature.properties?.label || "Travel leg",
+                feature.properties?.leg_type || "Trip route"
+              ))
+              .addTo(map);
+          });
+          map.on("mouseleave", "trip-route-line", () => {
+            map.getCanvas().style.cursor = "";
+            popup.remove();
+          });
+
+          const showStopPopup = (feature) => {
+            if (!feature) return;
+            const coordinates = feature.geometry.coordinates.slice();
+            popup
+              .setLngLat(coordinates)
+              .setHTML(popupHtml(
+                feature.properties?.label || "Trip stop",
+                feature.properties?.type_label || "Stop"
+              ))
+              .addTo(map);
+          };
+
+          map.on("mouseenter", "trip-stop-points", (event) => {
+            map.getCanvas().style.cursor = "pointer";
+            showStopPopup(event.features && event.features[0]);
+          });
+          map.on("mouseleave", "trip-stop-points", () => {
+            map.getCanvas().style.cursor = "";
+            popup.remove();
+          });
+          map.on("click", "trip-stop-points", (event) => {
+            showStopPopup(event.features && event.features[0]);
+          });
+
+          map.on("mouseenter", "trip-stop-clusters", () => {
+            map.getCanvas().style.cursor = "pointer";
+          });
+          map.on("mouseleave", "trip-stop-clusters", () => {
+            map.getCanvas().style.cursor = "";
+          });
+          map.on("click", "trip-stop-clusters", (event) => {
+            const feature = map.queryRenderedFeatures(event.point, { layers: ["trip-stop-clusters"] })[0];
+            if (!feature) return;
+            const clusterId = feature.properties.cluster_id;
+            map.getSource("trip-stops").getClusterExpansionZoom(clusterId, (err, zoom) => {
+              if (err) return;
+              map.easeTo({
+                center: feature.geometry.coordinates,
+                zoom,
+                duration: 500,
+              });
+            });
+          });
+        });
       });
     })();
   </script>
