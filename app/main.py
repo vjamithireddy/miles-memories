@@ -1940,17 +1940,21 @@ def _render_public_maplibre_script() -> str:
               "line-join": "round",
             },
           });
-          map.addSource("trip-stops", {
+          map.addSource("trip-stops-clustered", {
             type: "geojson",
             data: stopData,
             cluster: true,
             clusterMaxZoom: 8,
             clusterRadius: 40,
           });
+          map.addSource("trip-stops-points-source", {
+            type: "geojson",
+            data: stopData,
+          });
           map.addLayer({
             id: "trip-stops-clusters",
             type: "circle",
-            source: "trip-stops",
+            source: "trip-stops-clustered",
             filter: ["has", "point_count"],
             paint: {
               "circle-color": "#d06b39",
@@ -1970,7 +1974,7 @@ def _render_public_maplibre_script() -> str:
           map.addLayer({
             id: "trip-stops-cluster-count",
             type: "symbol",
-            source: "trip-stops",
+            source: "trip-stops-clustered",
             filter: ["has", "point_count"],
             layout: {
               "text-field": ["get", "point_count_abbreviated"],
@@ -1984,27 +1988,29 @@ def _render_public_maplibre_script() -> str:
           map.addLayer({
             id: "trip-stops-points",
             type: "circle",
-            source: "trip-stops",
-            filter: ["!", ["has", "point_count"]],
+            source: "trip-stops-points-source",
             paint: {
               "circle-color": ["coalesce", ["get", "color"], "#c8643b"],
-              "circle-radius": 11,
+              "circle-radius": 15,
               "circle-stroke-color": "#fff8ef",
-              "circle-stroke-width": 3,
+              "circle-stroke-width": 4,
             },
           });
           map.addLayer({
             id: "trip-stops-point-labels",
             type: "symbol",
-            source: "trip-stops",
-            filter: ["!", ["has", "point_count"]],
+            source: "trip-stops-points-source",
             layout: {
               "text-field": ["coalesce", ["get", "kind_code"], "ST"],
               "text-font": ["Open Sans Bold"],
-              "text-size": 10,
+              "text-size": 11,
+              "text-ignore-placement": true,
+              "text-allow-overlap": true,
             },
             paint: {
               "text-color": "#fff8ef",
+              "text-halo-color": "rgba(47, 108, 91, 0.35)",
+              "text-halo-width": 0.6,
             },
           });
           fitTripBounds();
@@ -2057,7 +2063,7 @@ def _render_public_maplibre_script() -> str:
             const feature = event.features && event.features[0];
             if (!feature) return;
             const clusterId = feature.properties.cluster_id;
-            map.getSource("trip-stops").getClusterExpansionZoom(clusterId, (error, zoom) => {
+            map.getSource("trip-stops-clustered").getClusterExpansionZoom(clusterId, (error, zoom) => {
               if (error) return;
               map.easeTo({
                 center: feature.geometry.coordinates,
