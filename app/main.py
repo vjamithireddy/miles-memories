@@ -1921,12 +1921,30 @@ def _render_public_maplibre_script() -> str:
         const routeData = payload.route || { type: "FeatureCollection", features: [] };
         const stopData = payload.stops || { type: "FeatureCollection", features: [] };
         const bounds = payload.bounds || null;
+        const lower48Bounds = [[-125.0, 24.4], [-66.5, 49.6]];
+        const clampBoundsToLower48 = (inputBounds) => {
+          if (!inputBounds || inputBounds.length !== 2) {
+            return lower48Bounds;
+          }
+          const west = Math.max(inputBounds[0][0], lower48Bounds[0][0]);
+          const south = Math.max(inputBounds[0][1], lower48Bounds[0][1]);
+          const east = Math.min(inputBounds[1][0], lower48Bounds[1][0]);
+          const north = Math.min(inputBounds[1][1], lower48Bounds[1][1]);
+          if (west >= east || south >= north) {
+            return lower48Bounds;
+          }
+          return [[west, south], [east, north]];
+        };
 
         const map = new maplibregl.Map({
           container: node,
           style: "https://demotiles.maplibre.org/style.json",
           attributionControl: true,
           cooperativeGestures: false,
+          dragRotate: false,
+          pitchWithRotate: false,
+          touchPitch: false,
+          maxBounds: lower48Bounds,
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
         const activeMarkers = [];
@@ -2000,6 +2018,11 @@ def _render_public_maplibre_script() -> str:
         };
 
         map.on("load", () => {
+          if (typeof map.setProjection === "function") {
+            map.setProjection({ name: "mercator" });
+          }
+          map.setPitch(0);
+          map.setBearing(0);
           map.addSource("trip-route", {
             type: "geojson",
             data: routeData,
@@ -2033,9 +2056,7 @@ def _render_public_maplibre_script() -> str:
             },
           });
 
-          if (bounds && bounds.length === 2) {
-            map.fitBounds(bounds, { padding: 36, duration: 0, maxZoom: 6.5 });
-          }
+          map.fitBounds(clampBoundsToLower48(bounds), { padding: 36, duration: 0, maxZoom: 6.5 });
           renderStopMarkers();
 
           map.on("mouseenter", "trip-route-line", (event) => {
