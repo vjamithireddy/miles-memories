@@ -737,6 +737,63 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       background: #f7efe3;
       color: var(--accent-dark);
     }}
+    .route-stop-marker,
+    .route-stop-cluster {{
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+    }}
+    .route-stop-marker {{
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #fff8ef;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 0.72rem;
+      font-weight: 800;
+      box-shadow: 0 8px 18px rgba(27, 36, 51, 0.22);
+      border: 3px solid #fff8ef;
+    }}
+    .route-stop-marker--airport {{ background: #365f98; }}
+    .route-stop-marker--fuel {{ background: #c26a39; }}
+    .route-stop-marker--park {{ background: #2f6c5b; }}
+    .route-stop-marker--camp {{ background: #5e8c37; }}
+    .route-stop-marker--lodging {{ background: #7f5ea7; }}
+    .route-stop-marker--food {{ background: #b84f51; }}
+    .route-stop-marker--parking {{ background: #6e7b8f; }}
+    .route-stop-marker--school {{ background: #8a6a34; }}
+    .route-stop-marker--default {{ background: #8f5f48; }}
+    .route-stop-marker:hover,
+    .route-stop-marker:focus-visible {{
+      transform: translate(-50%, -50%) scale(1.08);
+      box-shadow: 0 10px 22px rgba(27, 36, 51, 0.28);
+      outline: none;
+    }}
+    .route-stop-cluster {{
+      min-width: 34px;
+      height: 34px;
+      padding: 0 10px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #d06b39;
+      color: #fff8ef;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 0.78rem;
+      font-weight: 800;
+      box-shadow: 0 8px 18px rgba(27, 36, 51, 0.22);
+      border: 3px solid #fff8ef;
+    }}
+    .route-stop-cluster:hover,
+    .route-stop-cluster:focus-visible {{
+      transform: translate(-50%, -50%) scale(1.06);
+      box-shadow: 0 10px 22px rgba(27, 36, 51, 0.28);
+      outline: none;
+    }}
     .leg-map-frame {{
       position: relative;
       width: 100%;
@@ -1853,6 +1910,9 @@ def _render_public_maplibre_script() -> str:
         }
         const routeData = payload.route || { type: "FeatureCollection", features: [] };
         const stopData = payload.stops || { type: "FeatureCollection", features: [] };
+        const stopFeatures = Array.isArray(stopData.features)
+          ? stopData.features.filter((feature) => feature?.geometry?.type === "Point")
+          : [];
         const bounds = payload.bounds || null;
         const lower48Bounds = [[-125.0, 24.4], [-66.5, 49.6]];
         const clampBoundsToLower48 = (inputBounds) => {
@@ -1940,21 +2000,17 @@ def _render_public_maplibre_script() -> str:
               "line-join": "round",
             },
           });
-          map.addSource("trip-stops-clustered", {
+          map.addSource("trip-stops", {
             type: "geojson",
             data: stopData,
             cluster: true,
-            clusterMaxZoom: 8,
-            clusterRadius: 40,
-          });
-          map.addSource("trip-stops-points-source", {
-            type: "geojson",
-            data: stopData,
+            clusterMaxZoom: 9,
+            clusterRadius: 44,
           });
           map.addLayer({
             id: "trip-stops-clusters",
             type: "circle",
-            source: "trip-stops-clustered",
+            source: "trip-stops",
             filter: ["has", "point_count"],
             paint: {
               "circle-color": "#d06b39",
@@ -1962,10 +2018,12 @@ def _render_public_maplibre_script() -> str:
                 "step",
                 ["get", "point_count"],
                 16,
-                10,
+                5,
                 20,
-                25,
-                25,
+                12,
+                24,
+                24,
+                28,
               ],
               "circle-stroke-color": "#fff8ef",
               "circle-stroke-width": 3,
@@ -1974,12 +2032,12 @@ def _render_public_maplibre_script() -> str:
           map.addLayer({
             id: "trip-stops-cluster-count",
             type: "symbol",
-            source: "trip-stops-clustered",
+            source: "trip-stops",
             filter: ["has", "point_count"],
             layout: {
-              "text-field": ["get", "point_count_abbreviated"],
+              "text-field": ["to-string", ["get", "point_count"]],
               "text-font": ["Open Sans Bold"],
-              "text-size": 11,
+              "text-size": 12,
             },
             paint: {
               "text-color": "#fff8ef",
@@ -1988,29 +2046,31 @@ def _render_public_maplibre_script() -> str:
           map.addLayer({
             id: "trip-stops-points",
             type: "circle",
-            source: "trip-stops-points-source",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
             paint: {
-              "circle-color": ["coalesce", ["get", "color"], "#c8643b"],
-              "circle-radius": 15,
+              "circle-color": [
+                "coalesce",
+                ["get", "color"],
+                "#8f5f48"
+              ],
+              "circle-radius": 11,
               "circle-stroke-color": "#fff8ef",
-              "circle-stroke-width": 4,
+              "circle-stroke-width": 3,
             },
           });
           map.addLayer({
             id: "trip-stops-point-labels",
             type: "symbol",
-            source: "trip-stops-points-source",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
             layout: {
               "text-field": ["coalesce", ["get", "kind_code"], "ST"],
               "text-font": ["Open Sans Bold"],
               "text-size": 11,
-              "text-ignore-placement": true,
-              "text-allow-overlap": true,
             },
             paint: {
               "text-color": "#fff8ef",
-              "text-halo-color": "rgba(47, 108, 91, 0.35)",
-              "text-halo-width": 0.6,
             },
           });
           fitTripBounds();
@@ -2032,14 +2092,8 @@ def _render_public_maplibre_script() -> str:
             map.getCanvas().style.cursor = "";
             popup.remove();
           });
-          map.on("mouseenter", "trip-stops-points", (event) => {
+          map.on("mouseenter", "trip-stops-points", () => {
             map.getCanvas().style.cursor = "pointer";
-            const feature = event.features && event.features[0];
-            if (!feature) return;
-            popup
-              .setLngLat(feature.geometry.coordinates)
-              .setHTML(popupForFeature(feature))
-              .addTo(map);
           });
           map.on("mouseleave", "trip-stops-points", () => {
             map.getCanvas().style.cursor = "";
@@ -2062,8 +2116,9 @@ def _render_public_maplibre_script() -> str:
           map.on("click", "trip-stops-clusters", (event) => {
             const feature = event.features && event.features[0];
             if (!feature) return;
-            const clusterId = feature.properties.cluster_id;
-            map.getSource("trip-stops-clustered").getClusterExpansionZoom(clusterId, (error, zoom) => {
+            const clusterId = feature.properties.point_count ? feature.properties.cluster_id : null;
+            if (clusterId === null || clusterId === undefined) return;
+            map.getSource("trip-stops").getClusterExpansionZoom(clusterId, (error, zoom) => {
               if (error) return;
               map.easeTo({
                 center: feature.geometry.coordinates,
