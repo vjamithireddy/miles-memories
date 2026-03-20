@@ -2004,8 +2004,8 @@ def _render_public_maplibre_script() -> str:
             type: "geojson",
             data: stopData,
             cluster: true,
-            clusterMaxZoom: 9,
-            clusterRadius: 44,
+            clusterMaxZoom: 7,
+            clusterRadius: 42,
           });
           map.addLayer({
             id: "trip-stops-clusters",
@@ -2013,20 +2013,20 @@ def _render_public_maplibre_script() -> str:
             source: "trip-stops",
             filter: ["has", "point_count"],
             paint: {
-              "circle-color": "#d06b39",
+              "circle-color": "#fff8ef",
               "circle-radius": [
                 "step",
                 ["get", "point_count"],
                 16,
-                5,
+                6,
                 20,
                 12,
                 24,
                 24,
                 28,
               ],
-              "circle-stroke-color": "#fff8ef",
-              "circle-stroke-width": 3,
+              "circle-stroke-color": "#d06b39",
+              "circle-stroke-width": 4,
             },
           });
           map.addLayer({
@@ -2035,12 +2035,12 @@ def _render_public_maplibre_script() -> str:
             source: "trip-stops",
             filter: ["has", "point_count"],
             layout: {
-              "text-field": ["to-string", ["get", "point_count"]],
-              "text-font": ["Open Sans Bold"],
               "text-size": 12,
+              "text-field": ["get", "point_count_abbreviated"],
+              "text-font": ["Open Sans Bold"],
             },
             paint: {
-              "text-color": "#fff8ef",
+              "text-color": "#d06b39",
             },
           });
           map.addLayer({
@@ -2049,25 +2049,21 @@ def _render_public_maplibre_script() -> str:
             source: "trip-stops",
             filter: ["!", ["has", "point_count"]],
             paint: {
-              "circle-color": [
-                "coalesce",
-                ["get", "color"],
-                "#8f5f48"
-              ],
-              "circle-radius": 11,
+              "circle-color": ["coalesce", ["get", "color"], "#c8643b"],
+              "circle-radius": 12,
               "circle-stroke-color": "#fff8ef",
               "circle-stroke-width": 3,
             },
           });
           map.addLayer({
-            id: "trip-stops-point-labels",
+            id: "trip-stops-labels",
             type: "symbol",
             source: "trip-stops",
             filter: ["!", ["has", "point_count"]],
             layout: {
               "text-field": ["coalesce", ["get", "kind_code"], "ST"],
+              "text-size": 10,
               "text-font": ["Open Sans Bold"],
-              "text-size": 11,
             },
             paint: {
               "text-color": "#fff8ef",
@@ -2092,8 +2088,14 @@ def _render_public_maplibre_script() -> str:
             map.getCanvas().style.cursor = "";
             popup.remove();
           });
-          map.on("mouseenter", "trip-stops-points", () => {
+          map.on("mouseenter", "trip-stops-points", (event) => {
             map.getCanvas().style.cursor = "pointer";
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            popup
+              .setLngLat(feature.geometry.coordinates)
+              .setHTML(popupForFeature(feature))
+              .addTo(map);
           });
           map.on("mouseleave", "trip-stops-points", () => {
             map.getCanvas().style.cursor = "";
@@ -2107,22 +2109,32 @@ def _render_public_maplibre_script() -> str:
               .setHTML(popupForFeature(feature))
               .addTo(map);
           });
-          map.on("mouseenter", "trip-stops-clusters", () => {
+          map.on("mouseenter", "trip-stops-clusters", (event) => {
             map.getCanvas().style.cursor = "pointer";
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            popup
+              .setLngLat(feature.geometry.coordinates)
+              .setHTML(popupHtml(`${feature.properties?.point_count || 0} nearby stops`, "Zoom in or click to expand"))
+              .addTo(map);
           });
           map.on("mouseleave", "trip-stops-clusters", () => {
             map.getCanvas().style.cursor = "";
+            popup.remove();
           });
           map.on("click", "trip-stops-clusters", (event) => {
             const feature = event.features && event.features[0];
             if (!feature) return;
-            const clusterId = feature.properties.point_count ? feature.properties.cluster_id : null;
-            if (clusterId === null || clusterId === undefined) return;
-            map.getSource("trip-stops").getClusterExpansionZoom(clusterId, (error, zoom) => {
+            const clusterId = feature.properties?.cluster_id;
+            const source = map.getSource("trip-stops");
+            if (!source || typeof source.getClusterExpansionZoom !== "function") {
+              return;
+            }
+            source.getClusterExpansionZoom(clusterId, (error, zoom) => {
               if (error) return;
               map.easeTo({
                 center: feature.geometry.coordinates,
-                zoom,
+                zoom: Math.min(zoom, 8),
                 duration: 350,
               });
             });
