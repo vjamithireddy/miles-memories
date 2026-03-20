@@ -505,8 +505,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             route_places.insert(0, fallback_origin)
         if fallback_destination and route_places[-1] != fallback_destination:
             route_places.append(fallback_destination)
-    if len(route_places) > 6:
-        route_places = [*route_places[:4], "…", route_places[-1]]
     route_summary = " → ".join(route_places) if route_places else f"{public_origin} → {public_destination}"
     route_note = (
         f"Key stops selected from {len(notable_places)} distinct recorded place{'s' if len(notable_places) != 1 else ''}."
@@ -674,6 +672,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       background: rgba(255,255,255,0.52);
       display: grid;
       gap: 8px;
+    }}
+    .story-card.wide {{
+      grid-column: 1 / -1;
     }}
     .story-card-label {{
       font-size: 0.78rem;
@@ -1027,7 +1028,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <div class="story-card-value">{short_timing}</div>
           <p class="story-card-note">{trip_duration} total</p>
         </article>
-        <article class="story-card">
+        <article class="story-card wide">
           <span class="story-card-label">Route</span>
           <div class="story-card-value">{escape(route_summary)}</div>
           <p class="story-card-note">{escape(route_note)}</p>
@@ -1036,11 +1037,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <span class="story-card-label">Travel modes</span>
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
-        </article>
-        <article class="story-card">
-          <span class="story-card-label">Journey size</span>
-          <div class="story-card-value">{leg_count} travel leg{"s" if leg_count != 1 else ""}</div>
-          <p class="story-card-note">Expand the leg list below to browse the trip step by step.</p>
         </article>
       </div>
     </section>
@@ -1466,7 +1462,7 @@ def _render_route_cluster_marker(cluster: dict[str, Any]) -> str:
     if cluster["count"] > 5:
         labels = f"{labels} | +{cluster['count'] - 5} more"
     return f"""
-    <g class="map-stop-cluster" data-cluster-id="{escape(cluster['id'])}" data-member-ids="{escape(','.join(cluster['member_ids']))}" data-label="{escape(labels or label)}" tabindex="0">
+    <g class="map-stop-cluster" data-cluster-id="{escape(cluster['id'])}" data-member-ids="{escape(','.join(cluster['member_ids']))}" data-label="{escape(labels or label)}" data-x="{cluster['x']}" data-y="{cluster['y']}" tabindex="0">
       <circle cx="{cluster['x']}" cy="{cluster['y']}" r="17" fill="#fff8ef" stroke="#d06b39" stroke-width="6" />
       <circle cx="{cluster['x']}" cy="{cluster['y']}" r="9" fill="#d06b39" />
       <text x="{cluster['x']}" y="{cluster['y'] + 3.4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="#fff8ef">{cluster['count']}</text>
@@ -1504,6 +1500,14 @@ def _render_map_interactions_script() -> str:
         };
         const applyViewportTransform = () => {
           viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        };
+        const centerOnPoint = (x, y) => {
+          const rect = frame.getBoundingClientRect();
+          const cx = rect.width / 2;
+          const cy = rect.height / 2;
+          translateX = cx - (x * scale);
+          translateY = cy - (y * scale);
+          applyViewportTransform();
         };
         const syncClusters = () => {
           const autoExpand = scale >= 1.75;
@@ -1589,10 +1593,16 @@ def _render_map_interactions_script() -> str:
           cluster.addEventListener("click", (event) => {
             event.preventDefault();
             const clusterId = cluster.dataset.clusterId || "";
+            const clusterX = Number(cluster.dataset.x || "0");
+            const clusterY = Number(cluster.dataset.y || "0");
+            scale = clamp(scale + 0.8, 1, 8);
+            if (clusterX || clusterY) {
+              centerOnPoint(clusterX, clusterY);
+            }
             if (clusterId) {
               expandedClusters.add(clusterId);
             }
-            syncClusters();
+            applyScale();
             activate();
           });
         });
