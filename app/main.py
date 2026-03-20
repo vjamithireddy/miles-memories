@@ -1868,48 +1868,10 @@ def _render_public_maplibre_script() -> str:
           <div class="map-popup-meta">${meta}</div>
         </div>
       `;
-      const markerElement = (feature) => {
-        const el = document.createElement("button");
-        el.type = "button";
-        el.className = "route-stop-marker";
-        el.style.background = feature.properties?.color || "#c8643b";
-        el.textContent = feature.properties?.kind_code || "ST";
-        return el;
-      };
-      const clusterElement = (count) => {
-        const el = document.createElement("button");
-        el.type = "button";
-        el.className = "route-stop-cluster";
-        el.textContent = String(count);
-        return el;
-      };
       const popupForFeature = (feature) => popupHtml(
         feature.properties?.label || "Trip stop",
         feature.properties?.type_label || "Stop"
       );
-      const clusterFeatures = (map, features, radius = 40) => {
-        const clusters = [];
-        const seen = new Set();
-        for (let i = 0; i < features.length; i += 1) {
-          if (seen.has(i)) continue;
-          const base = features[i];
-          const basePoint = map.project(base.geometry.coordinates);
-          const members = [base];
-          seen.add(i);
-          for (let j = i + 1; j < features.length; j += 1) {
-            if (seen.has(j)) continue;
-            const candidate = features[j];
-            const pt = map.project(candidate.geometry.coordinates);
-            const distance = Math.hypot(pt.x - basePoint.x, pt.y - basePoint.y);
-            if (distance <= radius) {
-              members.push(candidate);
-              seen.add(j);
-            }
-          }
-          clusters.push(members);
-        }
-        return clusters;
-      };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
         let payload = null;
@@ -1947,75 +1909,6 @@ def _render_public_maplibre_script() -> str:
           maxBounds: lower48Bounds,
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-        const activeMarkers = [];
-
-        const clearMarkers = () => {
-          while (activeMarkers.length) {
-            activeMarkers.pop().remove();
-          }
-        };
-
-        const renderStopMarkers = () => {
-          clearMarkers();
-          const features = stopData.features || [];
-          if (!features.length) return;
-          const zoom = map.getZoom();
-          const radius = zoom < 5 ? 46 : zoom < 6 ? 38 : zoom < 7 ? 30 : 0;
-          const groups = radius > 0 ? clusterFeatures(map, features, radius) : features.map((feature) => [feature]);
-
-          groups.forEach((group) => {
-            const coords = group[0].geometry.coordinates;
-            if (group.length === 1) {
-              const feature = group[0];
-              const el = markerElement(feature);
-              const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-                .setLngLat(coords)
-                .addTo(map);
-              const activate = () => {
-                el.classList.add("is-active");
-                popup.setLngLat(coords).setHTML(popupForFeature(feature)).addTo(map);
-              };
-              const deactivate = () => {
-                el.classList.remove("is-active");
-                popup.remove();
-              };
-              el.addEventListener("mouseenter", activate);
-              el.addEventListener("focus", activate);
-              el.addEventListener("mouseleave", deactivate);
-              el.addEventListener("blur", deactivate);
-              el.addEventListener("click", (event) => {
-                event.preventDefault();
-                activate();
-              });
-              activeMarkers.push(marker);
-              return;
-            }
-
-            const el = clusterElement(group.length);
-            const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-              .setLngLat(coords)
-              .addTo(map);
-            const labels = group.slice(0, 4).map((feature) => feature.properties?.label || "Trip stop");
-            const meta = `${group.length} nearby stops`;
-            const activate = () => {
-              el.classList.add("is-active");
-              popup.setLngLat(coords).setHTML(popupHtml(labels.join(" · "), meta)).addTo(map);
-            };
-            const deactivate = () => {
-              el.classList.remove("is-active");
-              popup.remove();
-            };
-            el.addEventListener("mouseenter", activate);
-            el.addEventListener("focus", activate);
-            el.addEventListener("mouseleave", deactivate);
-            el.addEventListener("blur", deactivate);
-            el.addEventListener("click", (event) => {
-              event.preventDefault();
-              map.easeTo({ center: coords, zoom: Math.min(map.getZoom() + 1, 8), duration: 350 });
-            });
-            activeMarkers.push(marker);
-          });
-        };
 
         map.on("load", () => {
           if (typeof map.setProjection === "function") {
@@ -2026,6 +1919,13 @@ def _render_public_maplibre_script() -> str:
           map.addSource("trip-route", {
             type: "geojson",
             data: routeData,
+          });
+          map.addSource("trip-stops", {
+            type: "geojson",
+            data: stopData,
+            cluster: true,
+            clusterMaxZoom: 7,
+            clusterRadius: 42,
           });
 
           map.addLayer({
@@ -2055,9 +1955,70 @@ def _render_public_maplibre_script() -> str:
               "line-join": "round",
             },
           });
+          map.addLayer({
+            id: "trip-stops-clusters",
+            type: "circle",
+            source: "trip-stops",
+            filter: ["has", "point_count"],
+            paint: {
+              "circle-color": "#fff8ef",
+              "circle-stroke-color": "#d06b39",
+              "circle-stroke-width": 4,
+              "circle-radius": [
+                "step",
+                ["get", "point_count"],
+                16,
+                6,
+                20,
+                12,
+                24,
+                24,
+                28,
+              ],
+            },
+          });
+          map.addLayer({
+            id: "trip-stops-cluster-count",
+            type: "symbol",
+            source: "trip-stops",
+            filter: ["has", "point_count"],
+            layout: {
+              "text-field": ["get", "point_count_abbreviated"],
+              "text-size": 12,
+              "text-font": ["Open Sans Bold"],
+            },
+            paint: {
+              "text-color": "#d06b39",
+            },
+          });
+          map.addLayer({
+            id: "trip-stops-points",
+            type: "circle",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
+            paint: {
+              "circle-color": ["coalesce", ["get", "color"], "#c8643b"],
+              "circle-radius": 12,
+              "circle-stroke-color": "#fff8ef",
+              "circle-stroke-width": 3,
+            },
+          });
+          map.addLayer({
+            id: "trip-stops-labels",
+            type: "symbol",
+            source: "trip-stops",
+            filter: ["!", ["has", "point_count"]],
+            layout: {
+              "text-field": ["coalesce", ["get", "kind_code"], "ST"],
+              "text-size": 10,
+              "text-font": ["Open Sans Bold"],
+            },
+            paint: {
+              "text-color": "#fff8ef",
+            },
+          });
 
           map.fitBounds(clampBoundsToLower48(bounds), { padding: 36, duration: 0, maxZoom: 6.5 });
-          renderStopMarkers();
 
           map.on("mouseenter", "trip-route-line", (event) => {
             map.getCanvas().style.cursor = "pointer";
@@ -2076,8 +2037,57 @@ def _render_public_maplibre_script() -> str:
             map.getCanvas().style.cursor = "";
             popup.remove();
           });
-          map.on("zoomend", renderStopMarkers);
-          map.on("moveend", renderStopMarkers);
+          map.on("mouseenter", "trip-stops-points", (event) => {
+            map.getCanvas().style.cursor = "pointer";
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            popup
+              .setLngLat(feature.geometry.coordinates)
+              .setHTML(popupForFeature(feature))
+              .addTo(map);
+          });
+          map.on("mouseleave", "trip-stops-points", () => {
+            map.getCanvas().style.cursor = "";
+            popup.remove();
+          });
+          map.on("click", "trip-stops-points", (event) => {
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            popup
+              .setLngLat(feature.geometry.coordinates)
+              .setHTML(popupForFeature(feature))
+              .addTo(map);
+          });
+          map.on("mouseenter", "trip-stops-clusters", (event) => {
+            map.getCanvas().style.cursor = "pointer";
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            popup
+              .setLngLat(feature.geometry.coordinates)
+              .setHTML(popupHtml(`${feature.properties?.point_count || 0} nearby stops`, "Zoom in or click to expand"))
+              .addTo(map);
+          });
+          map.on("mouseleave", "trip-stops-clusters", () => {
+            map.getCanvas().style.cursor = "";
+            popup.remove();
+          });
+          map.on("click", "trip-stops-clusters", (event) => {
+            const feature = event.features && event.features[0];
+            if (!feature) return;
+            const clusterId = feature.properties?.cluster_id;
+            const source = map.getSource("trip-stops");
+            if (!source || typeof source.getClusterExpansionZoom !== "function") {
+              return;
+            }
+            source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+              if (error) return;
+              map.easeTo({
+                center: feature.geometry.coordinates,
+                zoom: Math.min(zoom, 8),
+                duration: 350,
+              });
+            });
+          });
         });
       });
     })();
