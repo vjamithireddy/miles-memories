@@ -9,6 +9,8 @@ import secrets
 from typing import Any, List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -38,6 +40,23 @@ def _html_response(content: str) -> HTMLResponse:
             "Pragma": "no-cache",
         },
     )
+
+
+@app.get("/map-tiles/osm/{z}/{x}/{y}.png")
+def proxy_osm_tile(z: int, x: int, y: int) -> Response:
+    request = UrlRequest(
+        f"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        headers={
+            "User-Agent": "MilesMemories/1.0 (+https://travel.navi-services.com)",
+            "Accept": "image/png,image/*;q=0.8,*/*;q=0.5",
+        },
+    )
+    with urlopen(request, timeout=12) as upstream:
+        return Response(
+            content=upstream.read(),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
 
 def _admin_auth_failure(message: str, status_code: int = 401) -> PlainTextResponse:
@@ -2259,9 +2278,7 @@ def _render_public_maplibre_script() -> str:
               "osm-raster": {
                 type: "raster",
                 tiles: [
-                  "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  "/map-tiles/osm/{z}/{x}/{y}.png",
                 ],
                 tileSize: 256,
                 attribution:
@@ -2559,7 +2576,7 @@ def _render_route_map_preview(
             tile_width = (tile_size / map_pixel_width) * width
             tile_height = (tile_size / map_pixel_height) * height
             tiles.append(
-                f'<img class="leg-map-tile" src="https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png" '
+                f'<img class="leg-map-tile" src="/map-tiles/osm/{zoom}/{tile_x}/{tile_y}.png" '
                 f'alt="" loading="lazy" style="left:{(left / width) * 100:.4f}%;top:{(top / height) * 100:.4f}%;'
                 f'width:{(tile_width / width) * 100:.4f}%;height:{(tile_height / height) * 100:.4f}%;">'
             )
