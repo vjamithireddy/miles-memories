@@ -2262,6 +2262,25 @@ def _render_public_maplibre_script() -> str:
         map.on("zoomend", render);
       };
 
+      const rasterStyle = {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: ["/map-tiles/osm/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            attribution: "© OpenStreetMap contributors",
+          },
+        },
+        layers: [
+          {
+            id: "osm",
+            type: "raster",
+            source: "osm",
+          },
+        ],
+      };
+
       const initMap = (node, payload, { clusterStops = false, fitMaxZoom = 6.5, maxZoom = 8 } = {}) => {
         const routeData = payload.route || { type: "FeatureCollection", features: [] };
         const stopData = payload.stops || { type: "FeatureCollection", features: [] };
@@ -2272,7 +2291,7 @@ def _render_public_maplibre_script() -> str:
         const routeLineId = `trip-route-line-${suffix}`;
         const map = new maplibregl.Map({
           container: node,
-          style: "https://demotiles.maplibre.org/style.json",
+          style: rasterStyle,
           attributionControl: true,
           cooperativeGestures: false,
           dragRotate: false,
