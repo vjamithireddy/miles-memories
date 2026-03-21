@@ -2365,6 +2365,8 @@ def _render_public_maplibre_script() -> str:
         } else {
           map.on("load", setupMapContent);
         }
+
+        return map;
       };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
@@ -2375,12 +2377,46 @@ def _render_public_maplibre_script() -> str:
         }
       });
 
-      document.querySelectorAll("[data-public-leg-map]").forEach((node) => {
-        try {
-          initMap(node, JSON.parse(node.dataset.publicLegMap || "{}"), { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
-        } catch (error) {
-          console.error("Failed to initialize public leg map", error);
+      const activeLegMaps = new WeakMap();
+
+      document.querySelectorAll(".public-leg-card").forEach((card) => {
+        const node = card.querySelector("[data-public-leg-map]");
+        if (!node) {
+          return;
         }
+
+        const mountLegMap = () => {
+          if (activeLegMaps.has(node)) {
+            return;
+          }
+          try {
+            const map = initMap(node, JSON.parse(node.dataset.publicLegMap || "{}"), { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
+            activeLegMaps.set(node, map);
+          } catch (error) {
+            console.error("Failed to initialize public leg map", error);
+          }
+        };
+
+        const unmountLegMap = () => {
+          const map = activeLegMaps.get(node);
+          if (map && typeof map.remove === "function") {
+            map.remove();
+          }
+          activeLegMaps.delete(node);
+          node.innerHTML = "";
+        };
+
+        if (card.open) {
+          mountLegMap();
+        }
+
+        card.addEventListener("toggle", () => {
+          if (card.open) {
+            mountLegMap();
+          } else {
+            unmountLegMap();
+          }
+        });
       });
     })();
   </script>
