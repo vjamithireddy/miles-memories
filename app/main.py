@@ -746,6 +746,12 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       padding: 0;
       background: transparent;
       cursor: pointer;
+      position: relative;
+      z-index: 12;
+    }}
+    .maplibre-map .maplibregl-marker {{
+      z-index: 12;
+      pointer-events: auto;
     }}
     .route-stop-marker {{
       width: 34px;
@@ -2072,6 +2078,28 @@ def _render_public_maplibre_script() -> str:
         button.className = `route-stop-marker route-stop-marker--${markerKind(feature)}`;
         button.setAttribute("aria-label", `${markerLabel(feature)} (${markerMeta(feature)})`);
         button.textContent = markerCode(feature);
+        button.style.width = "34px";
+        button.style.height = "34px";
+        button.style.borderRadius = "999px";
+        button.style.display = "grid";
+        button.style.placeItems = "center";
+        button.style.border = "3px solid #fff8ef";
+        button.style.boxShadow = "0 8px 18px rgba(27, 36, 51, 0.22)";
+        button.style.color = "#fff8ef";
+        button.style.fontFamily = 'Georgia, "Times New Roman", serif';
+        button.style.fontSize = "0.72rem";
+        button.style.fontWeight = "800";
+        button.style.background = ({
+          airport: "#365f98",
+          fuel: "#c26a39",
+          park: "#2f6c5b",
+          camp: "#5e8c37",
+          lodging: "#7f5ea7",
+          food: "#b84f51",
+          parking: "#6e7b8f",
+          school: "#8a6a34",
+          default: "#8f5f48",
+        })[markerKind(feature)] || "#8f5f48";
         return button;
       };
 
@@ -2081,6 +2109,18 @@ def _render_public_maplibre_script() -> str:
         button.className = "route-stop-cluster";
         button.setAttribute("aria-label", `${count} stops`);
         button.textContent = String(count);
+        button.style.minWidth = "34px";
+        button.style.height = "34px";
+        button.style.padding = "0 10px";
+        button.style.borderRadius = "999px";
+        button.style.display = "grid";
+        button.style.placeItems = "center";
+        button.style.background = "#d06b39";
+        button.style.color = "#fff8ef";
+        button.style.fontFamily = 'Georgia, "Times New Roman", serif';
+        button.style.fontSize = "0.78rem";
+        button.style.fontWeight = "800";
+        button.style.boxShadow = "0 8px 18px rgba(27, 36, 51, 0.22)";
         return button;
       };
 
