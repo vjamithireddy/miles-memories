@@ -2278,7 +2278,7 @@ def _render_public_maplibre_script() -> str:
               "osm-raster": {
                 type: "raster",
                 tiles: [
-                  "/map-tiles/osm/{z}/{x}/{y}.png",
+                  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 ],
                 tileSize: 256,
                 attribution:
