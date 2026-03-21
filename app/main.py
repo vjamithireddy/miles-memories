@@ -2253,7 +2253,31 @@ def _render_public_maplibre_script() -> str:
         const routeLineId = `trip-route-line-${suffix}`;
         const map = new maplibregl.Map({
           container: node,
-          style: "https://demotiles.maplibre.org/style.json",
+          style: {
+            version: 8,
+            sources: {
+              "osm-raster": {
+                type: "raster",
+                tiles: [
+                  "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                ],
+                tileSize: 256,
+                attribution:
+                  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+              },
+            },
+            layers: [
+              {
+                id: "osm-raster-layer",
+                type: "raster",
+                source: "osm-raster",
+                minzoom: 0,
+                maxzoom: 19,
+              },
+            ],
+          },
           attributionControl: true,
           cooperativeGestures: false,
           dragRotate: false,
