@@ -2209,7 +2209,10 @@ def _render_public_maplibre_script() -> str:
         };
         map.addControl(new HomeControl(fitBounds, "H"), "top-right");
 
-        map.on("load", () => {
+        let initialized = false;
+        const setupMapContent = () => {
+          if (initialized) return;
+          initialized = true;
           if (typeof map.setProjection === "function") {
             map.setProjection({ name: "mercator" });
           }
@@ -2316,7 +2319,13 @@ def _render_public_maplibre_script() -> str:
           }
 
           fitBounds();
-        });
+        };
+
+        if (typeof map.isStyleLoaded === "function" && map.isStyleLoaded()) {
+          setupMapContent();
+        } else {
+          map.on("load", setupMapContent);
+        }
       };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
