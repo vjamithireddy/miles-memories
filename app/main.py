@@ -743,7 +743,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       padding: 0;
       background: transparent;
       cursor: pointer;
-      transform: translate(-50%, -50%);
     }}
     .route-stop-marker {{
       width: 34px;
@@ -769,7 +768,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     .route-stop-marker--default {{ background: #8f5f48; }}
     .route-stop-marker:hover,
     .route-stop-marker:focus-visible {{
-      transform: translate(-50%, -50%) scale(1.08);
+      transform: scale(1.08);
       box-shadow: 0 10px 22px rgba(27, 36, 51, 0.28);
       outline: none;
     }}
@@ -790,7 +789,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .route-stop-cluster:hover,
     .route-stop-cluster:focus-visible {{
-      transform: translate(-50%, -50%) scale(1.06);
+      transform: scale(1.06);
       box-shadow: 0 10px 22px rgba(27, 36, 51, 0.28);
       outline: none;
     }}
