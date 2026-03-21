@@ -2180,6 +2180,69 @@ def _render_public_maplibre_script() -> str:
         });
       };
 
+      const attachMarkerPopup = (map, marker, lngLat, feature) => {
+        const show = () =>
+          popup
+            .setLngLat(lngLat)
+            .setHTML(popupHtml(markerLabel(feature), markerMeta(feature)))
+            .addTo(map);
+        const hide = () => popup.remove();
+        const element = marker.getElement();
+        element.addEventListener("mouseenter", show);
+        element.addEventListener("mouseleave", hide);
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          show();
+        });
+      };
+
+      const mountStopMarkers = (map, stopFeatures, { clustered = false, maxZoom = 8 } = {}) => {
+        let rendered = [];
+
+        const clear = () => {
+          rendered.forEach((marker) => marker.remove());
+          rendered = [];
+        };
+
+        const render = () => {
+          clear();
+          const items = clustered ? clusterStopFeatures(map, stopFeatures) : stopFeatures.map((feature) => ({ type: "single", feature }));
+          items.forEach((item) => {
+            if (item.type === "cluster") {
+              const element = buildClusterElement(item.count);
+              element.addEventListener("click", (event) => {
+                event.stopPropagation();
+                map.easeTo({
+                  center: item.lngLat,
+                  zoom: Math.min(map.getZoom() + 1.5, maxZoom),
+                  duration: 300,
+                });
+              });
+              const marker = new maplibregl.Marker({ element, anchor: "center" })
+                .setLngLat(item.lngLat)
+                .addTo(map);
+              rendered.push(marker);
+              return;
+            }
+
+            const feature = item.feature;
+            const lngLat = feature.geometry.coordinates;
+            const marker = new maplibregl.Marker({
+              element: buildStopMarkerElement(feature),
+              anchor: "center",
+            })
+              .setLngLat(lngLat)
+              .addTo(map);
+            attachMarkerPopup(map, marker, lngLat, feature);
+            rendered.push(marker);
+          });
+        };
+
+        render();
+        map.on("moveend", render);
+        map.on("zoomend", render);
+      };
+
       const initMap = (node, payload, { clusterStops = false, fitMaxZoom = 6.5, maxZoom = 8 } = {}) => {
         const routeData = payload.route || { type: "FeatureCollection", features: [] };
         const stopData = payload.stops || { type: "FeatureCollection", features: [] };
@@ -2188,9 +2251,6 @@ def _render_public_maplibre_script() -> str:
         const routeSourceId = `trip-route-${suffix}`;
         const routeHaloId = `trip-route-halo-${suffix}`;
         const routeLineId = `trip-route-line-${suffix}`;
-        const stopSourceId = `trip-stops-${suffix}`;
-        const domMarkers = [];
-
         const map = new maplibregl.Map({
           container: node,
           style: "https://demotiles.maplibre.org/style.json",
@@ -2256,66 +2316,7 @@ def _render_public_maplibre_script() -> str:
 
           const stopFeatures = Array.isArray(stopData.features) ? stopData.features : [];
           if (stopFeatures.length) {
-            const renderStopMarkers = () => {
-              while (domMarkers.length) {
-                domMarkers.pop()?.remove();
-              }
-              const entries = clusterStops ? clusterStopFeatures(map, stopFeatures) : stopFeatures.map((feature) => ({ type: "single", feature }));
-              entries.forEach((entry) => {
-                if (entry.type === "single") {
-                  const feature = entry.feature;
-                  const marker = new maplibregl.Marker({ element: buildStopMarkerElement(feature), anchor: "center" })
-                    .setLngLat(feature.geometry.coordinates)
-                    .addTo(map);
-                  const node = marker.getElement();
-                  const showPopup = () => {
-                    popup
-                      .setLngLat(feature.geometry.coordinates)
-                      .setHTML(popupHtml(markerLabel(feature), markerMeta(feature)))
-                      .addTo(map);
-                  };
-                  node.addEventListener("mouseenter", () => {
-                    map.getCanvas().style.cursor = "pointer";
-                    showPopup();
-                  });
-                  node.addEventListener("mouseleave", () => {
-                    map.getCanvas().style.cursor = "";
-                    popup.remove();
-                  });
-                  node.addEventListener("click", (event) => {
-                    event.preventDefault();
-                    showPopup();
-                  });
-                  domMarkers.push(marker);
-                  return;
-                }
-
-                const marker = new maplibregl.Marker({ element: buildClusterElement(entry.count), anchor: "center" })
-                  .setLngLat(entry.lngLat)
-                  .addTo(map);
-                const node = marker.getElement();
-                node.addEventListener("mouseenter", () => {
-                  map.getCanvas().style.cursor = "pointer";
-                  popup
-                    .setLngLat(entry.lngLat)
-                    .setHTML(popupHtml(entry.label, "Zoom in to view individual stops"))
-                    .addTo(map);
-                });
-                node.addEventListener("mouseleave", () => {
-                  map.getCanvas().style.cursor = "";
-                  popup.remove();
-                });
-                node.addEventListener("click", (event) => {
-                  event.preventDefault();
-                  map.easeTo({ center: entry.lngLat, zoom: Math.min(map.getZoom() + 1.4, maxZoom) });
-                });
-                domMarkers.push(marker);
-              });
-            };
-
-            map.on("moveend", renderStopMarkers);
-            map.on("zoomend", renderStopMarkers);
-            renderStopMarkers();
+            mountStopMarkers(map, stopFeatures, { clustered: clusterStops, maxZoom });
           }
 
           fitBounds();
