@@ -2086,182 +2086,6 @@ def _render_public_maplibre_script() -> str:
         });
       };
 
-      const markerLabel = (feature) => feature.properties?.label || "Trip stop";
-      const markerMeta = (feature) => feature.properties?.type_label || "Stop";
-      const markerKind = (feature) => feature.properties?.kind || "default";
-      const markerCode = (feature) => feature.properties?.kind_code || "ST";
-
-      const buildStopMarkerElement = (feature) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `route-stop-marker route-stop-marker--${markerKind(feature)}`;
-        button.setAttribute("aria-label", `${markerLabel(feature)} (${markerMeta(feature)})`);
-        button.textContent = markerCode(feature);
-        button.style.width = "34px";
-        button.style.height = "34px";
-        button.style.borderRadius = "999px";
-        button.style.display = "grid";
-        button.style.placeItems = "center";
-        button.style.border = "3px solid #fff8ef";
-        button.style.boxShadow = "0 8px 18px rgba(27, 36, 51, 0.22)";
-        button.style.color = "#fff8ef";
-        button.style.fontFamily = 'Georgia, "Times New Roman", serif';
-        button.style.fontSize = "0.72rem";
-        button.style.fontWeight = "800";
-        button.style.background = ({
-          airport: "#365f98",
-          fuel: "#c26a39",
-          park: "#2f6c5b",
-          camp: "#5e8c37",
-          lodging: "#7f5ea7",
-          food: "#b84f51",
-          parking: "#6e7b8f",
-          school: "#8a6a34",
-          default: "#8f5f48",
-        })[markerKind(feature)] || "#8f5f48";
-        return button;
-      };
-
-      const buildClusterElement = (count) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "route-stop-cluster";
-        button.setAttribute("aria-label", `${count} stops`);
-        button.textContent = String(count);
-        button.style.minWidth = "34px";
-        button.style.height = "34px";
-        button.style.padding = "0 10px";
-        button.style.borderRadius = "999px";
-        button.style.display = "grid";
-        button.style.placeItems = "center";
-        button.style.background = "#d06b39";
-        button.style.color = "#fff8ef";
-        button.style.fontFamily = 'Georgia, "Times New Roman", serif';
-        button.style.fontSize = "0.78rem";
-        button.style.fontWeight = "800";
-        button.style.boxShadow = "0 8px 18px rgba(27, 36, 51, 0.22)";
-        return button;
-      };
-
-      const clusterStopFeatures = (map, features) => {
-        const zoom = typeof map.getZoom === "function" ? map.getZoom() : 0;
-        const threshold =
-          zoom >= 8 ? 0 :
-          zoom >= 7 ? 22 :
-          zoom >= 6 ? 30 :
-          zoom >= 5 ? 42 :
-          56;
-        if (!threshold) {
-          return features.map((feature) => ({ type: "single", feature }));
-        }
-
-        const clusters = [];
-        features.forEach((feature) => {
-          const [lng, lat] = feature.geometry.coordinates || [];
-          if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-          const point = map.project([lng, lat]);
-          let target = null;
-          for (const cluster of clusters) {
-            const dx = point.x - cluster.anchor.x;
-            const dy = point.y - cluster.anchor.y;
-            if (Math.hypot(dx, dy) <= threshold) {
-              target = cluster;
-              break;
-            }
-          }
-          if (!target) {
-            target = {
-              items: [],
-              anchor: { x: point.x, y: point.y },
-              lngSum: 0,
-              latSum: 0,
-            };
-            clusters.push(target);
-          }
-          target.items.push(feature);
-          target.lngSum += lng;
-          target.latSum += lat;
-          target.anchor.x = (target.anchor.x * (target.items.length - 1) + point.x) / target.items.length;
-          target.anchor.y = (target.anchor.y * (target.items.length - 1) + point.y) / target.items.length;
-        });
-
-        return clusters.map((cluster) => {
-          if (cluster.items.length === 1) {
-            return { type: "single", feature: cluster.items[0] };
-          }
-          return {
-            type: "cluster",
-            count: cluster.items.length,
-            lngLat: [cluster.lngSum / cluster.items.length, cluster.latSum / cluster.items.length],
-            label: `${cluster.items.length} stops`,
-            features: cluster.items,
-          };
-        });
-      };
-
-      const attachMarkerPopup = (map, marker, lngLat, feature) => {
-        const show = () =>
-          popup
-            .setLngLat(lngLat)
-            .setHTML(popupHtml(markerLabel(feature), markerMeta(feature)))
-            .addTo(map);
-        const hide = () => popup.remove();
-        const element = marker.getElement();
-        element.addEventListener("mouseenter", show);
-        element.addEventListener("mouseleave", hide);
-        element.addEventListener("click", (event) => {
-          event.stopPropagation();
-          show();
-        });
-      };
-
-      const mountStopMarkers = (map, stopFeatures, { clustered = false, maxZoom = 8 } = {}) => {
-        let rendered = [];
-
-        const clear = () => {
-          rendered.forEach((marker) => marker.remove());
-          rendered = [];
-        };
-
-        const render = () => {
-          clear();
-          const items = clustered ? clusterStopFeatures(map, stopFeatures) : stopFeatures.map((feature) => ({ type: "single", feature }));
-          items.forEach((item) => {
-            if (item.type === "cluster") {
-              const element = buildClusterElement(item.count);
-              element.addEventListener("click", (event) => {
-                event.stopPropagation();
-                map.easeTo({
-                  center: item.lngLat,
-                  zoom: Math.min(map.getZoom() + 1.5, maxZoom),
-                  duration: 300,
-                });
-              });
-              const marker = new maplibregl.Marker({ element, anchor: "center" })
-                .setLngLat(item.lngLat)
-                .addTo(map);
-              rendered.push(marker);
-              return;
-            }
-
-            const feature = item.feature;
-            const lngLat = feature.geometry.coordinates;
-            const marker = new maplibregl.Marker({
-              element: buildStopMarkerElement(feature),
-              anchor: "center",
-            })
-              .setLngLat(lngLat)
-              .addTo(map);
-            attachMarkerPopup(map, marker, lngLat, feature);
-            rendered.push(marker);
-          });
-        };
-
-        render();
-        map.on("moveend", render);
-        map.on("zoomend", render);
-      };
-
       const rasterStyle = {
         version: 8,
         sources: {
@@ -2289,6 +2113,11 @@ def _render_public_maplibre_script() -> str:
         const routeSourceId = `trip-route-${suffix}`;
         const routeHaloId = `trip-route-halo-${suffix}`;
         const routeLineId = `trip-route-line-${suffix}`;
+        const stopSourceId = `trip-stops-${suffix}`;
+        const stopClusterId = `trip-stops-clusters-${suffix}`;
+        const stopClusterCountId = `trip-stops-cluster-count-${suffix}`;
+        const stopCircleId = `trip-stops-circles-${suffix}`;
+        const stopLabelId = `trip-stops-labels-${suffix}`;
         const map = new maplibregl.Map({
           container: node,
           style: rasterStyle,
@@ -2354,7 +2183,106 @@ def _render_public_maplibre_script() -> str:
 
           const stopFeatures = Array.isArray(stopData.features) ? stopData.features : [];
           if (stopFeatures.length) {
-            mountStopMarkers(map, stopFeatures, { clustered: clusterStops, maxZoom });
+            map.addSource(stopSourceId, {
+              type: "geojson",
+              data: stopData,
+              cluster: clusterStops,
+              clusterMaxZoom: Math.max(maxZoom - 1, 1),
+              clusterRadius: 40,
+            });
+            map.addLayer({
+              id: stopClusterId,
+              type: "circle",
+              source: stopSourceId,
+              filter: ["has", "point_count"],
+              paint: {
+                "circle-color": "#d06b39",
+                "circle-radius": [
+                  "step",
+                  ["get", "point_count"],
+                  16,
+                  8,
+                  18,
+                  20,
+                  22,
+                ],
+                "circle-stroke-color": "#fff8ef",
+                "circle-stroke-width": 3,
+              },
+            });
+            map.addLayer({
+              id: stopClusterCountId,
+              type: "symbol",
+              source: stopSourceId,
+              filter: ["has", "point_count"],
+              layout: {
+                "text-field": ["get", "point_count_abbreviated"],
+                "text-font": ["Open Sans Bold"],
+                "text-size": 13,
+              },
+              paint: { "text-color": "#fff8ef" },
+            });
+            map.addLayer({
+              id: stopCircleId,
+              type: "circle",
+              source: stopSourceId,
+              filter: ["!", ["has", "point_count"]],
+              paint: {
+                "circle-radius": 16,
+                "circle-color": [
+                  "match",
+                  ["coalesce", ["get", "kind"], "default"],
+                  "airport", "#365f98",
+                  "fuel", "#c26a39",
+                  "park", "#2f6c5b",
+                  "camp", "#5e8c37",
+                  "lodging", "#7f5ea7",
+                  "food", "#b84f51",
+                  "parking", "#6e7b8f",
+                  "school", "#8a6a34",
+                  "#8f5f48",
+                ],
+                "circle-stroke-color": "#fff8ef",
+                "circle-stroke-width": 3,
+              },
+            });
+            map.addLayer({
+              id: stopLabelId,
+              type: "symbol",
+              source: stopSourceId,
+              filter: ["!", ["has", "point_count"]],
+              layout: {
+                "text-field": ["coalesce", ["get", "kind_code"], "ST"],
+                "text-font": ["Open Sans Bold"],
+                "text-size": 12,
+                "text-allow-overlap": true,
+                "text-ignore-placement": true,
+              },
+              paint: { "text-color": "#fff8ef" },
+            });
+
+            addPopupHandlers(map, stopCircleId);
+            map.on("click", stopClusterId, (event) => {
+              const feature = event.features && event.features[0];
+              if (!feature) return;
+              const clusterId = feature.properties?.cluster_id;
+              const source = map.getSource(stopSourceId);
+              if (!source || typeof source.getClusterExpansionZoom !== "function") return;
+              source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+                if (error) return;
+                map.easeTo({
+                  center: feature.geometry.coordinates,
+                  zoom: Math.min(zoom, maxZoom),
+                  duration: 300,
+                });
+              });
+            });
+            map.on("mouseenter", stopClusterId, () => {
+              map.getCanvas().style.cursor = "pointer";
+            });
+            map.on("mouseleave", stopClusterId, () => {
+              map.getCanvas().style.cursor = "";
+            });
           }
 
           fitBounds();
