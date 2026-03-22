@@ -2216,11 +2216,16 @@ def _render_public_maplibre_script() -> str:
               source: stopSourceId,
               filter: ["has", "point_count"],
               layout: {
-                "text-field": ["get", "point_count_abbreviated"],
-                "text-font": ["Open Sans Bold"],
+                "text-field": ["to-string", ["get", "point_count"]],
                 "text-size": 13,
+                "text-allow-overlap": true,
+                "text-ignore-placement": true,
               },
-              paint: { "text-color": "#fff8ef" },
+              paint: {
+                "text-color": "#fff8ef",
+                "text-halo-color": "#8a4522",
+                "text-halo-width": 1.25,
+              },
             });
             map.addLayer({
               id: stopCircleId,
