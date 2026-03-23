@@ -1465,6 +1465,15 @@ def _build_route_stop_markers(
     for index in range(len(route_places)):
         if index in matched:
             markers.append(matched[index])
+    seen = {(round(item["lat"], 5), round(item["lon"], 5)) for item in markers}
+    for marker in _build_trip_stop_markers(
+        travel_legs, include_kinds={"airport", "park"}
+    ):
+        key = (round(marker["lat"], 5), round(marker["lon"], 5))
+        if key in seen:
+            continue
+        seen.add(key)
+        markers.append(marker)
     return markers
 
 
