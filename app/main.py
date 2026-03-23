@@ -2217,6 +2217,10 @@ def _render_public_maplibre_script() -> str:
           maxZoom,
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+        if (window.ResizeObserver) {
+          const resizeObserver = new ResizeObserver(() => map.resize());
+          resizeObserver.observe(node);
+        }
 
         const fitBounds = () => {
           map.fitBounds(clampBoundsToLower48(bounds), { padding: 36, duration: 350, maxZoom: fitMaxZoom });
@@ -2304,6 +2308,7 @@ def _render_public_maplibre_script() -> str:
               filter: ["has", "point_count"],
               layout: {
                 "text-field": ["to-string", ["get", "point_count"]],
+                "text-font": ["Noto Sans Regular"],
                 "text-size": 13,
                 "text-allow-overlap": true,
                 "text-ignore-placement": true,
@@ -2345,7 +2350,7 @@ def _render_public_maplibre_script() -> str:
               filter: ["!", ["has", "point_count"]],
               layout: {
                 "text-field": ["coalesce", ["get", "kind_code"], "ST"],
-                "text-font": ["Open Sans Bold"],
+                "text-font": ["Noto Sans Regular"],
                 "text-size": 12,
                 "text-allow-overlap": true,
                 "text-ignore-placement": true,
@@ -2360,12 +2365,31 @@ def _render_public_maplibre_script() -> str:
               const clusterId = feature.properties?.cluster_id;
               const source = map.getSource(stopSourceId);
               if (!source || typeof source.getClusterExpansionZoom !== "function") return;
-              source.getClusterExpansionZoom(clusterId, (error, zoom) => {
-                if (error) return;
-                map.easeTo({
-                  center: feature.geometry.coordinates,
-                  zoom: Math.min(zoom, maxZoom),
-                  duration: 300,
+              source.getClusterLeaves(clusterId, 64, 0, (leafError, leaves) => {
+                if (!leafError && Array.isArray(leaves) && leaves.length) {
+                  const coords = leaves
+                    .map((leaf) => leaf.geometry && leaf.geometry.coordinates)
+                    .filter(Boolean);
+                  if (coords.length) {
+                    const lons = coords.map((coord) => coord[0]);
+                    const lats = coords.map((coord) => coord[1]);
+                    map.fitBounds(
+                      [
+                        [Math.min(...lons), Math.min(...lats)],
+                        [Math.max(...lons), Math.max(...lats)],
+                      ],
+                      { padding: 48, duration: 350, maxZoom }
+                    );
+                    return;
+                  }
+                }
+                source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+                  if (error) return;
+                  map.easeTo({
+                    center: feature.geometry.coordinates,
+                    zoom: Math.min(zoom, maxZoom),
+                    duration: 300,
+                  });
                 });
               });
             });
@@ -2394,7 +2418,7 @@ def _render_public_maplibre_script() -> str:
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
         try {
-          initMap(node, JSON.parse(node.dataset.publicTripMap || "{}"), { clusterStops: true, fitMaxZoom: 6.5, maxZoom: 8 });
+          initMap(node, JSON.parse(node.dataset.publicTripMap || "{}"), { clusterStops: true, fitMaxZoom: 6.5, maxZoom: 12 });
         } catch (error) {
           console.error("Failed to initialize public trip map", error);
         }
