@@ -2315,6 +2315,9 @@ def _render_public_maplibre_script() -> str:
           }
 
           fitBounds();
+          window.setTimeout(() => {
+            map.resize();
+          }, 50);
         };
 
         if (typeof map.isStyleLoaded === "function" && map.isStyleLoaded()) {
@@ -4511,80 +4514,88 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             field.addEventListener("blur", () => autosaveForm(overviewForm));
           }});
 
-        overviewForm.querySelectorAll('.segmented-control button[name="action"]').forEach((button) => {{
-          button.addEventListener("click", async (event) => {{
+        overviewForm.addEventListener("submit", async (event) => {{
+          const submitter = event.submitter;
+          if (!submitter || submitter.name !== "action") {{
+            return;
+          }}
+          if (overviewForm.dataset.saveState === "saving") {{
             event.preventDefault();
-            if (overviewForm.dataset.saveState === "saving") {{
-              return;
+            return;
+          }}
+          if (overviewForm.dataset.forceSubmit === "true") {{
+            delete overviewForm.dataset.forceSubmit;
+            return;
+          }}
+          event.preventDefault();
+          const body = new URLSearchParams(new FormData(overviewForm));
+          body.set("action", submitter.value);
+          overviewForm.dataset.saveState = "saving";
+          try {{
+            const response = await fetch(overviewForm.action, {{
+              method: "POST",
+              credentials: "same-origin",
+              headers: {{
+                "X-Requested-With": "fetch"
+              }},
+              body
+            }});
+            if (!response.ok) {{
+              throw new Error(`Action failed with ${{response.status}}`);
             }}
-            const body = new URLSearchParams(new FormData(overviewForm));
-            body.set("action", button.value);
-            overviewForm.dataset.saveState = "saving";
-            try {{
-              const response = await fetch(overviewForm.action, {{
-                method: "POST",
-                credentials: "same-origin",
-                headers: {{
-                  "X-Requested-With": "fetch"
-                }},
-                body
-              }});
-              if (!response.ok) {{
-                throw new Error(`Action failed with ${{response.status}}`);
-              }}
-              const payload = await response.json();
-              overviewForm.dataset.saveState = "saved";
-              const badgeSlot = overviewForm.querySelector(".review-badge-slot");
-              if (badgeSlot && payload.badge_html) {{
-                badgeSlot.innerHTML = payload.badge_html;
-              }}
-              const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
-              reviewButtons.forEach((node) => {{
-                const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
-                node.classList.toggle("is-current", active);
-                node.setAttribute("aria-pressed", active ? "true" : "false");
-              }});
-              const visibilityEnabled = payload.review_state === "yes";
-              overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
-                const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
-                node.classList.toggle("is-current", active);
-                node.setAttribute("aria-pressed", active ? "true" : "false");
-                node.disabled = !visibilityEnabled;
-              }});
-              const workflowHelp = overviewForm.querySelector(".workflow-help");
-              if (workflowHelp) {{
-                if (payload.review_state === "yes") {{
-                  workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
-                }} else if (payload.review_state === "no") {{
-                  workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
-                }} else {{
-                  workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
-                }}
-              }}
-              const existing = document.querySelector("[data-toast]");
-              if (existing) {{
-                existing.remove();
-              }}
-              const toast = document.createElement("div");
-              toast.className = "toast";
-              toast.dataset.toast = payload.saved || "review";
-              toast.textContent = payload.message || "Update saved.";
-              document.body.appendChild(toast);
-              window.setTimeout(() => {{
-                toast.classList.add("is-hiding");
-                window.setTimeout(() => toast.remove(), 240);
-              }}, 2200);
-              window.setTimeout(() => {{
-                if (overviewForm.dataset.saveState === "saved") {{
-                  delete overviewForm.dataset.saveState;
-                }}
-              }}, 1600);
-            }} catch (error) {{
-              delete overviewForm.dataset.saveState;
-              console.error(error);
-              overviewForm.submit();
+            const payload = await response.json();
+            overviewForm.dataset.saveState = "saved";
+            const badgeSlot = overviewForm.querySelector(".review-badge-slot");
+            if (badgeSlot && payload.badge_html) {{
+              badgeSlot.innerHTML = payload.badge_html;
             }}
-          }});
+            const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
+            reviewButtons.forEach((node) => {{
+              const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
+              node.classList.toggle("is-current", active);
+              node.setAttribute("aria-pressed", active ? "true" : "false");
+            }});
+            const visibilityEnabled = payload.review_state === "yes";
+            overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
+              const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
+              node.classList.toggle("is-current", active);
+              node.setAttribute("aria-pressed", active ? "true" : "false");
+              node.disabled = !visibilityEnabled;
+            }});
+            const workflowHelp = overviewForm.querySelector(".workflow-help");
+            if (workflowHelp) {{
+              if (payload.review_state === "yes") {{
+                workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
+              }} else if (payload.review_state === "no") {{
+                workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
+              }} else {{
+                workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
+              }}
+            }}
+            const existing = document.querySelector("[data-toast]");
+            if (existing) {{
+              existing.remove();
+            }}
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.dataset.toast = payload.saved || "review";
+            toast.textContent = payload.message || "Update saved.";
+            document.body.appendChild(toast);
+            window.setTimeout(() => {{
+              toast.classList.add("is-hiding");
+              window.setTimeout(() => toast.remove(), 240);
+            }}, 2200);
+            window.setTimeout(() => {{
+              if (overviewForm.dataset.saveState === "saved") {{
+                delete overviewForm.dataset.saveState;
+              }}
+            }}, 1600);
+          }} catch (error) {{
+            delete overviewForm.dataset.saveState;
+            console.error(error);
+            overviewForm.dataset.forceSubmit = "true";
+            overviewForm.submit();
+          }}
         }});
       }}
 
