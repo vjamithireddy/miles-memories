@@ -4434,7 +4434,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     <section class="hero single-panel">
       <article class="panel">
         <div class="eyebrow">Trip Overview</div>
-        <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review" data-review-submit="full">
+        <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review" data-review-submit="ajax">
           <label class="hero-title-field">
             <span class="sr-only">Trip name</span>
             <input class="hero-title-input" type="text" name="trip_name" value="{title}">
