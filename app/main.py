@@ -1446,6 +1446,18 @@ def _is_route_flow_stop(
         "market",
         "parking",
         "garage",
+        "i-",
+        " i ",
+        "interstate",
+        "highway",
+        "hwy",
+        "us ",
+        "us-",
+        "route",
+        "rte ",
+        "county road",
+        "co rd",
+        "state road",
         "campground",
         "camp site",
         "camp",
@@ -1477,6 +1489,8 @@ def _is_route_flow_stop(
         "school",
         "university",
     )
+    if any(char.isdigit() for char in lowered):
+        return False
     return not any(token in lowered for token in excluded_tokens)
 
 
@@ -1630,6 +1644,14 @@ def _build_public_trip_map_payload(
         "route": {"type": "FeatureCollection", "features": line_features},
         "stops": {"type": "FeatureCollection", "features": stop_features},
     }
+
+
+def _render_admin_trip_map(payload: dict[str, Any]) -> str:
+    return f"""
+    <div class="maplibre-shell">
+      <div class="maplibre-map" data-admin-trip-map='{escape(json.dumps(payload, separators=(",", ":")))}'></div>
+    </div>
+    """
 
 
 def _render_public_trip_map(payload: dict[str, Any]) -> str:
@@ -2086,8 +2108,9 @@ def _render_public_maplibre_script() -> str:
         });
       };
 
-      const rasterStyle = {
+      const mapStyle = {
         version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           osm: {
             type: "raster",
@@ -2097,6 +2120,7 @@ def _render_public_maplibre_script() -> str:
           },
         },
         layers: [
+          { id: "background", type: "background", paint: { "background-color": "#efe5d7" } },
           {
             id: "osm",
             type: "raster",
@@ -2120,7 +2144,7 @@ def _render_public_maplibre_script() -> str:
         const stopLabelId = `trip-stops-labels-${suffix}`;
         const map = new maplibregl.Map({
           container: node,
-          style: rasterStyle,
+          style: mapStyle,
           attributionControl: true,
           cooperativeGestures: false,
           dragRotate: false,
@@ -2310,33 +2334,57 @@ def _render_public_maplibre_script() -> str:
         }
       });
 
-      const activeLegMaps = new WeakMap();
-
-      document.querySelectorAll(".public-leg-card").forEach((card) => {
-        const node = card.querySelector("[data-public-leg-map]");
-        if (!node) {
-          return;
+      document.querySelectorAll("[data-admin-trip-map]").forEach((node) => {
+        try {
+          initMap(node, JSON.parse(node.dataset.adminTripMap || "{}"), { clusterStops: true, fitMaxZoom: 7.5, maxZoom: 9 });
+        } catch (error) {
+          console.error("Failed to initialize admin trip map", error);
         }
+      });
 
+      const activeLegMaps = new Map();
+      const legMapQueue = [];
+      const maxLegMaps = 4;
+
+      const destroyLegMap = (node) => {
+        const map = activeLegMaps.get(node);
+        if (map && typeof map.remove === "function") {
+          map.remove();
+        }
+        activeLegMaps.delete(node);
+        node.innerHTML = "";
+      };
+
+      const registerLegMap = (node, map) => {
+        activeLegMaps.set(node, map);
+        legMapQueue.push(node);
+        while (legMapQueue.length > maxLegMaps) {
+          const oldest = legMapQueue.shift();
+          if (!oldest || oldest === node) continue;
+          if (activeLegMaps.has(oldest)) {
+            destroyLegMap(oldest);
+          }
+        }
+      };
+
+      const bindLegMap = (card, node, payloadKey) => {
         const mountLegMap = () => {
           if (activeLegMaps.has(node)) {
             return;
           }
           try {
-            const map = initMap(node, JSON.parse(node.dataset.publicLegMap || "{}"), { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
-            activeLegMaps.set(node, map);
+            const payload = JSON.parse(node.dataset[payloadKey] || "{}");
+            const map = initMap(node, payload, { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
+            registerLegMap(node, map);
           } catch (error) {
-            console.error("Failed to initialize public leg map", error);
+            console.error("Failed to initialize leg map", error);
           }
         };
 
         const unmountLegMap = () => {
-          const map = activeLegMaps.get(node);
-          if (map && typeof map.remove === "function") {
-            map.remove();
+          if (activeLegMaps.has(node)) {
+            destroyLegMap(node);
           }
-          activeLegMaps.delete(node);
-          node.innerHTML = "";
         };
 
         if (card.open) {
@@ -2350,6 +2398,18 @@ def _render_public_maplibre_script() -> str:
             unmountLegMap();
           }
         });
+      };
+
+      document.querySelectorAll(".public-leg-card").forEach((card) => {
+        const node = card.querySelector("[data-public-leg-map]");
+        if (!node) return;
+        bindLegMap(card, node, "publicLegMap");
+      });
+
+      document.querySelectorAll(".leg-collapse").forEach((card) => {
+        const node = card.querySelector("[data-admin-leg-map]");
+        if (!node) return;
+        bindLegMap(card, node, "adminLegMap");
       });
     })();
   </script>
@@ -3262,6 +3322,32 @@ def _render_trip_destination_page(trip: dict, *, return_to: str) -> str:
       box-shadow: 0 18px 40px var(--shadow);
       padding: 24px;
     }}
+    .maplibre-shell {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: #efe5d7;
+    }}
+    .maplibre-map {{
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      min-height: 260px;
+    }}
+    .maplibregl-popup-content {{
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fffdf7;
+      box-shadow: 0 10px 26px rgba(33, 24, 14, 0.18);
+      font-family: Georgia, "Times New Roman", serif;
+    }}
+    .maplibregl-ctrl.public-home-ctrl button {{
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 700;
+      color: #2b3748;
+    }}
+    .maplibre-map .maplibregl-marker {{
+      cursor: pointer;
+    }}
     .eyebrow {{ color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.8rem; margin-bottom: 10px; }}
     h1, h2 {{ margin: 0 0 12px; }}
     p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
@@ -3385,16 +3471,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 ):
                     map_points.append(end_point)
     travel_legs = trip.get("travel_legs", [])
-    trip_map_markup = _render_route_map_preview(
+    trip_map_payload = _build_public_trip_map_payload(
+        trip,
+        travel_legs,
         [{"lat": point["lat"], "lon": point["lon"]} for point in map_points],
-        stop_markers=_build_trip_stop_markers(
-            travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS
-        ),
-        aria_label="Trip route map preview",
-        show_route_endpoints=False,
-        show_legend=False,
-        cluster_stop_markers=True,
     )
+    trip_map_markup = _render_admin_trip_map(trip_map_payload)
 
     timeline_items = "".join(
         f"""
@@ -3486,14 +3568,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
               </div>
               <div class="leg-map-panel">
-                <div
-                  class="leg-map"
-                  data-start-lat="{'' if item.get('start_latitude') is None else item['start_latitude']}"
-                  data-start-lon="{'' if item.get('start_longitude') is None else item['start_longitude']}"
-                  data-end-lat="{'' if item.get('end_latitude') is None else item['end_latitude']}"
-                  data-end-lon="{'' if item.get('end_longitude') is None else item['end_longitude']}"
-                  data-path="{escape(json.dumps(item.get('path_points') or []))}"
-                >{_render_leg_map_preview(item)}</div>
+                <div class="maplibre-shell">
+                  <div class="maplibre-map public-leg-maplibre" data-admin-leg-map='{escape(json.dumps(_build_public_leg_map_payload(item), separators=(",", ":")))}'></div>
+                </div>
               </div>
             </div>
           </details>
@@ -3525,7 +3602,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} · MilesMemories</title>
-  <link rel="stylesheet" href="/static/leaflet/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
     :root {{
       --bg: #f2eee6;
@@ -4371,13 +4448,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         const body = new URLSearchParams(new FormData(form));
         form.dataset.saveState = "saving";
         try {{
-          const response = await fetch(form.action, {{
-            method: "POST",
-            headers: {{
-              "X-Requested-With": "fetch"
-            }},
-            body
-          }});
+              const response = await fetch(form.action, {{
+                method: "POST",
+                credentials: "same-origin",
+                headers: {{
+                  "X-Requested-With": "fetch"
+                }},
+                body
+              }});
           if (!response.ok) {{
             throw new Error(`Save failed with ${{response.status}}`);
           }}
@@ -4445,6 +4523,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             try {{
               const response = await fetch(overviewForm.action, {{
                 method: "POST",
+                credentials: "same-origin",
                 headers: {{
                   "X-Requested-With": "fetch"
                 }},
@@ -4503,6 +4582,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             }} catch (error) {{
               delete overviewForm.dataset.saveState;
               console.error(error);
+              overviewForm.submit();
             }}
           }});
         }});
@@ -4517,6 +4597,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       }}
     }})();
   </script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  {_render_public_maplibre_script()}
 </body>
 </html>"""
 
