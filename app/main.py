@@ -472,8 +472,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             for item in trip["timeline"]
             if item.get("latitude") is not None and item.get("longitude") is not None
         ]
+    route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
     trip_map_markup = _render_public_trip_map(
-        _build_public_trip_map_payload(trip, travel_legs, map_points)
+        _build_public_trip_map_payload(
+            trip, travel_legs, map_points, stop_markers=route_stop_markers
+        )
     )
     leg_count = len(travel_legs)
     distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
@@ -1420,6 +1423,51 @@ def _map_is_regional_place(name: Optional[str]) -> bool:
     return any(token in lowered for token in ("county", "state", "region"))
 
 
+def _build_route_stop_markers(
+    travel_legs: List[dict[str, Any]],
+    route_places: List[str],
+) -> list[dict[str, Any]]:
+    if not travel_legs or not route_places:
+        return []
+    normalized_route = [(_map_clean_place_name(name) or "").lower() for name in route_places]
+    match_index = {name: index for index, name in enumerate(normalized_route) if name}
+    matched: dict[int, dict[str, Any]] = {}
+    for item in travel_legs:
+        for name_key, place_key, lat_key, lon_key in (
+            ("start_place_name", "start_place_type", "start_latitude", "start_longitude"),
+            ("end_place_name", "end_place_type", "end_latitude", "end_longitude"),
+        ):
+            raw_name = item.get(name_key)
+            cleaned = _map_clean_place_name(raw_name)
+            if not cleaned:
+                continue
+            normalized = cleaned.lower()
+            if normalized not in match_index:
+                continue
+            index = match_index[normalized]
+            if index in matched:
+                continue
+            lat = item.get(lat_key)
+            lon = item.get(lon_key)
+            if lat is None or lon is None:
+                continue
+            place_type = item.get(place_key) or ""
+            marker_kind = _start_marker_kind_for_leg(
+                {"start_place_name": cleaned, "start_place_type": place_type}
+            )
+            matched[index] = {
+                "lat": float(lat),
+                "lon": float(lon),
+                "kind": marker_kind if marker_kind in OVERALL_TRIP_MAP_MARKER_KINDS else "default",
+                "label": cleaned,
+            }
+    markers: list[dict[str, Any]] = []
+    for index in range(len(route_places)):
+        if index in matched:
+            markers.append(matched[index])
+    return markers
+
+
 def _is_route_flow_stop(
     name: Optional[str],
     place_type: Optional[str] = None,
@@ -1539,6 +1587,8 @@ def _build_public_trip_map_payload(
     trip: dict,
     travel_legs: List[dict],
     map_points: List[dict[str, float]],
+    *,
+    stop_markers: Optional[List[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     line_features: list[dict[str, Any]] = []
     line_coords: list[list[float]] = []
@@ -1607,7 +1657,10 @@ def _build_public_trip_map_payload(
             )
 
     stop_features: list[dict[str, Any]] = []
-    for marker in _build_trip_stop_markers(travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS):
+    markers = stop_markers or _build_trip_stop_markers(
+        travel_legs, include_kinds=OVERALL_TRIP_MAP_MARKER_KINDS
+    )
+    for marker in markers:
         lon = marker.get("lon")
         lat = marker.get("lat")
         if lon is None or lat is None:
