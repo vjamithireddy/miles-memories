@@ -472,12 +472,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             for item in trip["timeline"]
             if item.get("latitude") is not None and item.get("longitude") is not None
         ]
-    route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
-    trip_map_markup = _render_public_trip_map(
-        _build_public_trip_map_payload(
-            trip, travel_legs, map_points, stop_markers=route_stop_markers
-        )
-    )
+    trip_map_markup = ""
     leg_count = len(travel_legs)
     distinct_leg_labels = list(dict.fromkeys(item["label"] for item in travel_legs if item.get("label")))
     travel_modes = ", ".join(distinct_leg_labels[:4]) if distinct_leg_labels else "Story moments pending"
@@ -525,6 +520,12 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         f"Key stops selected from {len(notable_places)} distinct recorded place{'s' if len(notable_places) != 1 else ''}."
         if notable_places
         else "Start and finish from the published travel record."
+    )
+    route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
+    trip_map_markup = _render_public_trip_map(
+        _build_public_trip_map_payload(
+            trip, travel_legs, map_points, stop_markers=route_stop_markers
+        )
     )
     travel_leg_items = "".join(
         f"""
