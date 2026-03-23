@@ -2365,31 +2365,38 @@ def _render_public_maplibre_script() -> str:
               const clusterId = feature.properties?.cluster_id;
               const source = map.getSource(stopSourceId);
               if (!source || typeof source.getClusterExpansionZoom !== "function") return;
-              source.getClusterLeaves(clusterId, 64, 0, (leafError, leaves) => {
-                if (!leafError && Array.isArray(leaves) && leaves.length) {
-                  const coords = leaves
-                    .map((leaf) => leaf.geometry && leaf.geometry.coordinates)
-                    .filter(Boolean);
-                  if (coords.length) {
-                    const lons = coords.map((coord) => coord[0]);
-                    const lats = coords.map((coord) => coord[1]);
-                    map.fitBounds(
-                      [
-                        [Math.min(...lons), Math.min(...lats)],
-                        [Math.max(...lons), Math.max(...lats)],
-                      ],
-                      { padding: 48, duration: 350, maxZoom }
-                    );
-                    return;
+              if (typeof source.getClusterLeaves === "function") {
+                source.getClusterLeaves(clusterId, 200, 0, (leafError, leaves) => {
+                  if (!leafError && Array.isArray(leaves) && leaves.length) {
+                    const bounds = new maplibregl.LngLatBounds();
+                    leaves.forEach((leaf) => {
+                      const coords = leaf.geometry && leaf.geometry.coordinates;
+                      if (Array.isArray(coords) && coords.length === 2) {
+                        bounds.extend(coords);
+                      }
+                    });
+                    if (!bounds.isEmpty()) {
+                      map.fitBounds(bounds, { padding: 48, duration: 350, maxZoom });
+                      return;
+                    }
                   }
-                }
-                source.getClusterExpansionZoom(clusterId, (error, zoom) => {
-                  if (error) return;
-                  map.easeTo({
-                    center: feature.geometry.coordinates,
-                    zoom: Math.min(zoom, maxZoom),
-                    duration: 300,
+                  source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+                    if (error) return;
+                    map.easeTo({
+                      center: feature.geometry.coordinates,
+                      zoom: Math.min(zoom, maxZoom),
+                      duration: 300,
+                    });
                   });
+                });
+                return;
+              }
+              source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+                if (error) return;
+                map.easeTo({
+                  center: feature.geometry.coordinates,
+                  zoom: Math.min(zoom, maxZoom),
+                  duration: 300,
                 });
               });
             });
