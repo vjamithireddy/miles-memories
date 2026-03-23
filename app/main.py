@@ -4434,7 +4434,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     <section class="hero single-panel">
       <article class="panel">
         <div class="eyebrow">Trip Overview</div>
-        <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review">
+        <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review" data-review-submit="full">
           <label class="hero-title-field">
             <span class="sr-only">Trip name</span>
             <input class="hero-title-input" type="text" name="trip_name" value="{title}">
@@ -4609,6 +4609,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           }});
 
         overviewForm.addEventListener("submit", async (event) => {{
+          if (overviewForm.dataset.reviewSubmit === "full") {{
+            return;
+          }}
           const submitter = event.submitter;
           if (!submitter || submitter.name !== "action") {{
             return;
