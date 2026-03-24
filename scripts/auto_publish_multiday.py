@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app import trip_admin
 from app.db import get_conn
@@ -37,7 +37,7 @@ def auto_publish_multiday(*, dry_run: bool = False, limit: int | None = None) ->
     if dry_run:
         return len(trip_ids)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
