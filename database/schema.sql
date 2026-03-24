@@ -209,6 +209,13 @@ CREATE TABLE IF NOT EXISTS trip_segments (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS trip_snapshots (
+    trip_id BIGINT PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+    public_payload_json JSONB NOT NULL,
+    admin_payload_json JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE trip_segments ADD COLUMN IF NOT EXISTS segment_name TEXT;
 ALTER TABLE trip_segments ADD COLUMN IF NOT EXISTS rating INTEGER;
 ALTER TABLE trip_segments ADD COLUMN IF NOT EXISTS source_event_id TEXT;

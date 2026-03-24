@@ -462,7 +462,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     short_timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
     travel_legs = _coalesce_public_story_legs(trip.get("travel_legs", []))
     trip_duration = escape(_format_duration(trip["start_time"], trip["end_time"]))
-    map_points = trip_admin.get_trip_route_points(trip["id"], append_home_if_close=True)
+    map_points = trip.get("map_points") or trip_admin.get_trip_route_points(
+        trip["id"], append_home_if_close=True
+    )
     if not map_points:
         map_points = [
             {
@@ -3581,8 +3583,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     summary = escape(trip["summary_text"] or "No summary yet for this trip.")
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
     travel_legs = trip.get("travel_legs", [])
-    leg_count = len(travel_legs)
-    map_points = [
+    leg_count = len(travel_legs) if travel_legs else int(trip.get("leg_count") or 0)
+    map_points = trip.get("map_points") or [
         {
             "lat": item["latitude"],
             "lon": item["longitude"],
@@ -4590,9 +4592,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           return;
         }}
         const body = new URLSearchParams(new FormData(form));
+        const actionUrl = form.getAttribute("action") || form.action;
         form.dataset.saveState = "saving";
         try {{
-              const response = await fetch(form.action, {{
+              const response = await fetch(actionUrl, {{
                 method: "POST",
                 credentials: "same-origin",
                 headers: {{
@@ -4700,7 +4703,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           body.set("action", submitter.value);
           overviewForm.dataset.saveState = "saving";
           try {{
-            const response = await fetch(overviewForm.action, {{
+            const actionUrl = overviewForm.getAttribute("action") || overviewForm.action;
+            const response = await fetch(actionUrl, {{
               method: "POST",
               credentials: "same-origin",
               headers: {{
@@ -4936,9 +4940,20 @@ def admin_trip_destination_page(
 
 @app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
 def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTMLResponse:
-    trip = trip_admin.get_trip(trip_id)
+    trip = trip_admin.get_trip_light(trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+    snapshot = trip_admin.get_trip_snapshot(trip_id)
+    if snapshot and snapshot.get("public"):
+        public_payload = snapshot["public"]
+        trip["travel_legs"] = public_payload.get("travel_legs", [])
+        trip["map_points"] = public_payload.get("map_points", [])
+    elif trip.get("leg_count"):
+        trip["travel_legs"] = []
+        trip["map_points"] = trip_admin.get_trip_route_points(trip_id, append_home_if_close=True)
+    else:
+        trip["travel_legs"] = []
+        trip["map_points"] = []
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
     return _html_response(_render_trip_detail_page(trip, saved=saved))
@@ -4946,10 +4961,13 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
 
 @app.get("/admin/trip/{trip_id}/legs", response_class=HTMLResponse)
 def admin_trip_leg_items(trip_id: int) -> HTMLResponse:
-    trip = trip_admin.get_trip(trip_id)
-    if not trip:
+    snapshot = trip_admin.get_trip_snapshot(trip_id)
+    if not snapshot:
+        snapshot = trip_admin.build_trip_snapshot(trip_id)
+    if not snapshot:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return HTMLResponse(_render_admin_leg_items(trip_id, trip.get("travel_legs", [])))
+    travel_legs = snapshot.get("public", {}).get("travel_legs", [])
+    return HTMLResponse(_render_admin_leg_items(trip_id, travel_legs))
 
 
 @app.post("/admin/trip/{trip_id}/review")
@@ -4967,7 +4985,7 @@ async def review_trip_from_form(trip_id: int, request: Request) -> Response:
     is_private = None if not is_private_values[0] else _parse_flag(is_private_values[0])
     publish_ready = None if not publish_ready_values[0] else _parse_flag(publish_ready_values[0])
 
-    updated = trip_admin.record_review(
+    updated = trip_admin.record_review_light(
         trip_id,
         action=action,
         reviewer_name=reviewer_name,

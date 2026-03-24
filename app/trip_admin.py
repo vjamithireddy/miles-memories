@@ -866,6 +866,283 @@ def get_trip_route_points(trip_id: int, *, append_home_if_close: bool = False) -
     return sampled
 
 
+def _serialize_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _deserialize_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _serialize_travel_legs(travel_legs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    serialized: list[dict[str, Any]] = []
+    for leg in travel_legs:
+        payload = dict(leg)
+        payload["start_time"] = _serialize_datetime(leg.get("start_time"))
+        payload["end_time"] = _serialize_datetime(leg.get("end_time"))
+        serialized.append(payload)
+    return serialized
+
+
+def _deserialize_travel_legs(travel_legs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hydrated: list[dict[str, Any]] = []
+    for leg in travel_legs:
+        payload = dict(leg)
+        if isinstance(payload.get("start_time"), str):
+            payload["start_time"] = _deserialize_datetime(payload.get("start_time"))
+        if isinstance(payload.get("end_time"), str):
+            payload["end_time"] = _deserialize_datetime(payload.get("end_time"))
+        hydrated.append(payload)
+    return hydrated
+
+
+def get_trip_snapshot(trip_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT public_payload_json, admin_payload_json, updated_at
+                FROM trip_snapshots
+                WHERE trip_id = %s
+                """,
+                (trip_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    public_payload = row["public_payload_json"] or {}
+    admin_payload = row["admin_payload_json"] or {}
+    if public_payload.get("travel_legs"):
+        public_payload["travel_legs"] = _deserialize_travel_legs(public_payload["travel_legs"])
+    return {
+        "public": public_payload,
+        "admin": admin_payload,
+        "updated_at": row["updated_at"],
+    }
+
+
+def upsert_trip_snapshot(
+    trip_id: int,
+    *,
+    public_payload: dict[str, Any],
+    admin_payload: dict[str, Any],
+) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO trip_snapshots (trip_id, public_payload_json, admin_payload_json, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (trip_id)
+                DO UPDATE SET
+                    public_payload_json = EXCLUDED.public_payload_json,
+                    admin_payload_json = EXCLUDED.admin_payload_json,
+                    updated_at = NOW()
+                """,
+                (trip_id, json.dumps(public_payload), json.dumps(admin_payload)),
+            )
+
+
+def build_trip_snapshot(trip_id: int) -> dict[str, Any] | None:
+    trip = get_trip(trip_id)
+    if not trip:
+        return None
+    travel_legs = trip.get("travel_legs", [])
+    map_points = get_trip_route_points(trip_id, append_home_if_close=True)
+    public_payload = {
+        "travel_legs": _serialize_travel_legs(travel_legs),
+        "map_points": map_points,
+    }
+    admin_payload = {
+        "map_points": map_points,
+    }
+    upsert_trip_snapshot(trip_id, public_payload=public_payload, admin_payload=admin_payload)
+    return {
+        "public": {
+            "travel_legs": travel_legs,
+            "map_points": map_points,
+        },
+        "admin": admin_payload,
+    }
+
+
+def get_trip_light(trip_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    trip_name,
+                    trip_slug,
+                    trip_type,
+                    status,
+                    review_decision,
+                    start_time,
+                    end_time,
+                    start_date,
+                    end_date,
+                    primary_destination_name,
+                    origin_place_name,
+                    confidence_score,
+                    summary_text,
+                    is_private,
+                    publish_ready,
+                    published_at,
+                    updated_at
+                FROM trips
+                WHERE id = %s
+                """,
+                (trip_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            trip = _normalize_trip(row)
+            cur.execute(
+                "SELECT COUNT(*)::BIGINT AS total FROM trip_segments WHERE trip_id = %s",
+                (trip_id,),
+            )
+            count_row = cur.fetchone()
+            trip["leg_count"] = int(count_row["total"]) if count_row else 0
+            cur.execute(
+                """
+                SELECT
+                    reviewer_name,
+                    review_action,
+                    review_notes,
+                    reviewed_at
+                FROM admin_reviews
+                WHERE trip_id = %s
+                ORDER BY reviewed_at DESC, id DESC
+                LIMIT 20
+                """,
+                (trip_id,),
+            )
+            trip["review_history"] = [
+                {
+                    "reviewer_name": item["reviewer_name"],
+                    "review_action": item["review_action"],
+                    "review_notes": item["review_notes"],
+                    "reviewed_at": item["reviewed_at"],
+                }
+                for item in cur.fetchall()
+            ]
+            trip["timeline"] = []
+            trip["event_counts"] = []
+            return trip
+
+
+def get_trip_review_state(trip_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT status, review_decision, is_private, publish_ready
+                FROM trips
+                WHERE id = %s
+                """,
+                (trip_id,),
+            )
+            return cur.fetchone()
+
+
+def record_review_light(
+    trip_id: int,
+    *,
+    action: str,
+    reviewer_name: str | None,
+    review_notes: str | None,
+    trip_name: str | None,
+    summary_text: str | None,
+    primary_destination_name: str | None,
+    is_private: bool | None,
+    publish_ready: bool | None,
+) -> dict[str, Any] | None:
+    action_map = {
+        "save": (None, None),
+        "confirm": ("confirmed", "confirmed"),
+        "reject": ("ignored", "rejected"),
+        "ignore": ("ignored", "ignored"),
+        "publish": ("published", "confirmed"),
+        "mark_private": ("confirmed", "confirmed"),
+    }
+    if action not in action_map:
+        raise ValueError(f"Unsupported review action: {action}")
+
+    next_status, next_review_decision = action_map[action]
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT id, is_private, publish_ready FROM trips WHERE id = %s", (trip_id,))
+            existing = cur.fetchone()
+            if not existing:
+                return None
+
+            final_is_private = bool(existing["is_private"]) if is_private is None else is_private
+            final_publish_ready = (
+                bool(existing["publish_ready"]) if publish_ready is None else publish_ready
+            )
+
+            if action == "publish":
+                final_publish_ready = True
+                final_is_private = False
+            elif action == "mark_private":
+                final_is_private = True
+                final_publish_ready = False
+
+            published_at: datetime | None = (
+                datetime.now(timezone.utc) if action == "publish" else None
+            )
+
+            cur.execute(
+                """
+                UPDATE trips
+                SET trip_name = COALESCE(%s, trip_name),
+                    summary_text = COALESCE(%s, summary_text),
+                    primary_destination_name = COALESCE(%s, primary_destination_name),
+                    is_private = %s,
+                    publish_ready = %s,
+                    status = COALESCE(%s, status),
+                    review_decision = COALESCE(%s, review_decision),
+                    published_at = CASE
+                        WHEN %s::timestamptz IS NULL THEN published_at
+                        ELSE %s::timestamptz
+                    END,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    trip_name,
+                    summary_text,
+                    primary_destination_name,
+                    final_is_private,
+                    final_publish_ready,
+                    next_status,
+                    next_review_decision,
+                    published_at,
+                    published_at,
+                    trip_id,
+                ),
+            )
+            if reviewer_name or review_notes or action != "save":
+                cur.execute(
+                    """
+                    INSERT INTO admin_reviews (trip_id, reviewer_name, review_action, review_notes)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (trip_id, reviewer_name, action, review_notes),
+                )
+
+    return get_trip_review_state(trip_id)
+
+
 def enrich_trip_leg_places(trip_id: int) -> int:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -1142,7 +1419,25 @@ def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT id
+                SELECT
+                    id,
+                    trip_name,
+                    trip_slug,
+                    trip_type,
+                    status,
+                    review_decision,
+                    start_time,
+                    end_time,
+                    start_date,
+                    end_date,
+                    primary_destination_name,
+                    origin_place_name,
+                    confidence_score,
+                    summary_text,
+                    is_private,
+                    publish_ready,
+                    published_at,
+                    updated_at
                 FROM trips
                 WHERE trip_slug = %s
                   AND is_private = FALSE
@@ -1158,7 +1453,18 @@ def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
             row = cur.fetchone()
     if not row:
         return None
-    return get_trip(int(row["id"]))
+    trip = _normalize_trip(row)
+    snapshot = get_trip_snapshot(trip["id"])
+    if not snapshot:
+        snapshot = build_trip_snapshot(trip["id"])
+    if snapshot and snapshot.get("public"):
+        public_payload = snapshot["public"]
+        trip["travel_legs"] = public_payload.get("travel_legs", [])
+        trip["map_points"] = public_payload.get("map_points", [])
+    else:
+        trip["travel_legs"] = []
+        trip["map_points"] = []
+    return trip
 
 
 def get_trip(trip_id: int) -> dict[str, Any] | None:
