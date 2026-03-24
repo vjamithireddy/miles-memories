@@ -1811,6 +1811,65 @@ def _render_public_leg_map(item: dict[str, Any]) -> str:
     """
 
 
+def _render_admin_leg_items(trip_id: int, travel_legs: List[dict[str, Any]]) -> str:
+    return "".join(
+        f"""
+        <li class="leg-item">
+          <form class="segment-form leg-form" method="post" action="/admin/trip/{trip_id}/segments/{item['segment_id']}" data-autosave="segment">
+          <details class="leg-collapse">
+            <summary>
+              <span class="leg-summary-copy">
+                <span class="leg-heading-row">
+                  <span class="leg-kind">{escape(_travel_leg_comment(item))}</span>
+                  <span class="leg-tag">{escape(item['label'])}</span>
+                </span>
+                <span class="leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</span>
+              </span>
+            </summary>
+            <div class="leg-body">
+              <div class="leg-copy">
+                <label class="leg-field">
+                  <span>Summary</span>
+                  <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
+                </label>
+                <label class="star-rating-field">
+                  <span>Rating</span>
+                  <span class="star-rating" aria-label="Rating">
+                    <input type="radio" id="segment-{item['segment_id']}-star-5" name="rating" value="5"{" checked" if item.get('segment_rating') == 5 else ""}>
+                    <label for="segment-{item['segment_id']}-star-5" title="5 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-4" name="rating" value="4"{" checked" if item.get('segment_rating') == 4 else ""}>
+                    <label for="segment-{item['segment_id']}-star-4" title="4 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-3" name="rating" value="3"{" checked" if item.get('segment_rating') == 3 else ""}>
+                    <label for="segment-{item['segment_id']}-star-3" title="3 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-2" name="rating" value="2"{" checked" if item.get('segment_rating') == 2 else ""}>
+                    <label for="segment-{item['segment_id']}-star-2" title="2 stars">★</label>
+                    <input type="radio" id="segment-{item['segment_id']}-star-1" name="rating" value="1"{" checked" if item.get('segment_rating') == 1 else ""}>
+                    <label for="segment-{item['segment_id']}-star-1" title="1 star">★</label>
+                    <input class="star-rating-clear" type="radio" id="segment-{item['segment_id']}-star-0" name="rating" value=""{" checked" if item.get('segment_rating') is None else ""}>
+                  </span>
+                </label>
+                <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
+              </div>
+              <div class="leg-map-panel">
+                <div class="maplibre-shell">
+                  <div class="maplibre-map public-leg-maplibre" data-admin-leg-map='{escape(json.dumps(_build_public_leg_map_payload(item), separators=(",", ":")))}'></div>
+                </div>
+              </div>
+            </div>
+          </details>
+          </form>
+        </li>
+        """
+        for item in travel_legs
+    ) or """
+      <li class="leg-item">
+        <div>
+          <strong>No travel legs inferred.</strong>
+          <p>This trip currently only has raw location points linked.</p>
+        </div>
+      </li>
+    """
+
 def _build_trip_stop_markers(travel_legs: List[dict], *, include_kinds: Optional[set[str]] = None) -> list[dict[str, Any]]:
     markers: list[dict[str, Any]] = []
     seen: set[tuple[float, float, str]] = set()
@@ -2497,17 +2556,23 @@ def _render_public_maplibre_script() -> str:
         });
       };
 
-      document.querySelectorAll(".public-leg-card").forEach((card) => {
-        const node = card.querySelector("[data-public-leg-map]");
-        if (!node) return;
-        bindLegMap(card, node, "publicLegMap");
-      });
+      const bindLegMapsInRoot = (root) => {
+        const scope = root || document;
+        scope.querySelectorAll(".public-leg-card").forEach((card) => {
+          const node = card.querySelector("[data-public-leg-map]");
+          if (!node) return;
+          bindLegMap(card, node, "publicLegMap");
+        });
 
-      document.querySelectorAll(".leg-collapse").forEach((card) => {
-        const node = card.querySelector("[data-admin-leg-map]");
-        if (!node) return;
-        bindLegMap(card, node, "adminLegMap");
-      });
+        scope.querySelectorAll(".leg-collapse").forEach((card) => {
+          const node = card.querySelector("[data-admin-leg-map]");
+          if (!node) return;
+          bindLegMap(card, node, "adminLegMap");
+        });
+      };
+
+      window.milesMemoriesInitLegMaps = bindLegMapsInRoot;
+      bindLegMapsInRoot(document);
     })();
   </script>
 """
@@ -3515,6 +3580,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     trip_type = escape(trip["trip_type"] or "untyped")
     summary = escape(trip["summary_text"] or "No summary yet for this trip.")
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
+    travel_legs = trip.get("travel_legs", [])
+    leg_count = len(travel_legs)
     map_points = [
         {
             "lat": item["latitude"],
@@ -3567,7 +3634,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                     map_points[-1]["lat"] != end_point["lat"] or map_points[-1]["lon"] != end_point["lon"]
                 ):
                     map_points.append(end_point)
-    travel_legs = trip.get("travel_legs", [])
     trip_map_payload = _build_public_trip_map_payload(
         trip,
         travel_legs,
@@ -3623,64 +3689,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       <li class="count-item">
         <strong>No linked event counts</strong>
         <span>0</span>
-      </li>
-    """
-
-    travel_leg_items = "".join(
-        f"""
-        <li class="leg-item">
-          <form class="segment-form leg-form" method="post" action="/admin/trip/{trip['id']}/segments/{item['segment_id']}" data-autosave="segment">
-          <details class="leg-collapse">
-            <summary>
-              <span class="leg-summary-copy">
-                <span class="leg-heading-row">
-                  <span class="leg-kind">{escape(_travel_leg_comment(item))}</span>
-                  <span class="leg-tag">{escape(item['label'])}</span>
-                </span>
-                <span class="leg-meta">{escape(_format_local_datetime(item['start_time']))} → {escape(_format_local_datetime(item['end_time']))} ({escape(_format_duration(item['start_time'], item['end_time']))})</span>
-              </span>
-            </summary>
-            <div class="leg-body">
-              <div class="leg-copy">
-                <label class="leg-field">
-                  <span>Summary</span>
-                  <textarea class="leg-summary-input" name="summary_text" rows="2">{escape(_travel_leg_comment(item))}</textarea>
-                </label>
-                <label class="star-rating-field">
-                  <span>Rating</span>
-                  <span class="star-rating" aria-label="Rating">
-                    <input type="radio" id="segment-{item['segment_id']}-star-5" name="rating" value="5"{" checked" if item.get('segment_rating') == 5 else ""}>
-                    <label for="segment-{item['segment_id']}-star-5" title="5 stars">★</label>
-                    <input type="radio" id="segment-{item['segment_id']}-star-4" name="rating" value="4"{" checked" if item.get('segment_rating') == 4 else ""}>
-                    <label for="segment-{item['segment_id']}-star-4" title="4 stars">★</label>
-                    <input type="radio" id="segment-{item['segment_id']}-star-3" name="rating" value="3"{" checked" if item.get('segment_rating') == 3 else ""}>
-                    <label for="segment-{item['segment_id']}-star-3" title="3 stars">★</label>
-                    <input type="radio" id="segment-{item['segment_id']}-star-2" name="rating" value="2"{" checked" if item.get('segment_rating') == 2 else ""}>
-                    <label for="segment-{item['segment_id']}-star-2" title="2 stars">★</label>
-                    <input type="radio" id="segment-{item['segment_id']}-star-1" name="rating" value="1"{" checked" if item.get('segment_rating') == 1 else ""}>
-                    <label for="segment-{item['segment_id']}-star-1" title="1 star">★</label>
-                    <input class="star-rating-clear" type="radio" id="segment-{item['segment_id']}-star-0" name="rating" value=""{" checked" if item.get('segment_rating') is None else ""}>
-                  </span>
-                </label>
-                <p class="leg-source">Source activity: {escape(item.get('source_event_id') or 'unknown')}</p>
-              </div>
-              <div class="leg-map-panel">
-                <div class="maplibre-shell">
-                  <div class="maplibre-map public-leg-maplibre" data-admin-leg-map='{escape(json.dumps(_build_public_leg_map_payload(item), separators=(",", ":")))}'></div>
-                </div>
-              </div>
-            </div>
-          </details>
-          </form>
-        </li>
-        """
-        for item in travel_legs
-    ) or """
-      <li class="leg-item">
-        <div>
-          <strong>No travel legs inferred.</strong>
-          <p>This trip currently only has raw location points linked.</p>
-        </div>
       </li>
     """
 
@@ -4026,6 +4034,35 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       list-style: none;
       margin-bottom: 14px;
       display: inline-block;
+    }}
+    details.admin-legs > summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }}
+    details.admin-legs > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    details.admin-legs > summary::after {{
+      content: "Show";
+      font-size: 0.88rem;
+      color: var(--muted);
+    }}
+    details.admin-legs[open] > summary::after {{
+      content: "Hide";
+    }}
+    .admin-legs-body {{
+      display: grid;
+      gap: 14px;
+    }}
+    .leg-loading {{
+      color: var(--muted);
+      font-weight: 600;
     }}
     details.timeline-collapse > summary::-webkit-details-marker {{
       display: none;
@@ -4493,9 +4530,13 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
     <section class="panel">
       <h2>Travel legs</h2>
-      <ul class="list">
-        {travel_leg_items}
-      </ul>
+      <details class="admin-legs" data-trip-id="{trip['id']}">
+        <summary>Expand travel legs ({leg_count})</summary>
+        <div class="admin-legs-body">
+          <div class="leg-loading">Travel legs load on demand.</div>
+          <ul class="list" data-leg-list></ul>
+        </div>
+      </details>
     </section>
 
     <section class="panel map-shell">
@@ -4532,11 +4573,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
   </main>
   <script>
     (function () {{
-      document.querySelectorAll(".leg-summary-input").forEach((node) => {{
-        ["click", "focus", "keydown", "mousedown", "mouseup"].forEach((eventName) => {{
-          node.addEventListener(eventName, (event) => event.stopPropagation());
+      const bindLegSummaryInputs = (root) => {{
+        const scope = root || document;
+        scope.querySelectorAll(".leg-summary-input").forEach((node) => {{
+          ["click", "focus", "keydown", "mousedown", "mouseup"].forEach((eventName) => {{
+            node.addEventListener(eventName, (event) => event.stopPropagation());
+          }});
         }});
-      }});
+      }};
 
       const autosaveForm = async (form) => {{
         if (!form || form.dataset.saveState === "saving") {{
@@ -4588,7 +4632,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         }}
       }};
 
-      document.querySelectorAll('form[data-autosave="segment"]').forEach((form) => {{
+      const bindSegmentForm = (form) => {{
+        if (!form) return;
+        if (form.dataset.autosaveBound === "true") return;
+        form.dataset.autosaveBound = "true";
         form.dataset.savedKey = "segment";
         const summaryField = form.querySelector(".leg-summary-input");
         if (summaryField) {{
@@ -4597,7 +4644,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         form.querySelectorAll('input[name="rating"]').forEach((field) => {{
           field.addEventListener("change", () => autosaveForm(form));
         }});
-      }});
+      }};
+
+      const bindSegmentForms = (root) => {{
+        const scope = root || document;
+        scope.querySelectorAll('form[data-autosave="segment"]').forEach((form) => {{
+          bindSegmentForm(form);
+        }});
+      }};
+
+      bindLegSummaryInputs(document);
+      bindSegmentForms(document);
 
       const overviewForm = document.querySelector(".trip-overview-form");
       if (overviewForm) {{
@@ -4695,6 +4752,55 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           }}
         }});
       }}
+
+      document.querySelectorAll("details.admin-legs").forEach((details) => {{
+        const list = details.querySelector("[data-leg-list]");
+        const loading = details.querySelector(".leg-loading");
+        const tripId = details.dataset.tripId;
+        if (!list || !tripId) return;
+        let loaded = false;
+
+        const loadLegs = async () => {{
+          if (loaded) return;
+          loaded = true;
+          if (loading) {{
+            loading.textContent = "Loading travel legs…";
+          }}
+          try {{
+            const response = await fetch(`/admin/trip/${{tripId}}/legs`, {{
+              credentials: "same-origin"
+            }});
+            if (!response.ok) {{
+              throw new Error(`Failed to load travel legs (${{response.status}})`);
+            }}
+            const html = await response.text();
+            list.innerHTML = html;
+            if (loading) {{
+              loading.remove();
+            }}
+            bindLegSummaryInputs(list);
+            bindSegmentForms(list);
+            if (window.milesMemoriesInitLegMaps) {{
+              window.milesMemoriesInitLegMaps(list);
+            }}
+          }} catch (error) {{
+            console.error(error);
+            if (loading) {{
+              loading.textContent = "Unable to load travel legs.";
+            }}
+          }}
+        }};
+
+        details.addEventListener("toggle", () => {{
+          if (details.open) {{
+            loadLegs();
+          }}
+        }});
+
+        if (details.open) {{
+          loadLegs();
+        }}
+      }});
 
       const toast = document.querySelector("[data-toast]");
       if (toast) {{
@@ -4820,6 +4926,14 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
     return _html_response(_render_trip_detail_page(trip, saved=saved))
+
+
+@app.get("/admin/trip/{trip_id}/legs", response_class=HTMLResponse)
+def admin_trip_leg_items(trip_id: int) -> HTMLResponse:
+    trip = trip_admin.get_trip(trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return HTMLResponse(_render_admin_leg_items(trip_id, trip.get("travel_legs", [])))
 
 
 @app.post("/admin/trip/{trip_id}/review")
