@@ -1,14 +1,30 @@
+import logging
 from typing import Any
 
 from app.db import get_conn
 
 from ingestion.common import basename, file_sha256
 
+logger = logging.getLogger(__name__)
+
 
 def create_import(import_type: str, source_name: str, file_path: str) -> int:
     file_hash = file_sha256(file_path)
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, import_status, created_at FROM imports WHERE file_hash = %s",
+                (file_hash,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                logger.warning(
+                    "Re-ingesting file hash %s (import_id=%s status=%s created_at=%s)",
+                    file_hash,
+                    existing[0],
+                    existing[1],
+                    existing[2],
+                )
             cur.execute(
                 """
                 INSERT INTO imports (import_type, source_name, filename, file_path, file_hash, import_status, started_at)

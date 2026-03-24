@@ -429,20 +429,55 @@ def _to_local_time(value: datetime, local_zone: ZoneInfo) -> datetime:
     return value.astimezone(local_zone)
 
 
-def _fetch_location_events() -> list[tuple[int, datetime, float, float]]:
+def _fetch_location_events(since_ts: datetime | None = None) -> list[tuple[int, datetime, float, float]]:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, event_timestamp, latitude, longitude
-                FROM location_events
-                ORDER BY event_timestamp ASC
-                """
-            )
+            if since_ts:
+                cur.execute(
+                    """
+                    SELECT id, event_timestamp, latitude, longitude
+                    FROM location_events
+                    WHERE event_timestamp >= %s
+                    ORDER BY event_timestamp ASC
+                    """,
+                    (since_ts,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, event_timestamp, latitude, longitude
+                    FROM location_events
+                    ORDER BY event_timestamp ASC
+                    """
+                )
             return [(int(r[0]), r[1], float(r[2]), float(r[3])) for r in cur.fetchall()]
 
 
-def detect_trips() -> tuple[int, int]:
+def get_detection_since_ts(*, overlap_hours: int = 6) -> datetime | None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(end_time) FROM trips")
+            row = cur.fetchone()
+            latest = row[0] if row else None
+    if latest is None:
+        return None
+    return latest - timedelta(hours=overlap_hours)
+
+
+def _trip_overlaps_existing(cur, start_time: datetime, end_time: datetime) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM trips
+        WHERE start_time < %s AND end_time > %s
+        LIMIT 1
+        """,
+        (end_time, start_time),
+    )
+    return cur.fetchone() is not None
+
+
+def detect_trips(*, since_ts: datetime | None = None, overlap_hours: int = 6) -> tuple[int, int]:
     user_id = ensure_default_user()
     home_lat, home_lon, local_radius_m = get_home_profile()
     work_lat, work_lon, work_radius_m = get_work_profile()
@@ -450,7 +485,9 @@ def detect_trips() -> tuple[int, int]:
     if home_lat is None or home_lon is None:
         return (0, 0)
 
-    events = _fetch_location_events()
+    if since_ts is None:
+        since_ts = get_detection_since_ts(overlap_hours=overlap_hours)
+    events = _fetch_location_events(since_ts)
     if not events:
         return (0, 0)
 
@@ -542,6 +579,8 @@ def detect_trips() -> tuple[int, int]:
                 if not destination_profile.get("keep_trip") and (
                     destination_profile.get("ignore_trip") or destination_class == "amateur_sports_venue"
                 ):
+                    continue
+                if _trip_overlaps_existing(cur, trip.start_time, trip.end_time):
                     continue
                 duration = trip.end_time - trip.start_time
                 local_start = _to_local_time(trip.start_time, local_zone)
