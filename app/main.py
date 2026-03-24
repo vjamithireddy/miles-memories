@@ -13,7 +13,7 @@ from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -4971,7 +4971,11 @@ def admin_trip_leg_items(trip_id: int) -> HTMLResponse:
 
 
 @app.post("/admin/trip/{trip_id}/review")
-async def review_trip_from_form(trip_id: int, request: Request) -> Response:
+async def review_trip_from_form(
+    trip_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Response:
     payload = parse_qs((await request.body()).decode("utf-8"))
     request_headers = getattr(request, "headers", {}) or {}
     action = (payload.get("action") or ["save"])[0].strip() or "save"
@@ -4998,6 +5002,8 @@ async def review_trip_from_form(trip_id: int, request: Request) -> Response:
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip not found")
+    if action in {"publish", "mark_private"}:
+        background_tasks.add_task(trip_admin.build_trip_snapshot, trip_id)
     if request_headers.get("x-requested-with") == "fetch":
         if action == "save":
             return Response(status_code=204)
@@ -5036,6 +5042,7 @@ async def update_trip_segment_from_form(
     trip_id: int,
     segment_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> Response:
     payload = parse_qs((await request.body()).decode("utf-8"))
     summary_text = (payload.get("summary_text") or [""])[0].strip() or None
@@ -5050,6 +5057,7 @@ async def update_trip_segment_from_form(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Trip segment not found")
+    background_tasks.add_task(trip_admin.build_trip_snapshot, trip_id)
     if request.headers.get("x-requested-with") == "fetch":
         return Response(status_code=204)
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved=segment", status_code=303)

@@ -1607,6 +1607,27 @@ def get_trip(trip_id: int) -> dict[str, Any] | None:
             return trip
 
 
+def rebuild_recent_snapshots(hours: int = 24) -> int:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM trips
+                WHERE updated_at >= NOW() - (%s || ' hours')::interval
+                ORDER BY updated_at DESC
+                """,
+                (hours,),
+            )
+            trip_ids = [int(row["id"]) for row in cur.fetchall()]
+    rebuilt = 0
+    for trip_id in trip_ids:
+        snapshot = build_trip_snapshot(trip_id)
+        if snapshot:
+            rebuilt += 1
+    return rebuilt
+
+
 def get_trip_neighbors(trip_id: int) -> dict[str, dict[str, Any] | None]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
