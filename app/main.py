@@ -4586,6 +4586,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         if (!form || form.dataset.saveState === "saving") {{
           return;
         }}
+        if (form.dataset.actionInFlight === "true") {{
+          return;
+        }}
         const body = new URLSearchParams(new FormData(form));
         form.dataset.saveState = "saving";
         try {{
@@ -4659,11 +4662,22 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       const overviewForm = document.querySelector(".trip-overview-form");
       if (overviewForm) {{
         overviewForm.dataset.savedKey = "details";
+        const actionField = document.createElement("input");
+        actionField.type = "hidden";
+        actionField.name = "action";
+        overviewForm.appendChild(actionField);
         overviewForm
           .querySelectorAll('input[name="trip_name"], input[name="reviewer_name"], textarea[name="summary_text"], textarea[name="review_notes"]')
           .forEach((field) => {{
             field.addEventListener("blur", () => autosaveForm(overviewForm));
           }});
+
+        overviewForm.querySelectorAll('button[name="action"]').forEach((btn) => {{
+          btn.addEventListener("pointerdown", () => {{
+            overviewForm.dataset.actionInFlight = "true";
+            actionField.value = btn.value;
+          }});
+        }});
 
         overviewForm.addEventListener("submit", async (event) => {{
           if (overviewForm.dataset.reviewSubmit === "full") {{
@@ -4673,9 +4687,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
           if (!submitter || submitter.name !== "action") {{
             return;
           }}
+          actionField.value = submitter.value;
           if (overviewForm.dataset.saveState === "saving") {{
-            event.preventDefault();
-            return;
+            delete overviewForm.dataset.saveState;
           }}
           if (overviewForm.dataset.forceSubmit === "true") {{
             delete overviewForm.dataset.forceSubmit;
@@ -4749,6 +4763,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             console.error(error);
             overviewForm.dataset.forceSubmit = "true";
             overviewForm.submit();
+          }} finally {{
+            delete overviewForm.dataset.actionInFlight;
           }}
         }});
       }}
