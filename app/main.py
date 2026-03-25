@@ -1721,6 +1721,13 @@ def _build_public_trip_map_payload(
 
 
 def _render_admin_trip_map(payload: dict[str, Any]) -> str:
+    has_route = bool(payload.get("route", {}).get("features"))
+    has_stops = bool(payload.get("stops", {}).get("features"))
+    has_bounds = bool(payload.get("bounds"))
+    if not (has_route or has_stops or has_bounds):
+        return """
+    <div class="map-placeholder">No map data available yet for this trip.</div>
+    """
     return f"""
     <div class="maplibre-shell">
       <div class="maplibre-map" data-admin-trip-map='{escape(json.dumps(payload, separators=(",", ":")))}'></div>
@@ -3089,6 +3096,36 @@ def _render_admin_page(
       gap: 14px;
       align-items: center;
     }}
+    .filter-toggle {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.55);
+      color: var(--muted);
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }}
+    .filter-toggle.is-active {{
+      background: rgba(184, 95, 53, 0.16);
+      border-color: rgba(184, 95, 53, 0.45);
+      color: var(--accent);
+    }}
+    .filter-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }}
+    .button.ghost {{
+      border-color: var(--line);
+      color: var(--muted);
+      background: transparent;
+    }}
     .utility-link {{
       color: var(--accent);
       text-decoration: none;
@@ -3134,7 +3171,7 @@ def _render_admin_page(
     </section>
 
     <section class="panel">
-      <form method="get" action="/admin" class="filters">
+      <form method="get" action="/admin" class="filters" data-admin-filters>
         <label>Status
           <select name="status">
             <option value="">Any status</option>
@@ -3156,10 +3193,14 @@ def _render_admin_page(
         <label>Limit
           <input type="number" min="1" max="200" name="limit" value="{limit}">
         </label>
-        <label class="checkbox">Include private
-          <input type="checkbox" name="include_private" value="true"{" checked" if include_private else ""}>
-        </label>
-        <button class="button" type="submit">Apply filters</button>
+        <input type="hidden" name="include_private" value="{str(include_private).lower()}" data-include-private-input>
+        <button class="filter-toggle{" is-active" if include_private else ""}" type="button" data-include-private-toggle aria-pressed="{str(include_private).lower()}">
+          Include private
+        </button>
+        <div class="filter-actions">
+          <button class="button ghost" type="button" data-reset-filters>Reset</button>
+          <button class="button" type="submit">Apply filters</button>
+        </div>
       </form>
 
       <div class="trips">
@@ -3167,6 +3208,50 @@ def _render_admin_page(
       </div>
     </section>
   </main>
+  <script>
+    (() => {
+      const form = document.querySelector("[data-admin-filters]");
+      if (!form) return;
+      const toggle = form.querySelector("[data-include-private-toggle]");
+      const hidden = form.querySelector("[data-include-private-input]");
+      const reset = form.querySelector("[data-reset-filters]");
+      const storageKey = "milesmemories_include_private";
+
+      const setToggle = (enabled) => {
+        const value = enabled ? "true" : "false";
+        if (hidden) hidden.value = value;
+        if (toggle) {
+          toggle.classList.toggle("is-active", enabled);
+          toggle.setAttribute("aria-pressed", value);
+        }
+      };
+
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("include_private")) {
+        const stored = window.localStorage.getItem(storageKey);
+        if (stored === "true" || stored === "false") {
+          setToggle(stored === "true");
+        }
+      }
+
+      toggle?.addEventListener("click", () => {
+        const next = !(hidden?.value === "true");
+        setToggle(next);
+        window.localStorage.setItem(storageKey, next ? "true" : "false");
+      });
+
+      reset?.addEventListener("click", () => {
+        form.querySelectorAll("select").forEach((select) => {
+          select.value = "";
+        });
+        const limit = form.querySelector("input[name='limit']");
+        if (limit) limit.value = "24";
+        setToggle(true);
+        window.localStorage.removeItem(storageKey);
+        form.submit();
+      });
+    })();
+  </script>
 </body>
 </html>"""
 
@@ -3494,6 +3579,40 @@ def _render_trip_destination_page(trip: dict, *, return_to: str) -> str:
       border-radius: 24px;
       box-shadow: 0 18px 40px var(--shadow);
       padding: 24px;
+    }}
+    .maplibre-shell {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: #efe5d7;
+    }}
+    .maplibre-map {{
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      min-height: 260px;
+    }}
+    .map-placeholder {{
+      border: 1px dashed var(--line);
+      border-radius: 18px;
+      padding: 28px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255,255,255,0.55);
+    }}
+    .maplibregl-popup-content {{
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fffdf7;
+      box-shadow: 0 10px 26px rgba(33, 24, 14, 0.18);
+      font-family: Georgia, "Times New Roman", serif;
+    }}
+    .maplibregl-ctrl.public-home-ctrl button {{
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 700;
+      color: #2b3748;
+    }}
+    .maplibre-map .maplibregl-marker {{
+      cursor: pointer;
     }}
     .maplibre-shell {{
       border: 1px solid var(--line);
@@ -4850,9 +4969,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 def admin_homepage(
     status: Optional[str] = Query(default=None),
     review_decision: Optional[str] = Query(default=None),
-    include_private: bool = Query(default=True),
+    include_private: Optional[bool] = Query(default=None),
     limit: int = Query(default=24, ge=1, le=200),
 ) -> HTMLResponse:
+    if include_private is None:
+        include_private = True
     trips = trip_admin.list_trips(
         status=status,
         review_decision=review_decision,
