@@ -3209,7 +3209,7 @@ def _render_admin_page(
     </section>
   </main>
   <script>
-    (() => {
+    (() => {{
       const form = document.querySelector("[data-admin-filters]");
       if (!form) return;
       const toggle = form.querySelector("[data-include-private-toggle]");
@@ -3217,40 +3217,40 @@ def _render_admin_page(
       const reset = form.querySelector("[data-reset-filters]");
       const storageKey = "milesmemories_include_private";
 
-      const setToggle = (enabled) => {
+      const setToggle = (enabled) => {{
         const value = enabled ? "true" : "false";
         if (hidden) hidden.value = value;
-        if (toggle) {
+        if (toggle) {{
           toggle.classList.toggle("is-active", enabled);
           toggle.setAttribute("aria-pressed", value);
-        }
-      };
+        }}
+      }};
 
       const params = new URLSearchParams(window.location.search);
-      if (!params.has("include_private")) {
+      if (!params.has("include_private")) {{
         const stored = window.localStorage.getItem(storageKey);
-        if (stored === "true" || stored === "false") {
+        if (stored === "true" || stored === "false") {{
           setToggle(stored === "true");
-        }
-      }
+        }}
+      }}
 
-      toggle?.addEventListener("click", () => {
+      toggle?.addEventListener("click", () => {{
         const next = !(hidden?.value === "true");
         setToggle(next);
         window.localStorage.setItem(storageKey, next ? "true" : "false");
-      });
+      }});
 
-      reset?.addEventListener("click", () => {
-        form.querySelectorAll("select").forEach((select) => {
+      reset?.addEventListener("click", () => {{
+        form.querySelectorAll("select").forEach((select) => {{
           select.value = "";
-        });
+        }});
         const limit = form.querySelector("input[name='limit']");
         if (limit) limit.value = "24";
         setToggle(true);
         window.localStorage.removeItem(storageKey);
         form.submit();
-      });
-    })();
+      }});
+    }})();
   </script>
 </body>
 </html>"""
