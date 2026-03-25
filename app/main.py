@@ -3589,6 +3589,32 @@ def _render_trip_destination_page(trip: dict, *, return_to: str) -> str:
     .maplibre-map {{
       width: 100%;
       aspect-ratio: 16 / 9;
+      min-height: 320px;
+    }}
+    .maplibregl-popup-content {{
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fffdf7;
+      box-shadow: 0 10px 26px rgba(33, 24, 14, 0.18);
+      font-family: Georgia, "Times New Roman", serif;
+    }}
+    .maplibregl-ctrl.public-home-ctrl button {{
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 700;
+      color: #2b3748;
+    }}
+    .maplibre-map .maplibregl-marker {{
+      cursor: pointer;
+    }}
+    .maplibre-shell {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: #efe5d7;
+    }}
+    .maplibre-map {{
+      width: 100%;
+      aspect-ratio: 16 / 9;
       min-height: 260px;
     }}
     .map-placeholder {{
