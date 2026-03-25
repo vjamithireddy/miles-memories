@@ -1414,6 +1414,65 @@ def list_published_trips(*, limit: int = 12) -> list[dict[str, Any]]:
             return [_normalize_trip(row) for row in cur.fetchall()]
 
 
+def build_public_home_intro(*, limit: int | None = None) -> dict[str, str]:
+    trips = list_published_trips(limit=limit or 200)
+    if not trips:
+        return {
+            "hero_note": "My published trips will show up here after I review them.",
+            "highlight_line": "",
+        }
+    trip_ids = [trip["id"] for trip in trips]
+    snapshots: dict[int, dict[str, Any]] = {}
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT trip_id, public_payload_json
+                FROM trip_snapshots
+                WHERE trip_id = ANY(%s)
+                """,
+                (trip_ids,),
+            )
+            for row in cur.fetchall():
+                snapshots[int(row["trip_id"])] = row["public_payload_json"] or {}
+
+    activities: list[str] = []
+    places: list[str] = []
+
+    def _add_place(name: str | None) -> None:
+        cleaned = _map_clean_place_name(name)
+        if not cleaned or _map_is_regional_place(cleaned):
+            return
+        if cleaned not in places:
+            places.append(cleaned)
+
+    for trip in trips:
+        snapshot = snapshots.get(trip["id"], {})
+        travel_legs = snapshot.get("travel_legs") or []
+        if travel_legs:
+            for leg in travel_legs:
+                label = (leg.get("label") or "").strip()
+                if label and label not in activities:
+                    activities.append(label)
+                _add_place(leg.get("start_place_name"))
+                _add_place(leg.get("end_place_name"))
+        _add_place(trip.get("primary_destination_name"))
+
+    activity_line = ", ".join(activities[:3]) if activities else "travel, walks, and drives"
+    if len(activities) > 3:
+        activity_line = f"{activity_line}, and more"
+    place_line = " · ".join(places[:4]) if places else "my favorite destinations"
+    if len(places) > 4:
+        place_line = f"{place_line} · and more"
+
+    hero_note = f"My experiences captured through hiking, driving, and trips."
+    highlight_line = f"Places I’ve been: {place_line}. Activities include {activity_line}."
+    return {
+        "hero_note": hero_note,
+        "highlight_line": highlight_line,
+    }
+
+
 def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:

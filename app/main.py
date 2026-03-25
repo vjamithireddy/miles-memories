@@ -101,7 +101,7 @@ async def admin_basic_auth(request: Request, call_next):
 
     return await call_next(request)
 
-def _render_public_homepage(trips: List[dict]) -> str:
+def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None = None) -> str:
     published_total = len(trips)
     latest_label = "No published trips yet"
     if trips:
@@ -163,6 +163,13 @@ def _render_public_homepage(trips: List[dict]) -> str:
         <p>Publish a reviewed trip from the admin workflow and it will appear here automatically.</p>
       </article>
     """
+
+    intro = intro or {}
+    hero_note = escape(
+        intro.get("hero_note")
+        or "I publish trips after I review them, then keep a public archive of what I’ve been exploring."
+    )
+    highlight_line = escape(intro.get("highlight_line") or "")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -394,8 +401,9 @@ def _render_public_homepage(trips: List[dict]) -> str:
     <section class="panel hero">
       <div class="hero-copy">
         <span class="eyebrow">MilesMemories</span>
-        <h1>Published travel stories from your own data.</h1>
-        <p class="hero-note">This public landing page only shows trips you have reviewed, published, and marked visible from the admin workflow.</p>
+        <h1>My travel stories from my own data.</h1>
+        <p class="hero-note">{hero_note}</p>
+        {f'<p class="hero-note">{highlight_line}</p>' if highlight_line else ''}
       </div>
       <aside class="stats">
         <div class="stat">
@@ -424,7 +432,7 @@ def _render_public_homepage(trips: List[dict]) -> str:
       <article class="panel feature-card">
         <span class="eyebrow">How It Works</span>
         <h2>Publish from review</h2>
-        <p>Trips stay private until you review them in the admin workflow. Once a trip is reviewed and set to public, it appears here automatically.</p>
+        <p>I keep trips private until I review them. Once a trip is reviewed and set to public, it appears here automatically.</p>
         <p class="foot">This public page does not expose admin JSON or review tooling.</p>
       </article>
     </section>
@@ -450,7 +458,8 @@ def _render_public_homepage(trips: List[dict]) -> str:
 @app.get("/", response_class=HTMLResponse)
 def homepage() -> HTMLResponse:
     trips = trip_admin.list_published_trips(limit=12)
-    return _html_response(_render_public_homepage(trips))
+    intro = trip_admin.build_public_home_intro()
+    return _html_response(_render_public_homepage(trips, intro=intro))
 
 
 def _render_public_trip_detail_page(trip: dict) -> str:
