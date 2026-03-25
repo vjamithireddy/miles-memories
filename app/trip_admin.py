@@ -1439,9 +1439,24 @@ def build_public_home_intro(*, limit: int | None = None) -> dict[str, str]:
     activities: list[str] = []
     places: list[str] = []
 
+    def _clean_place_name(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.strip()
+        lowered = cleaned.lower()
+        if "rental car facility" in lowered:
+            cleaned = re.sub(r"\s+rental car facility\b", "", cleaned, flags=re.IGNORECASE).strip(" -,")
+        return cleaned or None
+
+    def _is_regional_place(name: str | None) -> bool:
+        if not name:
+            return False
+        lowered = name.lower()
+        return any(token in lowered for token in ("county", "state", "region"))
+
     def _add_place(name: str | None) -> None:
-        cleaned = _map_clean_place_name(name)
-        if not cleaned or _map_is_regional_place(cleaned):
+        cleaned = _clean_place_name(name)
+        if not cleaned or _is_regional_place(cleaned):
             return
         if cleaned not in places:
             places.append(cleaned)
