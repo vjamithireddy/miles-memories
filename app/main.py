@@ -101,8 +101,16 @@ async def admin_basic_auth(request: Request, call_next):
 
     return await call_next(request)
 
-def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None = None) -> str:
-    published_total = len(trips)
+def _render_public_homepage(
+    trips: List[dict],
+    *,
+    intro: dict[str, Any] | None = None,
+    total: int | None = None,
+    page: int = 1,
+    per_page: int = 12,
+    show_archive_link: bool = True,
+) -> str:
+    published_total = total if total is not None else len(trips)
     latest_label = "No published trips yet"
     if trips:
         latest_trip = trips[0]
@@ -113,7 +121,7 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
         feature_trip = trips[0]
         feature_title = escape(feature_trip.get("trip_name") or "Untitled trip")
         feature_destination = escape(feature_trip.get("primary_destination_name") or "Destination pending")
-        feature_href = f"/trips/{escape(feature_trip.get('trip_slug') or str(feature_trip.get('id') or ''))}"
+        feature_href = f"/trips/{escape(str(feature_trip.get('id') or ''))}"
         feature_summary = escape(
             feature_trip.get("summary_text")
             or "A published trip from the MilesMemories archive."
@@ -140,7 +148,7 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
         summary = escape(trip.get("summary_text") or "Published from the MilesMemories archive.")
         trip_type = escape((trip.get("trip_type") or "trip").replace("_", " "))
         timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
-        trip_href = f"/trips/{escape(trip.get('trip_slug') or str(trip.get('id') or ''))}"
+        trip_href = f"/trips/{escape(str(trip.get('id') or ''))}"
         cards.append(
             f"""
             <article class="trip-card">
@@ -170,6 +178,28 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
         or "I publish trips after I review them, then keep a public archive of what I’ve been exploring."
     )
     highlight_line = escape(intro.get("highlight_line") or "")
+
+    total_pages = max(1, (published_total + per_page - 1) // per_page) if published_total else 1
+    prev_page = page - 1 if page > 1 else None
+    next_page = page + 1 if page < total_pages else None
+    pagination = ""
+    if published_total:
+        per_page_query = f"&per_page={per_page}" if per_page != 12 else ""
+        per_page_toggle = ""
+        if per_page < 48:
+            per_page_toggle = '<a class="button" href="/trips?page=1&per_page=48">Show 48 per page</a>'
+        elif per_page > 12:
+            per_page_toggle = '<a class="button" href="/trips?page=1&per_page=12">Show 12 per page</a>'
+        pagination = f"""
+        <div class="pagination">
+          <span>Page {page} of {total_pages}</span>
+          <div class="pagination-actions">
+            {per_page_toggle}
+            {f'<a class="button" href="/trips?page={prev_page}{per_page_query}">Previous</a>' if prev_page else ''}
+            {f'<a class="button" href="/trips?page={next_page}{per_page_query}">Next</a>' if next_page else ''}
+          </div>
+        </div>
+        """
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -334,6 +364,23 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
     }}
+    .archive-link {{
+      margin-bottom: 16px;
+    }}
+    .pagination {{
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }}
+    .pagination-actions {{
+      display: inline-flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
 
     .trip-card {{
       display: grid;
@@ -445,9 +492,11 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
         </div>
         <p>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
       </div>
+      {f'<div class=\"archive-link\"><a class=\"button\" href=\"/trips?page=1\">View all trips</a></div>' if show_archive_link else ''}
       <div class="published-grid">
         {trips_markup}
       </div>
+      {pagination}
     </section>
   </main>
 </body>
@@ -457,9 +506,40 @@ def _render_public_homepage(trips: List[dict], *, intro: dict[str, Any] | None =
 
 @app.get("/", response_class=HTMLResponse)
 def homepage() -> HTMLResponse:
-    trips = trip_admin.list_published_trips(limit=12)
+    total = trip_admin.count_published_trips()
+    trips = trip_admin.list_published_trips(limit=12, offset=0)
     intro = trip_admin.build_public_home_intro()
-    return _html_response(_render_public_homepage(trips, intro=intro))
+    return _html_response(
+        _render_public_homepage(
+            trips,
+            intro=intro,
+            total=total,
+            page=1,
+            per_page=12,
+            show_archive_link=True,
+        )
+    )
+
+
+@app.get("/trips", response_class=HTMLResponse)
+def public_trips_page(
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=12, ge=1, le=48),
+) -> HTMLResponse:
+    total = trip_admin.count_published_trips()
+    offset = (page - 1) * per_page
+    trips = trip_admin.list_published_trips(limit=per_page, offset=offset)
+    intro = trip_admin.build_public_home_intro()
+    return _html_response(
+        _render_public_homepage(
+            trips,
+            intro=intro,
+            total=total,
+            page=page,
+            per_page=per_page,
+            show_archive_link=False,
+        )
+    )
 
 
 def _render_public_trip_detail_page(trip: dict) -> str:
@@ -1212,12 +1292,18 @@ def _render_public_trip_detail_page(trip: dict) -> str:
 </html>"""
 
 
-@app.get("/trips/{trip_slug}", response_class=HTMLResponse)
-def public_trip_detail_page(trip_slug: str) -> HTMLResponse:
-    trip = trip_admin.get_public_trip_by_slug(trip_slug)
+@app.get("/trips/{trip_ref}", response_class=HTMLResponse)
+def public_trip_detail_page(trip_ref: str) -> HTMLResponse:
+    if trip_ref.isdigit():
+        trip = trip_admin.get_public_trip_by_id(int(trip_ref))
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        return _html_response(_render_public_trip_detail_page(trip))
+
+    trip = trip_admin.get_public_trip_by_slug(trip_ref)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return _html_response(_render_public_trip_detail_page(trip))
+    return RedirectResponse(url=f"/trips/{trip['id']}", status_code=307)
 
 
 def _trip_badge_class(value: str) -> str:
@@ -3202,19 +3288,19 @@ def _render_admin_page(
         <label>Status
           <select name="status">
             <option value="">Any status</option>
-            <option value="needs_review"{selected(status, "needs_review")}>needs_review</option>
-            <option value="confirmed"{selected(status, "confirmed")}>confirmed</option>
-            <option value="published"{selected(status, "published")}>published</option>
-            <option value="ignored"{selected(status, "ignored")}>ignored</option>
+            <option value="needs_review"{selected(status, "needs_review")}>Needs review</option>
+            <option value="confirmed"{selected(status, "confirmed")}>Reviewed</option>
+            <option value="published"{selected(status, "published")}>Published</option>
+            <option value="ignored"{selected(status, "ignored")}>Ignored</option>
           </select>
         </label>
         <label>Review
           <select name="review_decision">
             <option value="">Any decision</option>
-            <option value="pending"{selected(review_decision, "pending")}>pending</option>
-            <option value="confirmed"{selected(review_decision, "confirmed")}>confirmed</option>
-            <option value="ignored"{selected(review_decision, "ignored")}>ignored</option>
-            <option value="rejected"{selected(review_decision, "rejected")}>rejected</option>
+            <option value="pending"{selected(review_decision, "pending")}>Needs review</option>
+            <option value="confirmed"{selected(review_decision, "confirmed")}>Reviewed</option>
+            <option value="ignored"{selected(review_decision, "ignored")}>Ignored</option>
+            <option value="rejected"{selected(review_decision, "rejected")}>Rejected</option>
           </select>
         </label>
         <label>Limit

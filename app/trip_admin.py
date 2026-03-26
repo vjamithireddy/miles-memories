@@ -1375,7 +1375,7 @@ def list_trips(
             return [_normalize_trip(row) for row in cur.fetchall()]
 
 
-def list_published_trips(*, limit: int = 12) -> list[dict[str, Any]]:
+def list_published_trips(*, limit: int = 12, offset: int = 0) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -1408,10 +1408,30 @@ def list_published_trips(*, limit: int = 12) -> list[dict[str, Any]]:
                   )
                 ORDER BY COALESCE(published_at, end_time, start_time) DESC, id DESC
                 LIMIT %s
+                OFFSET %s
                 """,
-                (limit,),
+                (limit, offset),
             )
             return [_normalize_trip(row) for row in cur.fetchall()]
+
+
+def count_published_trips() -> int:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*)::BIGINT AS total
+                FROM trips
+                WHERE is_private = FALSE
+                  AND (
+                    status = 'published'
+                    OR publish_ready = TRUE
+                    OR published_at IS NOT NULL
+                  )
+                """
+            )
+            row = cur.fetchone()
+            return int(row["total"] or 0)
 
 
 def build_public_home_intro(*, limit: int | None = None) -> dict[str, str]:
@@ -1523,6 +1543,59 @@ def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
                 LIMIT 1
                 """,
                 (trip_slug,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    trip = _normalize_trip(row)
+    snapshot = get_trip_snapshot(trip["id"])
+    if not snapshot:
+        snapshot = build_trip_snapshot(trip["id"])
+    if snapshot and snapshot.get("public"):
+        public_payload = snapshot["public"]
+        trip["travel_legs"] = public_payload.get("travel_legs", [])
+        trip["map_points"] = public_payload.get("map_points", [])
+    else:
+        trip["travel_legs"] = []
+        trip["map_points"] = []
+    return trip
+
+
+def get_public_trip_by_id(trip_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    trip_name,
+                    trip_slug,
+                    trip_type,
+                    status,
+                    review_decision,
+                    start_time,
+                    end_time,
+                    start_date,
+                    end_date,
+                    primary_destination_name,
+                    origin_place_name,
+                    confidence_score,
+                    summary_text,
+                    is_private,
+                    publish_ready,
+                    published_at,
+                    updated_at
+                FROM trips
+                WHERE id = %s
+                  AND is_private = FALSE
+                  AND (
+                    status = 'published'
+                    OR publish_ready = TRUE
+                    OR published_at IS NOT NULL
+                  )
+                LIMIT 1
+                """,
+                (trip_id,),
             )
             row = cur.fetchone()
     if not row:
