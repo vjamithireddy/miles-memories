@@ -2546,12 +2546,39 @@ def _render_public_maplibre_script() -> str:
           if (activeLegMaps.has(node)) {
             return;
           }
+          const width = node.offsetWidth || 0;
+          const height = node.offsetHeight || 0;
+          if (!width || !height) {
+            return false;
+          }
           try {
             const payload = JSON.parse(node.dataset[payloadKey] || "{}");
             const map = initMap(node, payload, { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
             registerLegMap(node, map);
+            window.setTimeout(() => {
+              if (typeof map.resize === "function") {
+                map.resize();
+              }
+            }, 120);
+            window.setTimeout(() => {
+              if (typeof map.resize === "function") {
+                map.resize();
+              }
+            }, 420);
           } catch (error) {
             console.error("Failed to initialize leg map", error);
+          }
+          return true;
+        };
+
+        const scheduleMount = (attempt = 0) => {
+          if (attempt > 6) {
+            mountLegMap();
+            return;
+          }
+          const mounted = mountLegMap();
+          if (!mounted) {
+            window.setTimeout(() => scheduleMount(attempt + 1), 120);
           }
         };
 
@@ -2562,12 +2589,12 @@ def _render_public_maplibre_script() -> str:
         };
 
         if (card.open) {
-          mountLegMap();
+          scheduleMount();
         }
 
         card.addEventListener("toggle", () => {
           if (card.open) {
-            mountLegMap();
+            scheduleMount();
           } else {
             unmountLegMap();
           }
