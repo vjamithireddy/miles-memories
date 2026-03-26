@@ -187,12 +187,17 @@ def _render_public_homepage(
     load_more_markup = ""
     if show_load_more and published_total:
         next_page = page + 1
+        noscript_markup = (
+            f'<noscript><a class="button" href="/trips?page={next_page}">Next page</a></noscript>'
+            if has_more
+            else ""
+        )
         load_more_markup = f"""
         <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
           <button class="button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
             {"No more trips" if not has_more else "Load more trips"}
           </button>
-          {"<noscript><a class=\\"button\\" href=\\"/trips?page=%d\\">Next page</a></noscript>" % next_page if has_more else ""}
+          {noscript_markup}
         </div>
         """
 
