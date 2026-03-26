@@ -1730,7 +1730,7 @@ def _render_admin_trip_map(payload: dict[str, Any]) -> str:
     """
     return f"""
     <div class="maplibre-shell">
-      <div class="maplibre-map" data-admin-trip-map='{escape(json.dumps(payload, separators=(",", ":")))}'></div>
+      <div class="maplibre-map" style="min-height: 360px;" data-admin-trip-map='{escape(json.dumps(payload, separators=(",", ":")))}'></div>
     </div>
     """
 
