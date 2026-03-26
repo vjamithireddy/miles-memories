@@ -1870,7 +1870,7 @@ def _render_admin_leg_items(trip_id: int, travel_legs: List[dict[str, Any]]) -> 
               </div>
               <div class="leg-map-panel">
                 <div class="maplibre-shell">
-                  <div class="maplibre-map public-leg-maplibre" data-admin-leg-map='{escape(json.dumps(_build_public_leg_map_payload(item), separators=(",", ":")))}'></div>
+                  <div class="maplibre-map public-leg-maplibre" style="min-height: 320px;" data-admin-leg-map='{escape(json.dumps(_build_public_leg_map_payload(item), separators=(",", ":")))}'></div>
                 </div>
               </div>
             </div>
@@ -4395,6 +4395,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .leg-map-panel {{
       display: flex;
+      min-height: 320px;
+      width: 100%;
+    }}
+    .leg-map-panel .maplibre-shell {{
+      width: 100%;
+      height: 100%;
+    }}
+    .leg-map-panel .maplibre-map {{
+      width: 100%;
+      height: 100%;
       min-height: 320px;
     }}
     .leg-map-svg {{
