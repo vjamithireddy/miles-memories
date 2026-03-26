@@ -101,6 +101,33 @@ async def admin_basic_auth(request: Request, call_next):
 
     return await call_next(request)
 
+def _render_public_trip_cards(trips: List[dict]) -> str:
+    cards = []
+    for trip in trips:
+        title = escape(trip.get("trip_name") or "Untitled trip")
+        destination = escape(trip.get("primary_destination_name") or "Destination pending")
+        summary = escape(trip.get("summary_text") or "Published from the MilesMemories archive.")
+        trip_type = escape((trip.get("trip_type") or "trip").replace("_", " "))
+        timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
+        trip_href = f"/trips/{escape(str(trip.get('id') or ''))}"
+        cards.append(
+            f"""
+            <article class="trip-card">
+              <a class="trip-card-link" href="{trip_href}" aria-label="Open {title}">
+              <div class="trip-card-top">
+                <span class="trip-chip">{trip_type}</span>
+                <span class="trip-chip muted">{timing}</span>
+              </div>
+              <h3>{title}</h3>
+              <p class="trip-destination">{destination}</p>
+              <p>{summary}</p>
+              </a>
+            </article>
+            """
+        )
+    return "".join(cards)
+
+
 def _render_public_homepage(
     trips: List[dict],
     *,
@@ -109,6 +136,7 @@ def _render_public_homepage(
     page: int = 1,
     per_page: int = 12,
     show_archive_link: bool = True,
+    show_load_more: bool = False,
 ) -> str:
     published_total = total if total is not None else len(trips)
     latest_label = "No published trips yet"
@@ -141,31 +169,7 @@ def _render_public_homepage(
         feature_trip_type = "Published archive"
         feature_link_markup = ""
 
-    cards = []
-    for trip in trips:
-        title = escape(trip.get("trip_name") or "Untitled trip")
-        destination = escape(trip.get("primary_destination_name") or "Destination pending")
-        summary = escape(trip.get("summary_text") or "Published from the MilesMemories archive.")
-        trip_type = escape((trip.get("trip_type") or "trip").replace("_", " "))
-        timing = f"{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}"
-        trip_href = f"/trips/{escape(str(trip.get('id') or ''))}"
-        cards.append(
-            f"""
-            <article class="trip-card">
-              <a class="trip-card-link" href="{trip_href}" aria-label="Open {title}">
-              <div class="trip-card-top">
-                <span class="trip-chip">{trip_type}</span>
-                <span class="trip-chip muted">{timing}</span>
-              </div>
-              <h3>{title}</h3>
-              <p class="trip-destination">{destination}</p>
-              <p>{summary}</p>
-              </a>
-            </article>
-            """
-        )
-
-    trips_markup = "".join(cards) if cards else """
+    trips_markup = _render_public_trip_cards(trips) if trips else """
       <article class="trip-card empty-state">
         <h3>No public trips yet</h3>
         <p>Publish a reviewed trip from the admin workflow and it will appear here automatically.</p>
@@ -179,25 +183,16 @@ def _render_public_homepage(
     )
     highlight_line = escape(intro.get("highlight_line") or "")
 
-    total_pages = max(1, (published_total + per_page - 1) // per_page) if published_total else 1
-    prev_page = page - 1 if page > 1 else None
-    next_page = page + 1 if page < total_pages else None
-    pagination = ""
-    if published_total:
-        per_page_query = f"&per_page={per_page}" if per_page != 12 else ""
-        per_page_toggle = ""
-        if per_page < 48:
-            per_page_toggle = '<a class="button" href="/trips?page=1&per_page=48">Show 48 per page</a>'
-        elif per_page > 12:
-            per_page_toggle = '<a class="button" href="/trips?page=1&per_page=12">Show 12 per page</a>'
-        pagination = f"""
-        <div class="pagination">
-          <span>Page {page} of {total_pages}</span>
-          <div class="pagination-actions">
-            {per_page_toggle}
-            {f'<a class="button" href="/trips?page={prev_page}{per_page_query}">Previous</a>' if prev_page else ''}
-            {f'<a class="button" href="/trips?page={next_page}{per_page_query}">Next</a>' if next_page else ''}
-          </div>
+    has_more = published_total > page * per_page if published_total else False
+    load_more_markup = ""
+    if show_load_more and published_total:
+        next_page = page + 1
+        load_more_markup = f"""
+        <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
+          <button class="button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
+            {"No more trips" if not has_more else "Load more trips"}
+          </button>
+          {"<noscript><a class=\\"button\\" href=\\"/trips?page=%d\\">Next page</a></noscript>" % next_page if has_more else ""}
         </div>
         """
 
@@ -381,6 +376,11 @@ def _render_public_homepage(
       gap: 10px;
       flex-wrap: wrap;
     }}
+    .load-more {{
+      margin-top: 18px;
+      display: flex;
+      justify-content: center;
+    }}
 
     .trip-card {{
       display: grid;
@@ -496,9 +496,54 @@ def _render_public_homepage(
       <div class="published-grid">
         {trips_markup}
       </div>
-      {pagination}
+      {load_more_markup}
     </section>
   </main>
+  {f'''
+  <script>
+    (() => {{
+      const container = document.querySelector("[data-load-more]");
+      if (!container) return;
+      const button = container.querySelector("[data-load-more-button]");
+      const grid = document.querySelector(".published-grid");
+      if (!button || !grid) return;
+      let page = Number(container.dataset.page || "1");
+      const perPage = Number(container.dataset.perPage || "{per_page}");
+      const total = Number(container.dataset.total || "0");
+
+      const setButton = (enabled) => {{
+        button.disabled = !enabled;
+        button.textContent = enabled ? "Load more trips" : "No more trips";
+      }};
+
+      if (page * perPage >= total) {{
+        setButton(false);
+      }}
+
+      button.addEventListener("click", async () => {{
+        if (button.disabled) return;
+        button.disabled = true;
+        button.textContent = "Loading...";
+        try {{
+          const nextPage = page + 1;
+          const response = await fetch(`/trips?partial=1&page=${{nextPage}}&per_page=${{perPage}}`);
+          if (!response.ok) throw new Error("Unable to load more trips");
+          const payload = await response.json();
+          if (payload.html) {{
+            grid.insertAdjacentHTML("beforeend", payload.html);
+          }}
+          page = payload.next_page || nextPage;
+          const hasMore = Boolean(payload.has_more);
+          setButton(hasMore);
+        }} catch (error) {{
+          console.error(error);
+          setButton(true);
+          button.textContent = "Load more trips";
+        }}
+      }});
+    }})();
+  </script>
+  ''' if show_load_more else ''}
 </body>
 </html>
 """
@@ -517,6 +562,7 @@ def homepage() -> HTMLResponse:
             page=1,
             per_page=12,
             show_archive_link=True,
+            show_load_more=False,
         )
     )
 
@@ -525,11 +571,23 @@ def homepage() -> HTMLResponse:
 def public_trips_page(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=12, ge=1, le=48),
+    partial: bool = Query(default=False),
 ) -> HTMLResponse:
     total = trip_admin.count_published_trips()
     offset = (page - 1) * per_page
     trips = trip_admin.list_published_trips(limit=per_page, offset=offset)
     intro = trip_admin.build_public_home_intro()
+    if partial:
+        html = _render_public_trip_cards(trips)
+        has_more = total > page * per_page
+        next_page = page + 1 if has_more else None
+        return JSONResponse(
+            {
+                "html": html,
+                "next_page": next_page,
+                "has_more": has_more,
+            }
+        )
     return _html_response(
         _render_public_homepage(
             trips,
@@ -538,6 +596,7 @@ def public_trips_page(
             page=page,
             per_page=per_page,
             show_archive_link=False,
+            show_load_more=True,
         )
     )
 

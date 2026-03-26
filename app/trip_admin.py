@@ -1406,7 +1406,7 @@ def list_published_trips(*, limit: int = 12, offset: int = 0) -> list[dict[str, 
                     OR publish_ready = TRUE
                     OR published_at IS NOT NULL
                   )
-                ORDER BY COALESCE(published_at, end_time, start_time) DESC, id DESC
+                ORDER BY start_date DESC, end_date DESC, id DESC
                 LIMIT %s
                 OFFSET %s
                 """,
