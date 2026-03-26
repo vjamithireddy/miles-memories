@@ -555,21 +555,8 @@ def _render_public_homepage(
 
 
 @app.get("/", response_class=HTMLResponse)
-def homepage() -> HTMLResponse:
-    total = trip_admin.count_published_trips()
-    trips = trip_admin.list_published_trips(limit=12, offset=0)
-    intro = trip_admin.build_public_home_intro()
-    return _html_response(
-        _render_public_homepage(
-            trips,
-            intro=intro,
-            total=total,
-            page=1,
-            per_page=12,
-            show_archive_link=True,
-            show_load_more=False,
-        )
-    )
+def homepage() -> RedirectResponse:
+    return RedirectResponse(url="/trips", status_code=308)
 
 
 @app.get("/trips", response_class=HTMLResponse)
@@ -3337,7 +3324,7 @@ def _render_admin_page(
       <div class="links">
         <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
         <a class="button" href="/admin/overrides">Destination overrides</a>
-        <a class="button" href="/">Homepage</a>
+        <a class="button" href="/trips">Homepage</a>
       </div>
     </section>
 
@@ -3642,7 +3629,7 @@ def _render_overrides_page(overrides: List[dict], *, return_to: str = "") -> str
       </div>
       <div class="links">
         <a class="button" href="{escape(return_target)}">Back</a>
-        <a class="button" href="/">Homepage</a>
+        <a class="button" href="/trips">Homepage</a>
       </div>
     </section>
 
