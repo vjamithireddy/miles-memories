@@ -6,6 +6,7 @@ import json
 import math
 import re
 import secrets
+import time
 from typing import Any, List, Optional, Union
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
@@ -565,6 +566,7 @@ def public_trips_page(
     per_page: int = Query(default=12, ge=1, le=48),
     partial: bool = Query(default=False),
 ) -> HTMLResponse:
+    start_time = time.perf_counter()
     total = trip_admin.count_published_trips()
     offset = (page - 1) * per_page
     trips = trip_admin.list_published_trips(limit=per_page, offset=offset)
@@ -573,6 +575,7 @@ def public_trips_page(
         html = _render_public_trip_cards(trips)
         has_more = total > page * per_page
         next_page = page + 1 if has_more else None
+        _log_timing("public_trips_partial", start_time)
         return JSONResponse(
             {
                 "html": html,
@@ -580,7 +583,7 @@ def public_trips_page(
                 "has_more": has_more,
             }
         )
-    return _html_response(
+    response = _html_response(
         _render_public_homepage(
             trips,
             intro=intro,
@@ -591,6 +594,8 @@ def public_trips_page(
             show_load_more=True,
         )
     )
+    _log_timing("public_trips_page", start_time)
+    return response
 
 
 def _render_public_trip_detail_page(trip: dict) -> str:
@@ -1337,7 +1342,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     </section>
   </main>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  {_render_map_interactions_script()}
   {_render_public_maplibre_script()}
 </body>
 </html>"""
@@ -1741,6 +1745,16 @@ def _route_stop_color(marker_kind: str) -> str:
     return START_MARKER_STYLES.get(marker_kind, START_MARKER_STYLES["default"])["fill"]
 
 
+def _downsample_coords(coords: list[list[float]], max_points: int = 600) -> list[list[float]]:
+    if len(coords) <= max_points:
+        return coords
+    step = max(1, math.ceil(len(coords) / max_points))
+    sampled = coords[::step]
+    if coords[-1] != sampled[-1]:
+        sampled.append(coords[-1])
+    return sampled
+
+
 def _build_public_trip_map_payload(
     trip: dict,
     travel_legs: List[dict],
@@ -1773,6 +1787,7 @@ def _build_public_trip_map_payload(
                     coords.append(candidate)
         if len(coords) < 2:
             continue
+        coords = _downsample_coords(coords, max_points=520)
         line_coords.extend(coords)
         line_features.append(
             {
@@ -1799,6 +1814,7 @@ def _build_public_trip_map_payload(
             if not fallback_coords or fallback_coords[-1] != candidate:
                 fallback_coords.append(candidate)
         if len(fallback_coords) >= 2:
+            fallback_coords = _downsample_coords(fallback_coords, max_points=520)
             line_coords = fallback_coords[:]
             line_features.append(
                 {
@@ -1890,6 +1906,8 @@ def _build_public_leg_map_payload(item: dict[str, Any]) -> dict[str, Any]:
         candidate = [float(lon), float(lat)]
         if not coords or coords[-1] != candidate:
             coords.append(candidate)
+    if coords:
+        coords = _downsample_coords(coords, max_points=320)
     if len(coords) < 2:
         start_lat = item.get("start_latitude")
         start_lon = item.get("start_longitude")
@@ -2125,178 +2143,6 @@ def _render_route_cluster_marker(cluster: dict[str, Any]) -> str:
     """
 
 
-def _render_map_interactions_script() -> str:
-    return """
-  <script>
-    (() => {
-      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-      document.querySelectorAll("[data-map-frame]").forEach((frame) => {
-        const viewport = frame.querySelector("[data-map-viewport]");
-        if (!viewport) return;
-        let scale = 1;
-        let translateX = 0;
-        let translateY = 0;
-        let isDragging = false;
-        let dragPointerId = null;
-        let dragStartX = 0;
-        let dragStartY = 0;
-        let dragOriginX = 0;
-        let dragOriginY = 0;
-        const expandedClusters = new Set();
-        const markerClusterId = new Map();
-        frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
-          const clusterId = cluster.dataset.clusterId || "";
-          const memberIds = (cluster.dataset.memberIds || "").split(",").filter(Boolean);
-          memberIds.forEach((memberId) => markerClusterId.set(memberId, clusterId));
-        });
-        const syncPanCursor = () => {
-          frame.style.cursor = isDragging ? "grabbing" : "grab";
-        };
-        const applyViewportTransform = () => {
-          viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-        };
-        const centerOnPoint = (x, y) => {
-          const rect = frame.getBoundingClientRect();
-          const cx = rect.width / 2;
-          const cy = rect.height / 2;
-          translateX = cx - (x * scale);
-          translateY = cy - (y * scale);
-          applyViewportTransform();
-        };
-        const syncClusters = () => {
-          const autoExpand = scale >= 1.75;
-          frame.querySelectorAll(".map-stop-marker[data-clustered='true']").forEach((marker) => {
-            const clusterId = marker.dataset.clusterId || "";
-            const showMarker = autoExpand || expandedClusters.has(clusterId);
-            marker.style.display = showMarker ? "" : "none";
-          });
-          frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
-            const clusterId = cluster.dataset.clusterId || "";
-            const hideCluster = autoExpand || expandedClusters.has(clusterId);
-            cluster.style.display = hideCluster ? "none" : "";
-          });
-        };
-        const applyScale = () => {
-          applyViewportTransform();
-          frame.dataset.mapScale = String(scale.toFixed(2));
-          if (scale <= 1.25) expandedClusters.clear();
-          syncClusters();
-        };
-        frame.querySelectorAll("[data-map-zoom]").forEach((button) => {
-          button.addEventListener("click", (event) => {
-            event.preventDefault();
-            const direction = button.dataset.mapZoom;
-            if (direction === "in") {
-              scale = clamp(scale + 0.35, 1, 8);
-            } else if (direction === "out") {
-              scale = clamp(scale - 0.35, 1, 8);
-            } else {
-              scale = 1;
-              translateX = 0;
-              translateY = 0;
-              expandedClusters.clear();
-            }
-            applyScale();
-          });
-        });
-        const tooltip = frame.querySelector("[data-map-tooltip]");
-        const setTooltip = (label) => {
-          if (!tooltip) return;
-          if (!label) {
-            tooltip.hidden = true;
-            tooltip.textContent = "";
-            return;
-          }
-          tooltip.textContent = label;
-          tooltip.hidden = false;
-        };
-        frame.querySelectorAll(".map-stop-marker").forEach((marker) => {
-          const activate = () => {
-            frame.querySelectorAll(".map-stop-marker.is-active").forEach((node) => {
-              if (node !== marker) node.classList.remove("is-active");
-            });
-            marker.classList.add("is-active");
-            setTooltip(marker.dataset.label || "");
-          };
-          marker.addEventListener("mouseenter", activate);
-          marker.addEventListener("focus", activate);
-          marker.addEventListener("click", (event) => {
-            event.preventDefault();
-            activate();
-          });
-          marker.addEventListener("mouseleave", () => {
-            if (!marker.classList.contains("is-active")) {
-              setTooltip("");
-            }
-          });
-          marker.addEventListener("blur", () => {
-            if (!marker.classList.contains("is-active")) {
-              setTooltip("");
-            }
-          });
-        });
-        frame.querySelectorAll(".map-stop-cluster").forEach((cluster) => {
-          const activate = () => {
-            frame.querySelectorAll(".map-stop-marker.is-active").forEach((node) => node.classList.remove("is-active"));
-            frame.querySelectorAll(".map-stop-cluster.is-active").forEach((node) => node.classList.remove("is-active"));
-            cluster.classList.add("is-active");
-            setTooltip(cluster.dataset.label || "");
-          };
-          cluster.addEventListener("mouseenter", activate);
-          cluster.addEventListener("focus", activate);
-          cluster.addEventListener("click", (event) => {
-            event.preventDefault();
-            const clusterId = cluster.dataset.clusterId || "";
-            const clusterX = Number(cluster.dataset.x || "0");
-            const clusterY = Number(cluster.dataset.y || "0");
-            scale = clamp(scale + 0.8, 1, 8);
-            if (clusterX || clusterY) {
-              centerOnPoint(clusterX, clusterY);
-            }
-            if (clusterId) {
-              expandedClusters.add(clusterId);
-            }
-            applyScale();
-            activate();
-          });
-        });
-        frame.addEventListener("pointerdown", (event) => {
-          const target = event.target;
-          if (!(target instanceof Element)) return;
-          if (target.closest(".map-zoom-btn") || target.closest(".map-stop-marker") || target.closest(".map-stop-cluster")) {
-            return;
-          }
-          isDragging = true;
-          dragPointerId = event.pointerId;
-          dragStartX = event.clientX;
-          dragStartY = event.clientY;
-          dragOriginX = translateX;
-          dragOriginY = translateY;
-          viewport.setPointerCapture?.(event.pointerId);
-          syncPanCursor();
-        });
-        frame.addEventListener("pointermove", (event) => {
-          if (!isDragging || dragPointerId !== event.pointerId) return;
-          translateX = dragOriginX + (event.clientX - dragStartX);
-          translateY = dragOriginY + (event.clientY - dragStartY);
-          applyViewportTransform();
-        });
-        const endDrag = (event) => {
-          if (!isDragging || dragPointerId !== event.pointerId) return;
-          isDragging = false;
-          dragPointerId = null;
-          syncPanCursor();
-        };
-        frame.addEventListener("pointerup", endDrag);
-        frame.addEventListener("pointercancel", endDrag);
-        syncPanCursor();
-        applyScale();
-      });
-    })();
-  </script>
-"""
-
-
 def _render_public_maplibre_script() -> str:
     return """
   <script>
@@ -2305,6 +2151,7 @@ def _render_public_maplibre_script() -> str:
 
       const lower48Bounds = [[-125.0, 24.4], [-66.5, 49.6]];
       let mapSequence = 0;
+      const initializedNodes = new WeakSet();
       const popup = new maplibregl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -2404,6 +2251,27 @@ def _render_public_maplibre_script() -> str:
             source: "osm",
           },
         ],
+      };
+
+      const initWhenVisible = (node, initFn) => {
+        if (!node || initializedNodes.has(node)) return;
+        const doInit = () => {
+          if (initializedNodes.has(node)) return;
+          initializedNodes.add(node);
+          initFn();
+        };
+        if (!("IntersectionObserver" in window)) {
+          doInit();
+          return;
+        }
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            observer.unobserve(entry.target);
+            doInit();
+          });
+        }, { rootMargin: "220px" });
+        observer.observe(node);
       };
 
       const initMap = (node, payload, { clusterStops = false, fitMaxZoom = 6.5, maxZoom = 8 } = {}) => {
@@ -2638,19 +2506,23 @@ def _render_public_maplibre_script() -> str:
       };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
-        try {
-          initMap(node, JSON.parse(node.dataset.publicTripMap || "{}"), { clusterStops: true, fitMaxZoom: 6.5, maxZoom: 12 });
-        } catch (error) {
-          console.error("Failed to initialize public trip map", error);
-        }
+        initWhenVisible(node, () => {
+          try {
+            initMap(node, JSON.parse(node.dataset.publicTripMap || "{}"), { clusterStops: true, fitMaxZoom: 6.5, maxZoom: 12 });
+          } catch (error) {
+            console.error("Failed to initialize public trip map", error);
+          }
+        });
       });
 
       document.querySelectorAll("[data-admin-trip-map]").forEach((node) => {
-        try {
-          initMap(node, JSON.parse(node.dataset.adminTripMap || "{}"), { clusterStops: true, fitMaxZoom: 7.5, maxZoom: 9 });
-        } catch (error) {
-          console.error("Failed to initialize admin trip map", error);
-        }
+        initWhenVisible(node, () => {
+          try {
+            initMap(node, JSON.parse(node.dataset.adminTripMap || "{}"), { clusterStops: true, fitMaxZoom: 7.5, maxZoom: 9 });
+          } catch (error) {
+            console.error("Failed to initialize admin trip map", error);
+          }
+        });
       });
 
       const activeLegMaps = new Map();
@@ -2688,23 +2560,25 @@ def _render_public_maplibre_script() -> str:
           if (!width || !height) {
             return false;
           }
-          try {
-            const payload = JSON.parse(node.dataset[payloadKey] || "{}");
-            const map = initMap(node, payload, { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
-            registerLegMap(node, map);
-            window.setTimeout(() => {
-              if (typeof map.resize === "function") {
-                map.resize();
-              }
-            }, 120);
-            window.setTimeout(() => {
-              if (typeof map.resize === "function") {
-                map.resize();
-              }
-            }, 420);
-          } catch (error) {
-            console.error("Failed to initialize leg map", error);
-          }
+          initWhenVisible(node, () => {
+            try {
+              const payload = JSON.parse(node.dataset[payloadKey] || "{}");
+              const map = initMap(node, payload, { clusterStops: false, fitMaxZoom: 10, maxZoom: 12 });
+              registerLegMap(node, map);
+              window.setTimeout(() => {
+                if (typeof map.resize === "function") {
+                  map.resize();
+                }
+              }, 120);
+              window.setTimeout(() => {
+                if (typeof map.resize === "function") {
+                  map.resize();
+                }
+              }, 420);
+            } catch (error) {
+              console.error("Failed to initialize leg map", error);
+            }
+          });
           return true;
         };
 
@@ -2780,232 +2654,14 @@ def _format_duration(start: datetime, end: datetime) -> str:
     return " ".join(parts)
 
 
-def _render_route_map_preview(
-    raw_points: Optional[List[dict[str, float]]] = None,
-    *,
-    start_latitude: Optional[float] = None,
-    start_longitude: Optional[float] = None,
-    end_latitude: Optional[float] = None,
-    end_longitude: Optional[float] = None,
-    start_marker_kind: str = "default",
-    stop_markers: Optional[List[dict[str, Any]]] = None,
-    aria_label: str = "Route map preview",
-    show_route_endpoints: bool = True,
-    show_legend: bool = True,
-    reset_label: str = "Fit",
-    cluster_stop_markers: bool = False,
-) -> str:
-    points: list[tuple[float, float]] = []
-    for point in raw_points or []:
-        lat = point.get("lat")
-        lon = point.get("lon")
-        if lat is None or lon is None:
-            continue
-        points.append((float(lat), float(lon)))
-    if not points:
-        if start_latitude is not None and start_longitude is not None:
-            points.append((float(start_latitude), float(start_longitude)))
-        if end_latitude is not None and end_longitude is not None:
-            end_point = (float(end_latitude), float(end_longitude))
-            if not points or points[-1] != end_point:
-                points.append(end_point)
-    if not points:
-        return '<div class="leg-map-empty">No route preview available.</div>'
-
-    width = 640.0
-    height = 360.0
-    padding = 26.0
-    lats = [point[0] for point in points]
-    lons = [point[1] for point in points]
-    min_lat, max_lat = min(lats), max(lats)
-    min_lon, max_lon = min(lons), max(lons)
-    lat_span = max(max_lat - min_lat, 0.0001)
-    lon_span = max(max_lon - min_lon, 0.0001)
-
-    def pick_zoom() -> int:
-        span = max(lat_span, lon_span)
-        if span > 30:
-            return 4
-        if span > 15:
-            return 5
-        if span > 6:
-            return 6
-        if span > 2.5:
-            return 7
-        if span > 0.9:
-            return 8
-        if span > 0.3:
-            return 9
-        if span > 0.1:
-            return 10
-        if span > 0.03:
-            return 11
-        if span > 0.01:
-            return 12
-        return 14
-
-    def project(lat: float, lon: float, zoom: int) -> tuple[float, float]:
-        lat = max(min(lat, 85.0511), -85.0511)
-        scale = 256 * (2**zoom)
-        x = (lon + 180.0) / 360.0 * scale
-        lat_rad = math.radians(lat)
-        y = (
-            1
-            - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi
-        ) / 2 * scale
-        return x, y
-
-    zoom = pick_zoom()
-    projected = [project(lat, lon, zoom) for lat, lon in points]
-    min_px = min(point[0] for point in projected)
-    max_px = max(point[0] for point in projected)
-    min_py = min(point[1] for point in projected)
-    max_py = max(point[1] for point in projected)
-    tile_size = 256
-    margin = 48
-    tile_min_x = int(math.floor((min_px - margin) / tile_size))
-    tile_max_x = int(math.floor((max_px + margin) / tile_size))
-    tile_min_y = int(math.floor((min_py - margin) / tile_size))
-    tile_max_y = int(math.floor((max_py + margin) / tile_size))
-    max_tile_index = (2**zoom) - 1
-    tile_min_x = max(0, min(tile_min_x, max_tile_index))
-    tile_max_x = max(0, min(tile_max_x, max_tile_index))
-    tile_min_y = max(0, min(tile_min_y, max_tile_index))
-    tile_max_y = max(0, min(tile_max_y, max_tile_index))
-    tile_count_x = max(1, tile_max_x - tile_min_x + 1)
-    tile_count_y = max(1, tile_max_y - tile_min_y + 1)
-    map_pixel_width = tile_count_x * tile_size
-    map_pixel_height = tile_count_y * tile_size
-
-    def scale(point: tuple[float, float]) -> tuple[float, float]:
-        pixel_x, pixel_y = project(point[0], point[1], zoom)
-        x = ((pixel_x - (tile_min_x * tile_size)) / map_pixel_width) * width
-        y = ((pixel_y - (tile_min_y * tile_size)) / map_pixel_height) * height
-        x = min(max(x, padding), width - padding)
-        y = min(max(y, padding), height - padding)
-        return round(x, 2), round(y, 2)
-
-    scaled = [scale(point) for point in points]
-    path_d = " ".join(
-        f"{'M' if index == 0 else 'L'} {x} {y}" for index, (x, y) in enumerate(scaled)
-    )
-    start_x, start_y = scaled[0]
-    end_x, end_y = scaled[-1]
-    scaled_markers: list[dict[str, Any]] = []
-    for marker in stop_markers or []:
-        lat = marker.get("lat")
-        lon = marker.get("lon")
-        if lat is None or lon is None:
-            continue
-        marker_x, marker_y = scale((float(lat), float(lon)))
-        label = str(marker.get("label") or "Trip stop")
-        kind = str(marker.get("kind") or "default")
-        is_start = show_route_endpoints and math.isclose(marker_x, start_x, abs_tol=1.0) and math.isclose(marker_y, start_y, abs_tol=1.0)
-        is_end = show_route_endpoints and math.isclose(marker_x, end_x, abs_tol=1.0) and math.isclose(marker_y, end_y, abs_tol=1.0)
-        scaled_markers.append(
-            {
-                "id": f"marker-{len(scaled_markers)}",
-                "x": marker_x,
-                "y": marker_y,
-                "kind": kind,
-                "label": label,
-                "is_start": is_start,
-                "is_end": is_end,
-            }
-        )
-    single_markers = scaled_markers
-    cluster_markers: list[dict[str, Any]] = []
-    if cluster_stop_markers:
-        single_markers, cluster_markers = _cluster_scaled_stop_markers(scaled_markers)
-    rendered_stop_markers = []
-    clustered_ids = {member_id for cluster in cluster_markers for member_id in cluster["member_ids"]}
-    marker_cluster_lookup = {
-        member_id: cluster["id"]
-        for cluster in cluster_markers
-        for member_id in cluster["member_ids"]
-    }
-    for marker in scaled_markers:
-        markup = _render_route_stop_marker(
-            marker["x"],
-            marker["y"],
-            marker["kind"],
-            label=marker["label"],
-            is_start=marker["is_start"],
-            is_end=marker["is_end"],
-        )
-        if marker["id"] in clustered_ids:
-            cluster_id = marker_cluster_lookup.get(marker["id"], "")
-            markup = markup.replace('tabindex="0"', f'data-clustered="true" data-cluster-id="{escape(cluster_id)}" tabindex="0"')
-        rendered_stop_markers.append(markup)
-    rendered_clusters = "".join(_render_route_cluster_marker(cluster) for cluster in cluster_markers)
-    tiles = []
-    for tile_x in range(tile_min_x, tile_max_x + 1):
-        for tile_y in range(tile_min_y, tile_max_y + 1):
-            left = ((tile_x - tile_min_x) * tile_size / map_pixel_width) * width
-            top = ((tile_y - tile_min_y) * tile_size / map_pixel_height) * height
-            tile_width = (tile_size / map_pixel_width) * width
-            tile_height = (tile_size / map_pixel_height) * height
-            tiles.append(
-                f'<img class="leg-map-tile" src="/map-tiles/osm/{zoom}/{tile_x}/{tile_y}.png" '
-                f'alt="" loading="lazy" style="left:{(left / width) * 100:.4f}%;top:{(top / height) * 100:.4f}%;'
-                f'width:{(tile_width / width) * 100:.4f}%;height:{(tile_height / height) * 100:.4f}%;">'
-            )
-    start_marker = _render_route_start_marker(start_x, start_y, start_marker_kind) if show_route_endpoints else ""
-    end_marker = (
-        f'<circle cx="{end_x}" cy="{end_y}" r="11" fill="#fff8ef" stroke="#2f6c5b" stroke-width="6" />'
-        if show_route_endpoints
-        else ""
-    )
-    legend_markup = (
-        """
-      <div class="leg-map-legend">
-        <span><i class="legend-dot legend-start"></i>Start</span>
-        <span><i class="legend-dot legend-end"></i>End</span>
-      </div>
-        """
-        if show_legend
-        else ""
-    )
-    return f"""
-    <div class="leg-map-frame" role="img" aria-label="{escape(aria_label)}" data-map-frame>
-      <div class="leg-map-controls" aria-label="Map zoom controls">
-        <button type="button" class="map-zoom-btn" data-map-zoom="out" aria-label="Zoom out">−</button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="reset" aria-label="Reset zoom">{escape(reset_label)}</button>
-        <button type="button" class="map-zoom-btn" data-map-zoom="in" aria-label="Zoom in">+</button>
-      </div>
-      <div class="leg-map-tooltip" data-map-tooltip hidden></div>
-      <div class="leg-map-viewport" data-map-viewport>
-      {''.join(tiles)}
-      <svg class="leg-map-svg" viewBox="0 0 {int(width)} {int(height)}">
-        <rect x="0" y="0" width="{int(width)}" height="{int(height)}" rx="22" fill="rgba(255,248,239,0.08)" />
-        <path d="{path_d}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
-        <path d="{path_d}" fill="none" stroke="#2f6c5b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-        {''.join(rendered_stop_markers)}
-        {rendered_clusters}
-        {start_marker}
-        {end_marker}
-      </svg>
-      </div>
-      {legend_markup}
-    </div>
-    """
-
-
-def _render_leg_map_preview(item: dict) -> str:
-    return _render_route_map_preview(
-        item.get("path_points") or [],
-        start_latitude=item.get("start_latitude"),
-        start_longitude=item.get("start_longitude"),
-        end_latitude=item.get("end_latitude"),
-        end_longitude=item.get("end_longitude"),
-        start_marker_kind=_start_marker_kind_for_leg(item),
-        aria_label="Travel leg map preview",
-    )
-
-
 def _button_class(*names: str) -> str:
     classes = ["button", *names]
     return " ".join(part for part in classes if part)
+
+
+def _log_timing(label: str, start_time: float) -> None:
+    elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+    print(f"[perf] {label} {elapsed_ms}ms")
 
 
 def _render_admin_page(
@@ -5027,77 +4683,83 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             return;
           }}
           event.preventDefault();
-          const body = new URLSearchParams(new FormData(overviewForm));
-          body.set("action", submitter.value);
-          overviewForm.dataset.saveState = "saving";
-          try {{
-            const actionUrl = overviewForm.getAttribute("action") || overviewForm.action;
-            const response = await fetch(actionUrl, {{
-              method: "POST",
-              credentials: "same-origin",
-              headers: {{
-                "X-Requested-With": "fetch"
-              }},
-              body
-            }});
-            if (!response.ok) {{
-              throw new Error(`Action failed with ${{response.status}}`);
-            }}
-            const payload = await response.json();
-            overviewForm.dataset.saveState = "saved";
-            const badgeSlot = overviewForm.querySelector(".review-badge-slot");
-            if (badgeSlot && payload.badge_html) {{
-              badgeSlot.innerHTML = payload.badge_html;
-            }}
-            const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
-            reviewButtons.forEach((node) => {{
-              const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
-              node.classList.toggle("is-current", active);
-              node.setAttribute("aria-pressed", active ? "true" : "false");
-            }});
-            const visibilityEnabled = payload.review_state === "yes";
-            overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
-              const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
-              node.classList.toggle("is-current", active);
-              node.setAttribute("aria-pressed", active ? "true" : "false");
-              node.disabled = !visibilityEnabled;
-            }});
-            const workflowHelp = overviewForm.querySelector(".workflow-help");
-            if (workflowHelp) {{
-              if (payload.review_state === "yes") {{
-                workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
-              }} else if (payload.review_state === "no") {{
-                workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
-              }} else {{
-                workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
-              }}
-            }}
-            const existing = document.querySelector("[data-toast]");
-            if (existing) {{
-              existing.remove();
-            }}
-            const toast = document.createElement("div");
-            toast.className = "toast";
-            toast.dataset.toast = payload.saved || "review";
-            toast.textContent = payload.message || "Update saved.";
-            document.body.appendChild(toast);
-            window.setTimeout(() => {{
-              toast.classList.add("is-hiding");
-              window.setTimeout(() => toast.remove(), 240);
-            }}, 2200);
-            window.setTimeout(() => {{
-              if (overviewForm.dataset.saveState === "saved") {{
-                delete overviewForm.dataset.saveState;
-              }}
-            }}, 1600);
-          }} catch (error) {{
-            delete overviewForm.dataset.saveState;
-            console.error(error);
-            overviewForm.dataset.forceSubmit = "true";
-            overviewForm.submit();
-          }} finally {{
-            delete overviewForm.dataset.actionInFlight;
+          if (overviewForm.dataset.actionTimer) {{
+            window.clearTimeout(Number(overviewForm.dataset.actionTimer));
           }}
+          overviewForm.dataset.actionTimer = String(window.setTimeout(async () => {{
+            delete overviewForm.dataset.actionTimer;
+            const body = new URLSearchParams(new FormData(overviewForm));
+            body.set("action", submitter.value);
+            overviewForm.dataset.saveState = "saving";
+            try {{
+              const actionUrl = overviewForm.getAttribute("action") || overviewForm.action;
+              const response = await fetch(actionUrl, {{
+                method: "POST",
+                credentials: "same-origin",
+                headers: {{
+                  "X-Requested-With": "fetch"
+                }},
+                body
+              }});
+              if (!response.ok) {{
+                throw new Error(`Action failed with ${{response.status}}`);
+              }}
+              const payload = await response.json();
+              overviewForm.dataset.saveState = "saved";
+              const badgeSlot = overviewForm.querySelector(".review-badge-slot");
+              if (badgeSlot && payload.badge_html) {{
+                badgeSlot.innerHTML = payload.badge_html;
+              }}
+              const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
+              reviewButtons.forEach((node) => {{
+                const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
+                node.classList.toggle("is-current", active);
+                node.setAttribute("aria-pressed", active ? "true" : "false");
+              }});
+              const visibilityEnabled = payload.review_state === "yes";
+              overviewForm.querySelectorAll('[aria-label="Visibility"] button').forEach((node) => {{
+                const active = payload.visibility_state === (node.value === "publish" ? "public" : "private");
+                node.classList.toggle("is-current", active);
+                node.setAttribute("aria-pressed", active ? "true" : "false");
+                node.disabled = !visibilityEnabled;
+              }});
+              const workflowHelp = overviewForm.querySelector(".workflow-help");
+              if (workflowHelp) {{
+                if (payload.review_state === "yes") {{
+                  workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
+                }} else if (payload.review_state === "no") {{
+                  workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
+                }} else {{
+                  workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
+                }}
+              }}
+              const existing = document.querySelector("[data-toast]");
+              if (existing) {{
+                existing.remove();
+              }}
+              const toast = document.createElement("div");
+              toast.className = "toast";
+              toast.dataset.toast = payload.saved || "review";
+              toast.textContent = payload.message || "Update saved.";
+              document.body.appendChild(toast);
+              window.setTimeout(() => {{
+                toast.classList.add("is-hiding");
+                window.setTimeout(() => toast.remove(), 240);
+              }}, 2200);
+              window.setTimeout(() => {{
+                if (overviewForm.dataset.saveState === "saved") {{
+                  delete overviewForm.dataset.saveState;
+                }}
+              }}, 1600);
+            }} catch (error) {{
+              delete overviewForm.dataset.saveState;
+              console.error(error);
+              overviewForm.dataset.forceSubmit = "true";
+              overviewForm.submit();
+            }} finally {{
+              delete overviewForm.dataset.actionInFlight;
+            }}
+          }}, 160));
         }});
       }}
 
@@ -5270,6 +4932,7 @@ def admin_trip_destination_page(
 
 @app.get("/admin/trip/{trip_id}", response_class=HTMLResponse)
 def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTMLResponse:
+    start_time = time.perf_counter()
     trip = trip_admin.get_trip_light(trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -5286,7 +4949,9 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
         trip["map_points"] = []
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
-    return _html_response(_render_trip_detail_page(trip, saved=saved))
+    response = _html_response(_render_trip_detail_page(trip, saved=saved))
+    _log_timing("admin_trip_detail", start_time)
+    return response
 
 
 @app.get("/admin/trip/{trip_id}/legs", response_class=HTMLResponse)
@@ -5306,6 +4971,7 @@ async def review_trip_from_form(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> Response:
+    start_time = time.perf_counter()
     payload = parse_qs((await request.body()).decode("utf-8"))
     request_headers = getattr(request, "headers", {}) or {}
     action = (payload.get("action") or ["save"])[0].strip() or "save"
@@ -5336,6 +5002,7 @@ async def review_trip_from_form(
         background_tasks.add_task(trip_admin.build_trip_snapshot, trip_id)
     if request_headers.get("x-requested-with") == "fetch":
         if action == "save":
+            _log_timing("admin_review_action", start_time)
             return Response(status_code=204)
         saved_key = "details"
         message = "Trip details saved."
@@ -5348,6 +5015,7 @@ async def review_trip_from_form(
         elif action in {"confirm", "reject"}:
             saved_key = "review"
             message = "Review saved."
+        _log_timing("admin_review_action", start_time)
         return JSONResponse(
             {
                 "saved": saved_key,
@@ -5364,6 +5032,7 @@ async def review_trip_from_form(
         saved_key = "privacy"
     elif action in {"confirm", "reject"}:
         saved_key = "review"
+    _log_timing("admin_review_action", start_time)
     return RedirectResponse(url=f"/admin/trip/{trip_id}?saved={saved_key}", status_code=303)
 
 
