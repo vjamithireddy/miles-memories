@@ -169,11 +169,8 @@ def _render_public_homepage(
     """
 
     intro = intro or {}
-    hero_note = escape(
-        intro.get("hero_note")
-        or "I publish trips after I review them, then keep a public archive of what I’ve been exploring."
-    )
-    highlight_line = escape(intro.get("highlight_line") or "")
+    hero_note = "My experiences captured through hiking, driving, and trips."
+    highlight_line = ""
 
     parks_list = parks_list or []
     parks_counts = parks_counts or {"total": 0, "visited": 0, "planned": 0}
@@ -649,7 +646,7 @@ def _render_public_homepage(
   <main>
     <section class="panel hero">
       <div class="hero-copy">
-        <span class="eyebrow">MilesMemories</span>
+        <span class="eyebrow">Miles awaiting &amp; Memories created</span>
         <h1>My travel stories from my own data.</h1>
         <p class="hero-note">{hero_note}</p>
         {f'<p class="hero-note">{highlight_line}</p>' if highlight_line else ''}
