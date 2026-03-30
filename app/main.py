@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap import get_user_timezone
-from app import destination_overrides, trip_admin
+from app import destination_overrides, parks, trip_admin
 from app.schemas import PublishReadyRequest, TripDetail, TripReviewRequest, TripSummary
 from app.settings import (
     get_admin_password,
@@ -138,6 +138,8 @@ def _render_public_homepage(
     per_page: int = 12,
     show_archive_link: bool = True,
     show_load_more: bool = False,
+    parks_list: list[dict[str, Any]] | None = None,
+    parks_counts: dict[str, int] | None = None,
 ) -> str:
     published_total = total if total is not None else len(trips)
     latest_label = "No published trips yet"
@@ -145,30 +147,6 @@ def _render_public_homepage(
         latest_trip = trips[0]
         latest_dt = latest_trip.get("published_at") or latest_trip.get("end_time") or latest_trip.get("start_time")
         latest_label = _format_local_datetime(latest_dt) if latest_dt else "Recently updated"
-
-    if trips:
-        feature_trip = trips[0]
-        feature_title = escape(feature_trip.get("trip_name") or "Untitled trip")
-        feature_destination = escape(feature_trip.get("primary_destination_name") or "Destination pending")
-        feature_href = f"/trips/{escape(str(feature_trip.get('id') or ''))}"
-        feature_summary = escape(
-            feature_trip.get("summary_text")
-            or "A published trip from the MilesMemories archive."
-        )
-        feature_timing = (
-            f"{escape(_format_local_datetime(feature_trip['start_time']))} → "
-            f"{escape(_format_local_datetime(feature_trip['end_time']))}"
-        )
-        feature_trip_type = escape((feature_trip.get("trip_type") or "trip").replace("_", " "))
-        feature_link_markup = f'<div><a class="trip-card-link" href="{feature_href}"><span class="trip-chip">Open trip details</span></a></div>'
-    else:
-        feature_title = "Published trips will appear here"
-        feature_destination = "MilesMemories archive"
-        feature_href = ""
-        feature_summary = "Trips you publish from the admin workflow will appear on this landing page."
-        feature_timing = "Publish a reviewed trip to open the public archive."
-        feature_trip_type = "Published archive"
-        feature_link_markup = ""
 
     trips_markup = _render_public_trip_cards(trips) if trips else """
       <article class="trip-card empty-state">
@@ -183,6 +161,31 @@ def _render_public_homepage(
         or "I publish trips after I review them, then keep a public archive of what I’ve been exploring."
     )
     highlight_line = escape(intro.get("highlight_line") or "")
+
+    parks_list = parks_list or []
+    parks_counts = parks_counts or {"total": 0, "visited": 0, "planned": 0}
+    parks_items = []
+    for park in parks_list:
+        status = "visited" if park.get("visited") else "planned" if park.get("planned") else "unvisited"
+        status_label = "Visited" if status == "visited" else "Planned" if status == "planned" else "Not visited"
+        location_bits = [bit for bit in [park.get("state"), park.get("city")] if bit]
+        location = " · ".join(location_bits)
+        parks_items.append(
+            f"""
+            <li class="park-item" data-park-name="{escape(park['name'].lower())}">
+              <div>
+                <p class="park-name">{escape(park['name'])}</p>
+                <p class="park-meta">{escape(location)}</p>
+              </div>
+              <span class="park-status {status}">{status_label}</span>
+            </li>
+            """
+        )
+    parks_list_markup = (
+        "".join(parks_items)
+        if parks_items
+        else "<li class=\"park-item empty\">No parks loaded yet.</li>"
+    )
 
     has_more = published_total > page * per_page if published_total else False
     load_more_markup = ""
@@ -208,6 +211,7 @@ def _render_public_homepage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MilesMemories</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
     :root {{
       --bg: #f4efe6;
@@ -252,6 +256,138 @@ def _render_public_homepage(
       display: grid;
       grid-template-columns: 1.2fr 0.8fr;
       gap: 20px;
+    }}
+
+    .parks {{
+      display: grid;
+      gap: 18px;
+    }}
+
+    .parks-grid {{
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }}
+
+    .parks-map {{
+      display: grid;
+      gap: 12px;
+    }}
+
+    .parks-map .maplibre-shell {{
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #f1e7d6;
+      min-height: 360px;
+    }}
+
+    .parks-map .maplibre-map {{
+      width: 100%;
+      height: 360px;
+    }}
+
+    .parks-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }}
+
+    .legend-dot {{
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }}
+
+    .legend-visited {{ background: #2f6c5b; }}
+    .legend-planned {{ background: #d28b3c; }}
+    .legend-unvisited {{ background: #9aa2ad; }}
+
+    .parks-list {{
+      display: grid;
+      gap: 12px;
+    }}
+
+    .parks-search input {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px 14px;
+      font: inherit;
+      background: #fffdf8;
+      color: var(--ink);
+    }}
+
+    .parks-scroll {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.65);
+      max-height: 420px;
+      overflow: auto;
+    }}
+
+    .parks-scroll ul {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }}
+
+    .park-item {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(216, 201, 179, 0.7);
+      background: rgba(255, 255, 255, 0.6);
+    }}
+
+    .park-item.empty {{
+      justify-content: center;
+      color: var(--muted);
+    }}
+
+    .park-name {{
+      margin: 0;
+      font-weight: 700;
+    }}
+
+    .park-meta {{
+      margin: 4px 0 0;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }}
+
+    .park-status {{
+      align-self: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }}
+
+    .park-status.visited {{
+      background: rgba(47, 108, 91, 0.16);
+      color: #2f6c5b;
+    }}
+
+    .park-status.planned {{
+      background: rgba(210, 139, 60, 0.2);
+      color: #a3621e;
+    }}
+
+    .park-status.unvisited {{
+      background: rgba(120, 130, 140, 0.18);
+      color: #66707e;
     }}
 
     .hero-copy {{
@@ -446,6 +582,9 @@ def _render_public_homepage(
       .published-grid {{
         grid-template-columns: 1fr;
       }}
+      .parks-grid {{
+        grid-template-columns: 1fr;
+      }}
     }}
   </style>
 </head>
@@ -470,24 +609,36 @@ def _render_public_homepage(
       </aside>
     </section>
 
-    <section class="feature-grid">
-      <article class="panel feature-card">
-        <span class="eyebrow">Featured Trip</span>
-        <h2>{feature_title}</h2>
-        <div class="feature-destination">{feature_destination}</div>
-        <p>{feature_summary}</p>
-        <div class="feature-meta">
-          <span class="trip-chip">{feature_trip_type}</span>
-          <span class="trip-chip muted">{feature_timing}</span>
+    <section class="panel parks">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">National Parks</span>
+          <h2>My national park checklist</h2>
         </div>
-        {feature_link_markup}
-      </article>
-      <article class="panel feature-card">
-        <span class="eyebrow">How It Works</span>
-        <h2>Publish from review</h2>
-        <p>I keep trips private until I review them. Once a trip is reviewed and set to public, it appears here automatically.</p>
-        <p class="foot">This public page does not expose admin JSON or review tooling.</p>
-      </article>
+        <p>{parks_counts.get("visited", 0)} visited · {parks_counts.get("planned", 0)} planned · {parks_counts.get("total", 0)} total</p>
+      </div>
+      <div class="parks-grid">
+        <div class="parks-map">
+          <div class="maplibre-shell">
+            <div class="maplibre-map" data-parks-map data-parks-url="/api/parks"></div>
+          </div>
+          <div class="parks-legend">
+            <span><span class="legend-dot legend-visited"></span>Visited</span>
+            <span><span class="legend-dot legend-planned"></span>Planned</span>
+            <span><span class="legend-dot legend-unvisited"></span>Not visited</span>
+          </div>
+        </div>
+        <div class="parks-list">
+          <div class="parks-search">
+            <input type="search" placeholder="Search parks..." data-parks-filter>
+          </div>
+          <div class="parks-scroll" data-parks-list>
+            <ul>
+              {parks_list_markup}
+            </ul>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
@@ -505,6 +656,27 @@ def _render_public_homepage(
       {load_more_markup}
     </section>
   </main>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  {_render_public_maplibre_script()}
+  <script>
+    (() => {{
+      const filterInput = document.querySelector("[data-parks-filter]");
+      const list = document.querySelector("[data-parks-list]");
+      if (filterInput && list) {{
+        filterInput.addEventListener("input", () => {{
+          const term = filterInput.value.trim().toLowerCase();
+          list.querySelectorAll(".park-item").forEach((item) => {{
+            if (!term) {{
+              item.style.display = "";
+              return;
+            }}
+            const name = item.dataset.parkName || "";
+            item.style.display = name.includes(term) ? "" : "none";
+          }});
+        }});
+      }}
+    }})();
+  </script>
   {f'''
   <script>
     (() => {{
@@ -583,6 +755,8 @@ def public_trips_page(
                 "has_more": has_more,
             }
         )
+    parks_list = parks.list_parks()
+    parks_counts = parks.park_counts(parks_list)
     response = _html_response(
         _render_public_homepage(
             trips,
@@ -592,10 +766,65 @@ def public_trips_page(
             per_page=per_page,
             show_archive_link=False,
             show_load_more=True,
+            parks_list=parks_list,
+            parks_counts=parks_counts,
         )
     )
     _log_timing("public_trips_page", start_time)
     return response
+
+
+@app.get("/api/parks", response_class=JSONResponse)
+def public_parks_api() -> JSONResponse:
+    parks_list = parks.list_parks()
+    counts = parks.park_counts(parks_list)
+    return JSONResponse({"parks": parks_list, "counts": counts})
+
+
+@app.get("/admin/parks", response_class=HTMLResponse)
+def admin_parks_page() -> HTMLResponse:
+    parks_list = parks.list_parks()
+    return _html_response(_render_admin_parks_page(parks_list))
+
+
+@app.post("/admin/parks/bulk", response_class=JSONResponse)
+async def admin_parks_bulk(request: Request) -> JSONResponse:
+    if request.headers.get("content-type", "").startswith("application/json"):
+        payload = await request.json()
+    else:
+        payload = await request.form()
+    action = payload.get("action") if isinstance(payload, dict) else payload.get("action")
+    codes = payload.get("park_codes") if isinstance(payload, dict) else payload.getlist("park_codes")
+    if isinstance(codes, str):
+        codes = [codes]
+    codes = [code for code in (codes or []) if isinstance(code, str) and code]
+    if not action or not codes:
+        return JSONResponse({"updated": 0})
+    action_map = {
+        "mark_visited": ("visited", True),
+        "clear_visited": ("visited", False),
+        "mark_planned": ("planned", True),
+        "clear_planned": ("planned", False),
+    }
+    if action not in action_map:
+        raise HTTPException(status_code=400, detail="Invalid action")
+    field, value = action_map[action]
+    updated = parks.bulk_update_parks(codes, field=field, value=value)
+    return JSONResponse({"updated": updated})
+
+
+@app.post("/admin/parks/{park_code}", response_class=JSONResponse)
+async def admin_update_park(park_code: str, request: Request) -> JSONResponse:
+    if request.headers.get("content-type", "").startswith("application/json"):
+        payload = await request.json()
+    else:
+        payload = await request.form()
+    visited = _parse_optional_bool(payload.get("visited") if isinstance(payload, dict) else payload.get("visited"))
+    planned = _parse_optional_bool(payload.get("planned") if isinstance(payload, dict) else payload.get("planned"))
+    updated = parks.update_park_status(park_code, visited=visited, planned=planned)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Park not found")
+    return JSONResponse({"park": updated})
 
 
 def _render_public_trip_detail_page(trip: dict) -> str:
@@ -2411,6 +2640,9 @@ def _render_public_maplibre_script() -> str:
                 "circle-color": [
                   "match",
                   ["coalesce", ["get", "kind"], "default"],
+                  "visited", "#2f6c5b",
+                  "planned", "#d28b3c",
+                  "unvisited", "#9aa2ad",
                   "airport", "#365f98",
                   "fuel", "#c26a39",
                   "park", "#2f6c5b",
@@ -2505,6 +2737,51 @@ def _render_public_maplibre_script() -> str:
         return map;
       };
 
+      const buildParkGeoJson = (parks = []) => ({
+        type: "FeatureCollection",
+        features: parks.map((park) => {
+          const status = park.visited ? "visited" : park.planned ? "planned" : "unvisited";
+          const statusLabel = status === "visited" ? "Visited park" : status === "planned" ? "Planned visit" : "Not visited";
+          const statusCode = status === "visited" ? "V" : status === "planned" ? "P" : "N";
+          return {
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [park.lon, park.lat],
+            },
+            properties: {
+              label: park.name,
+              type_label: statusLabel,
+              kind: status,
+              kind_code: statusCode,
+            },
+          };
+        }),
+      });
+
+      const buildParkBounds = (parks = []) => {
+        if (!parks.length) return lower48Bounds;
+        const bounds = new maplibregl.LngLatBounds();
+        parks.forEach((park) => {
+          if (typeof park.lon === "number" && typeof park.lat === "number") {
+            bounds.extend([park.lon, park.lat]);
+          }
+        });
+        if (bounds.isEmpty()) return lower48Bounds;
+        return bounds.toArray();
+      };
+
+      const initParksMap = async (node) => {
+        const url = node.dataset.parksUrl || "/api/parks";
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Failed to load parks");
+        const payload = await response.json();
+        const parks = Array.isArray(payload.parks) ? payload.parks : [];
+        const stopData = buildParkGeoJson(parks);
+        const bounds = buildParkBounds(parks);
+        initMap(node, { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds }, { clusterStops: true, fitMaxZoom: 4.5, maxZoom: 7 });
+      };
+
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
         initWhenVisible(node, () => {
           try {
@@ -2522,6 +2799,14 @@ def _render_public_maplibre_script() -> str:
           } catch (error) {
             console.error("Failed to initialize admin trip map", error);
           }
+        });
+      });
+
+      document.querySelectorAll("[data-parks-map]").forEach((node) => {
+        initWhenVisible(node, () => {
+          initParksMap(node).catch((error) => {
+            console.error("Failed to initialize parks map", error);
+          });
         });
       });
 
@@ -2980,6 +3265,7 @@ def _render_admin_page(
       <div class="links">
         <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
         <a class="button" href="/admin/overrides">Destination overrides</a>
+        <a class="button" href="/admin/parks">National parks</a>
         <a class="button" href="/trips">Homepage</a>
       </div>
     </section>
@@ -3076,8 +3362,331 @@ def _render_admin_page(
 </html>"""
 
 
+def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
+    items = []
+    for park in parks_list:
+        location_bits = [bit for bit in [park.get("state"), park.get("city")] if bit]
+        location = " · ".join(location_bits)
+        items.append(
+            f"""
+            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}"
+                data-park-filter="{escape((park['name'] + ' ' + location).lower())}">
+              <label class="park-select">
+                <input type="checkbox" data-park-select>
+              </label>
+              <div class="park-main">
+                <h3>{escape(park['name'])}</h3>
+                <p>{escape(location)}</p>
+              </div>
+              <div class="park-actions">
+                <label class="park-toggle">
+                  <input type="checkbox" data-park-visited {"checked" if park.get("visited") else ""}>
+                  <span>Visited</span>
+                </label>
+                <label class="park-toggle">
+                  <input type="checkbox" data-park-planned {"checked" if park.get("planned") else ""}>
+                  <span>Planned</span>
+                </label>
+              </div>
+              <span class="park-status" data-park-status></span>
+            </li>
+            """
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>National Parks · MilesMemories Admin</title>
+  <style>
+    :root {{
+      --bg: #f3efe7;
+      --panel: #fff9f0;
+      --line: #dcccb4;
+      --ink: #182233;
+      --muted: #657286;
+      --accent: #b85f35;
+      --good: #2e6a4b;
+      --shadow: rgba(37, 28, 14, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(233, 206, 177, 0.8), rgba(243, 239, 231, 0.98) 28%),
+        linear-gradient(90deg, rgba(184, 95, 53, 0.08), transparent 22%, transparent 78%, rgba(42, 89, 81, 0.08));
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 18px 64px;
+    }}
+    .panel {{
+      background: rgba(255, 249, 240, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 22px;
+    }}
+    .topbar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }}
+    .eyebrow {{
+      font-size: 0.82rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }}
+    h1 {{
+      margin: 6px 0 0;
+      font-size: clamp(2rem, 5vw, 3.6rem);
+    }}
+    .sub {{
+      color: var(--muted);
+      margin-top: 6px;
+    }}
+    .links {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .button, button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
+    }}
+    .button.primary {{
+      background: var(--accent);
+      color: #fff;
+    }}
+    .parks-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }}
+    .parks-actions input, .parks-actions select {{
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #fffdf8;
+    }}
+    .parks-actions .search {{
+      flex: 1;
+      min-width: 220px;
+    }}
+    .parks-list {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 12px;
+    }}
+    .park-row {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 14px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.6);
+    }}
+    .park-main h3 {{
+      margin: 0;
+      font-size: 1.1rem;
+    }}
+    .park-main p {{
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .park-actions {{
+      display: flex;
+      gap: 12px;
+    }}
+    .park-toggle {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }}
+    .park-status {{
+      font-size: 0.82rem;
+      color: var(--muted);
+      min-width: 80px;
+      text-align: right;
+    }}
+    .park-select input {{
+      width: 18px;
+      height: 18px;
+    }}
+    @media (max-width: 860px) {{
+      .topbar {{
+        flex-direction: column;
+        align-items: flex-start;
+      }}
+      .park-row {{
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+          "select main"
+          "select actions"
+          "select status";
+      }}
+      .park-actions {{
+        grid-area: actions;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="topbar">
+      <div>
+        <div class="eyebrow">MilesMemories Admin</div>
+        <h1>National parks checklist</h1>
+        <p class="sub">Mark visited and planned parks. Changes update immediately.</p>
+      </div>
+      <div class="links">
+        <a class="button" href="/admin">Back to admin</a>
+        <a class="button" href="/trips">Public trips</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="parks-actions">
+        <input class="search" type="search" placeholder="Search parks..." data-park-search>
+        <select data-park-bulk-action>
+          <option value="">Bulk action</option>
+          <option value="mark_visited">Mark visited</option>
+          <option value="clear_visited">Clear visited</option>
+          <option value="mark_planned">Mark planned</option>
+          <option value="clear_planned">Clear planned</option>
+        </select>
+        <button class="button" type="button" data-park-bulk-apply>Apply to selected</button>
+      </div>
+      <ul class="parks-list" data-park-list>
+        {''.join(items)}
+      </ul>
+    </section>
+  </main>
+  <script>
+    (() => {{
+      const list = document.querySelector("[data-park-list]");
+      if (!list) return;
+      const search = document.querySelector("[data-park-search]");
+      const bulkAction = document.querySelector("[data-park-bulk-action]");
+      const bulkApply = document.querySelector("[data-park-bulk-apply]");
+
+      const updatePark = async (code, payload, statusEl) => {{
+        try {{
+          const response = await fetch(`/admin/parks/${{code}}`, {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify(payload),
+          }});
+          if (!response.ok) throw new Error("Update failed");
+          statusEl.textContent = "Saved";
+          window.setTimeout(() => {{ statusEl.textContent = ""; }}, 1200);
+        }} catch (error) {{
+          console.error(error);
+          statusEl.textContent = "Error";
+        }}
+      }};
+
+      list.querySelectorAll("[data-park-row]").forEach((row) => {{
+        const code = row.dataset.parkCode;
+        const statusEl = row.querySelector("[data-park-status]");
+        const visited = row.querySelector("[data-park-visited]");
+        const planned = row.querySelector("[data-park-planned]");
+        visited?.addEventListener("change", () => {{
+          updatePark(code, {{ visited: visited.checked }}, statusEl);
+        }});
+        planned?.addEventListener("change", () => {{
+          updatePark(code, {{ planned: planned.checked }}, statusEl);
+        }});
+      }});
+
+      search?.addEventListener("input", () => {{
+        const term = search.value.trim().toLowerCase();
+        list.querySelectorAll("[data-park-row]").forEach((row) => {{
+          const haystack = row.dataset.parkFilter || "";
+          row.style.display = !term || haystack.includes(term) ? "" : "none";
+        }});
+      }});
+
+      bulkApply?.addEventListener("click", async () => {{
+        const action = bulkAction?.value || "";
+        if (!action) return;
+        const selected = Array.from(list.querySelectorAll("[data-park-select]:checked"))
+          .map((input) => input.closest("[data-park-row]")?.dataset.parkCode)
+          .filter(Boolean);
+        if (!selected.length) return;
+        try {{
+          const response = await fetch("/admin/parks/bulk", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ action, park_codes: selected }}),
+          }});
+          if (!response.ok) throw new Error("Bulk update failed");
+          if (action.includes("visited")) {{
+            list.querySelectorAll("[data-park-row]").forEach((row) => {{
+              if (!selected.includes(row.dataset.parkCode)) return;
+              const visited = row.querySelector("[data-park-visited]");
+              if (visited) visited.checked = action === "mark_visited";
+            }});
+          }}
+          if (action.includes("planned")) {{
+            list.querySelectorAll("[data-park-row]").forEach((row) => {{
+              if (!selected.includes(row.dataset.parkCode)) return;
+              const planned = row.querySelector("[data-park-planned]");
+              if (planned) planned.checked = action === "mark_planned";
+            }});
+          }}
+        }} catch (error) {{
+          console.error(error);
+        }}
+      }});
+    }})();
+  </script>
+</body>
+</html>"""
+
+
 def _parse_flag(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in {"1", "true", "yes", "on"}:
+            return True
+        if cleaned in {"0", "false", "no", "off"}:
+            return False
+    return None
 
 
 def _query_text(value: object) -> str:

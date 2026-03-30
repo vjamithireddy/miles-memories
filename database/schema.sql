@@ -284,6 +284,18 @@ CREATE TABLE IF NOT EXISTS destination_overrides (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS national_parks (
+    park_code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    state TEXT,
+    city TEXT,
+    lat DOUBLE PRECISION NOT NULL,
+    lon DOUBLE PRECISION NOT NULL,
+    visited BOOLEAN NOT NULL DEFAULT FALSE,
+    planned BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_location_events_timestamp ON location_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_location_events_lat_lon ON location_events(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_photos_captured_at ON photos(captured_at);

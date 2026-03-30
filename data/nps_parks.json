@@ -1,0 +1,632 @@
+[
+  {
+    "park_code": "acadia",
+    "name": "Acadia National Park",
+    "state": "ME",
+    "city": "Bar Harbor",
+    "lat": 44.35,
+    "lon": -68.21,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "americanSamoa",
+    "name": "American Samoa National Park",
+    "state": "AS",
+    "city": "Pago Pago",
+    "lat": -14.25,
+    "lon": -170.68,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "arches",
+    "name": "Arches National Park",
+    "state": "UT",
+    "city": "Moab",
+    "lat": 38.68,
+    "lon": -109.57,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "badlands",
+    "name": "Badlands National Park",
+    "state": "SD",
+    "city": "Interior",
+    "lat": 43.75,
+    "lon": -102.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "bigBend",
+    "name": "Big Bend National Park",
+    "state": "TX",
+    "city": "Big Bend National Park",
+    "lat": 29.25,
+    "lon": -103.25,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "biscayne",
+    "name": "Biscayne National Park",
+    "state": "FL",
+    "city": "Homestead",
+    "lat": 25.65,
+    "lon": -80.08,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "blackCanyon",
+    "name": "Black Canyon of the Gunnison National Park",
+    "state": "CO",
+    "city": "Montrose",
+    "lat": 38.57,
+    "lon": -107.72,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "bryceCanyon",
+    "name": "Bryce Canyon National Park",
+    "state": "UT",
+    "city": "Bryce Canyon City",
+    "lat": 37.57,
+    "lon": -112.18,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "canyonlands",
+    "name": "Canyonlands National Park",
+    "state": "UT",
+    "city": "Moab",
+    "lat": 38.2,
+    "lon": -109.93,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "capitolReef",
+    "name": "Capitol Reef National Park",
+    "state": "UT",
+    "city": "Torrey",
+    "lat": 38.2,
+    "lon": -111.17,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "carlsbadCaverns",
+    "name": "Carlsbad Caverns National Park",
+    "state": "NM",
+    "city": "Carlsbad",
+    "lat": 32.17,
+    "lon": -104.44,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "channelIslands",
+    "name": "Channel Islands National Park",
+    "state": "CA",
+    "city": "Ventura",
+    "lat": 34.01,
+    "lon": -119.42,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "congaree",
+    "name": "Congaree National Park",
+    "state": "SC",
+    "city": "Hopkins",
+    "lat": 33.78,
+    "lon": -80.78,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "craterLake",
+    "name": "Crater Lake National Park",
+    "state": "OR",
+    "city": "Crater Lake",
+    "lat": 42.94,
+    "lon": -122.1,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "cuyahogaValley",
+    "name": "Cuyahoga Valley National Park",
+    "state": "OH",
+    "city": "Brecksville",
+    "lat": 41.24,
+    "lon": -81.55,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "deathValley",
+    "name": "Death Valley National Park",
+    "state": "CA/NV",
+    "city": "Death Valley",
+    "lat": 36.24,
+    "lon": -116.82,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "denali",
+    "name": "Denali National Park",
+    "state": "AK",
+    "city": "Denali Park",
+    "lat": 63.33,
+    "lon": -150.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "dryTortugas",
+    "name": "Dry Tortugas National Park",
+    "state": "FL",
+    "city": "Key West",
+    "lat": 24.63,
+    "lon": -82.87,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "everglades",
+    "name": "Everglades National Park",
+    "state": "FL",
+    "city": "Homestead",
+    "lat": 25.32,
+    "lon": -80.93,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "gatesOfTheArctic",
+    "name": "Gates of the Arctic National Park",
+    "state": "AK",
+    "city": "Bettles",
+    "lat": 67.78,
+    "lon": -153.3,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "gatewayArch",
+    "name": "Gateway Arch National Park",
+    "state": "MO",
+    "city": "St. Louis",
+    "lat": 38.63,
+    "lon": -90.19,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "glacierBay",
+    "name": "Glacier Bay National Park",
+    "state": "AK",
+    "city": "Gustavus",
+    "lat": 58.5,
+    "lon": -137.0,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "glacier",
+    "name": "Glacier National Park",
+    "state": "MT",
+    "city": "West Glacier",
+    "lat": 48.8,
+    "lon": -114.0,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "grandCanyon",
+    "name": "Grand Canyon National Park",
+    "state": "AZ",
+    "city": "Grand Canyon Village",
+    "lat": 36.06,
+    "lon": -112.14,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "grandTeton",
+    "name": "Grand Teton National Park",
+    "state": "WY",
+    "city": "Moose",
+    "lat": 43.73,
+    "lon": -110.8,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "greatBasin",
+    "name": "Great Basin National Park",
+    "state": "NV",
+    "city": "Baker",
+    "lat": 38.98,
+    "lon": -114.3,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "greatSandDunes",
+    "name": "Great Sand Dunes National Park",
+    "state": "CO",
+    "city": "Mosca",
+    "lat": 37.73,
+    "lon": -105.51,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "greatSmokyMountains",
+    "name": "Great Smoky Mountains National Park",
+    "state": "TN/NC",
+    "city": "Gatlinburg",
+    "lat": 35.68,
+    "lon": -83.53,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "guadalupeMountains",
+    "name": "Guadalupe Mountains National Park",
+    "state": "TX",
+    "city": "Salt Flat",
+    "lat": 31.92,
+    "lon": -104.87,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "haleakala",
+    "name": "Haleakal\u0101 National Park",
+    "state": "HI",
+    "city": "Kula",
+    "lat": 20.72,
+    "lon": -156.17,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "hawaiiVolcanoes",
+    "name": "Hawai\u02bbi Volcanoes National Park",
+    "state": "HI",
+    "city": "Hilo",
+    "lat": 19.38,
+    "lon": -155.2,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "hotSprings",
+    "name": "Hot Springs National Park",
+    "state": "AR",
+    "city": "Hot Springs",
+    "lat": 34.51,
+    "lon": -93.05,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "indianaDunes",
+    "name": "Indiana Dunes National Park",
+    "state": "IN",
+    "city": "Porter",
+    "lat": 41.6533,
+    "lon": -87.0524,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "isleRoyale",
+    "name": "Isle Royale National Park",
+    "state": "MI",
+    "city": "Houghton",
+    "lat": 48.1,
+    "lon": -88.55,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "joshuaTree",
+    "name": "Joshua Tree National Park",
+    "state": "CA",
+    "city": "Twentynine Palms",
+    "lat": 33.79,
+    "lon": -115.9,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "katmai",
+    "name": "Katmai National Park",
+    "state": "AK",
+    "city": "King Salmon",
+    "lat": 58.5,
+    "lon": -155.0,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "kenaiFjords",
+    "name": "Kenai Fjords National Park",
+    "state": "AK",
+    "city": "Seward",
+    "lat": 59.92,
+    "lon": -149.65,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "kingsCanyon",
+    "name": "Kings Canyon National Park",
+    "state": "CA",
+    "city": "Three Rivers",
+    "lat": 36.8,
+    "lon": -118.55,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "kobukValley",
+    "name": "Kobuk Valley National Park",
+    "state": "AK",
+    "city": "Kotzebue",
+    "lat": 67.55,
+    "lon": -159.28,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "lakeClark",
+    "name": "Lake Clark National Park",
+    "state": "AK",
+    "city": "Port Alsworth",
+    "lat": 60.97,
+    "lon": -153.42,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "lassenVolcanic",
+    "name": "Lassen Volcanic National Park",
+    "state": "CA",
+    "city": "Mineral",
+    "lat": 40.49,
+    "lon": -121.51,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "mammothCave",
+    "name": "Mammoth Cave National Park",
+    "state": "KY",
+    "city": "Mammoth Cave",
+    "lat": 37.18,
+    "lon": -86.1,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "mesaVerde",
+    "name": "Mesa Verde National Park",
+    "state": "CO",
+    "city": "Mesa Verde",
+    "lat": 37.18,
+    "lon": -108.49,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "mountRainier",
+    "name": "Mount Rainier National Park",
+    "state": "WA",
+    "city": "Ashford",
+    "lat": 46.85,
+    "lon": -121.75,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "newRiverGorge",
+    "name": "New River Gorge National Park",
+    "state": "WV",
+    "city": "Glen Jean",
+    "lat": 38.07,
+    "lon": -81.08,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "northCascades",
+    "name": "North Cascades National Park",
+    "state": "WA",
+    "city": "Marblemount",
+    "lat": 48.7,
+    "lon": -121.2,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "olympic",
+    "name": "Olympic National Park",
+    "state": "WA",
+    "city": "Port Angeles",
+    "lat": 47.97,
+    "lon": -123.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "petrifiedForest",
+    "name": "Petrified Forest National Park",
+    "state": "AZ",
+    "city": "Holbrook",
+    "lat": 35.07,
+    "lon": -109.78,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "pinnacles",
+    "name": "Pinnacles National Park",
+    "state": "CA",
+    "city": "Paicines",
+    "lat": 36.48,
+    "lon": -121.16,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "redwood",
+    "name": "Redwood National Park",
+    "state": "CA",
+    "city": "Crescent City",
+    "lat": 41.3,
+    "lon": -124.0,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "rockyMountain",
+    "name": "Rocky Mountain National Park",
+    "state": "CO",
+    "city": "Estes Park",
+    "lat": 40.4,
+    "lon": -105.58,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "saguaro",
+    "name": "Saguaro National Park",
+    "state": "AZ",
+    "city": "Tucson",
+    "lat": 32.25,
+    "lon": -110.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "sequoia",
+    "name": "Sequoia National Park",
+    "state": "CA",
+    "city": "Three Rivers",
+    "lat": 36.43,
+    "lon": -118.68,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "shenandoah",
+    "name": "Shenandoah National Park",
+    "state": "VA",
+    "city": "Luray",
+    "lat": 38.53,
+    "lon": -78.35,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "theodoreRoosevelt",
+    "name": "Theodore Roosevelt National Park",
+    "state": "ND",
+    "city": "Medora",
+    "lat": 46.97,
+    "lon": -103.45,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "virginIslands",
+    "name": "Virgin Islands National Park",
+    "state": "VI",
+    "city": "St. John",
+    "lat": 18.33,
+    "lon": -64.73,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "voyageurs",
+    "name": "Voyageurs National Park",
+    "state": "MN",
+    "city": "International Falls",
+    "lat": 48.5,
+    "lon": -92.88,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "whiteSands",
+    "name": "White Sands National Park",
+    "state": "NM",
+    "city": "Alamogordo",
+    "lat": 32.78,
+    "lon": -106.17,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "windCave",
+    "name": "Wind Cave National Park",
+    "state": "SD",
+    "city": "Hot Springs",
+    "lat": 43.57,
+    "lon": -103.48,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "wrangellStElias",
+    "name": "Wrangell-St. Elias National Park",
+    "state": "AK",
+    "city": "Copper Center",
+    "lat": 61.0,
+    "lon": -142.0,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "yellowstone",
+    "name": "Yellowstone National Park",
+    "state": "WY/MT/ID",
+    "city": "Yellowstone National Park",
+    "lat": 44.6,
+    "lon": -110.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "yosemite",
+    "name": "Yosemite National Park",
+    "state": "CA",
+    "city": "Yosemite Village",
+    "lat": 37.83,
+    "lon": -119.5,
+    "visited": false,
+    "planned": false
+  },
+  {
+    "park_code": "zion",
+    "name": "Zion National Park",
+    "state": "UT",
+    "city": "Springdale",
+    "lat": 37.3,
+    "lon": -113.05,
+    "visited": false,
+    "planned": false
+  }
+]
