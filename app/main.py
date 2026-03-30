@@ -198,7 +198,7 @@ def _render_public_homepage(
         )
         load_more_markup = f"""
         <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
-          <button class="button primary load-more-button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
+          <button class="button load-more-button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
             {"No more trips" if not has_more else "Load more trips"}
           </button>
           {noscript_markup}
@@ -551,6 +551,8 @@ def _render_public_homepage(
       min-width: 180px;
       text-align: center;
       border-color: var(--accent);
+      background: transparent;
+      color: var(--accent);
     }}
     .load-more .load-more-button:disabled {{
       opacity: 0.55;
@@ -719,6 +721,7 @@ def _render_public_homepage(
             item.style.display = matchesTerm && matchesStatus ? "" : "none";
           }});
         }};
+        applyFilter();
         filterInput.addEventListener("input", applyFilter);
         tabs?.addEventListener("click", (event) => {{
           const button = event.target.closest("[data-parks-tab]");
@@ -1773,7 +1776,9 @@ def _trip_review_state(trip: dict) -> Optional[str]:
     status = (trip.get("status") or "").lower()
     if review == "confirmed" or status == "published":
         return "yes"
-    if review in {"rejected", "ignored"} or status == "ignored":
+    if review == "ignored" or status == "ignored":
+        return "ignored"
+    if review == "rejected":
         return "no"
     return None
 
@@ -2975,7 +2980,9 @@ def _review_step_hint(review_state: Optional[str]) -> str:
         return "Review complete. Choose whether this trip should stay private or be visible on the public site."
     if review_state == "no":
         return "Marked as not a trip. Public visibility is disabled for rejected items."
-    return "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed."
+    if review_state == "ignored":
+        return "Marked as ignored. Public visibility is disabled for ignored items."
+    return "Start by answering Yes, No, or Ignored. Visibility becomes available only after the trip is reviewed."
 
 
 def _format_duration(start: datetime, end: datetime) -> str:
@@ -3006,16 +3013,26 @@ def _render_admin_page(
     status: Optional[str],
     review_decision: Optional[str],
     include_private: bool,
+    only_private: bool,
     limit: int,
+    counts: dict[str, int],
+    current_view: Optional[str] = None,
 ) -> str:
-    total = len(trips)
-    private_total = sum(1 for trip in trips if trip["is_private"])
-    ready_total = sum(1 for trip in trips if trip["publish_ready"])
+    counter_views = {
+        "reviewed": "reviewed",
+        "needs_review": "needs_review",
+        "ignored": "ignored",
+        "rejected": "rejected",
+        "private": "private",
+        "public": "public",
+    }
 
     def selected(current: Optional[str], expected: str) -> str:
         return ' selected="selected"' if current == expected else ""
 
     def view_key() -> str:
+        if only_private:
+            return "private"
         if not include_private:
             return "public"
         if status == "published":
@@ -3024,18 +3041,19 @@ def _render_admin_page(
             return "ignored"
         if status == "needs_review":
             return "needs_review"
-        if status == "confirmed":
+        if review_decision == "confirmed":
             return "reviewed"
         if review_decision == "rejected":
             return "rejected"
         return "all"
 
-    current_view = view_key()
+    current_view = current_view or view_key()
     filter_query = urlencode(
         {
             "status": status or "",
             "review_decision": review_decision or "",
             "include_private": str(include_private).lower(),
+            "private_only": str(only_private).lower(),
             "limit": str(limit),
         }
     )
@@ -3155,6 +3173,15 @@ def _render_admin_page(
     }}
     .stat span {{
       color: var(--muted);
+    }}
+    .stat-link {{
+      text-decoration: none;
+      color: inherit;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }}
+    .stat-link:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 20px 36px var(--shadow);
     }}
     .filters {{
       display: grid;
@@ -3331,9 +3358,12 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <article class="panel stat"><strong>{total}</strong><span>Trips in current view</span></article>
-      <article class="panel stat"><strong>{ready_total}</strong><span>Marked publish-ready</span></article>
-      <article class="panel stat"><strong>{private_total}</strong><span>Still private</span></article>
+      <a class="panel stat stat-link" href="/admin?view=reviewed&limit={limit}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
+      <a class="panel stat stat-link" href="/admin?view=needs_review&limit={limit}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
+      <a class="panel stat stat-link" href="/admin?view=ignored&limit={limit}"><strong>{counts.get("ignored", 0)}</strong><span>Ignored</span></a>
+      <a class="panel stat stat-link" href="/admin?view=rejected&limit={limit}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
+      <a class="panel stat stat-link" href="/admin?view=private&limit={limit}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
+      <a class="panel stat stat-link" href="/admin?view=public&limit={limit}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
     </section>
 
     <section class="panel">
@@ -3343,18 +3373,21 @@ def _render_admin_page(
             <option value="all"{selected(current_view, "all")}>All trips</option>
             <option value="needs_review"{selected(current_view, "needs_review")}>Needs review</option>
             <option value="reviewed"{selected(current_view, "reviewed")}>Reviewed</option>
-            <option value="published"{selected(current_view, "published")}>Published</option>
             <option value="ignored"{selected(current_view, "ignored")}>Ignored</option>
             <option value="rejected"{selected(current_view, "rejected")}>Rejected</option>
+            <option value="published"{selected(current_view, "published")}>Published</option>
             <option value="public"{selected(current_view, "public")}>Public only</option>
+            <option value="private"{selected(current_view, "private")}>Private only</option>
           </select>
         </label>
         <label>Limit
-          <input type="number" min="1" max="200" name="limit" value="{limit}">
+          <select name="limit">
+            <option value="10"{selected(str(limit), "10")}>10</option>
+            <option value="25"{selected(str(limit), "25")}>25</option>
+            <option value="50"{selected(str(limit), "50")}>50</option>
+            <option value="200"{selected(str(limit), "200")}>All</option>
+          </select>
         </label>
-        <input type="hidden" name="status" value="{status or ''}" data-filter-status>
-        <input type="hidden" name="review_decision" value="{review_decision or ''}" data-filter-review>
-        <input type="hidden" name="include_private" value="{str(include_private).lower()}" data-filter-private>
         <div class="filter-actions">
           <button class="button ghost" type="button" data-reset-filters>Reset</button>
           <button class="button" type="submit">Apply filters</button>
@@ -3371,40 +3404,12 @@ def _render_admin_page(
       const form = document.querySelector("[data-admin-filters]");
       if (!form) return;
       const viewSelect = form.querySelector("[data-view-select]");
-      const statusInput = form.querySelector("[data-filter-status]");
-      const reviewInput = form.querySelector("[data-filter-review]");
-      const privateInput = form.querySelector("[data-filter-private]");
       const reset = form.querySelector("[data-reset-filters]");
-      const limitInput = form.querySelector("input[name='limit']");
-
-      const viewMap = {{
-        all: {{ status: "", review: "", includePrivate: "true" }},
-        needs_review: {{ status: "needs_review", review: "", includePrivate: "true" }},
-        reviewed: {{ status: "", review: "confirmed", includePrivate: "true" }},
-        published: {{ status: "published", review: "", includePrivate: "true" }},
-        ignored: {{ status: "ignored", review: "", includePrivate: "true" }},
-        rejected: {{ status: "", review: "rejected", includePrivate: "true" }},
-        public: {{ status: "", review: "", includePrivate: "false" }},
-      }};
-
-      const applyView = (viewKey) => {{
-        const config = viewMap[viewKey] || viewMap.all;
-        if (statusInput) statusInput.value = config.status;
-        if (reviewInput) reviewInput.value = config.review;
-        if (privateInput) privateInput.value = config.includePrivate;
-      }};
-
-      if (viewSelect) {{
-        applyView(viewSelect.value || "all");
-        viewSelect.addEventListener("change", () => {{
-          applyView(viewSelect.value);
-        }});
-      }}
+      const limitSelect = form.querySelector("select[name='limit']");
 
       reset?.addEventListener("click", () => {{
         if (viewSelect) viewSelect.value = "all";
-        if (limitInput) limitInput.value = "24";
-        applyView("all");
+        if (limitSelect) limitSelect.value = "25";
         form.submit();
       }});
     }})();
@@ -5155,6 +5160,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <div class="segmented-control" role="group" aria-label="Review decision">
                 <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm" aria-pressed="{'true' if review_state == 'yes' else 'false'}">Yes</button>
                 <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject" aria-pressed="{'true' if review_state == 'no' else 'false'}">No</button>
+                <button class="button{' is-current' if review_state == 'ignored' else ''}" type="submit" name="action" value="ignore" aria-pressed="{'true' if review_state == 'ignored' else 'false'}">Ignored</button>
               </div>
             </div>
             <div class="action-group">
@@ -5371,8 +5377,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 badgeSlot.innerHTML = payload.badge_html;
               }}
               const reviewButtons = overviewForm.querySelectorAll('[aria-label="Review decision"] button');
+              const reviewMap = {{
+                confirm: "yes",
+                reject: "no",
+                ignore: "ignored",
+              }};
               reviewButtons.forEach((node) => {{
-                const active = payload.review_state === (node.value === "confirm" ? "yes" : "no");
+                const expected = reviewMap[node.value] || "";
+                const active = payload.review_state === expected;
                 node.classList.toggle("is-current", active);
                 node.setAttribute("aria-pressed", active ? "true" : "false");
               }});
@@ -5389,6 +5401,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                   workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
                 }} else if (payload.review_state === "no") {{
                   workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
+                }} else if (payload.review_state === "ignored") {{
+                  workflowHelp.textContent = "Marked as ignored. Public visibility is disabled for ignored items. Text edits autosave when you leave a field.";
                 }} else {{
                   workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
                 }}
@@ -5493,31 +5507,38 @@ def admin_homepage(
     status: Optional[str] = Query(default=None),
     review_decision: Optional[str] = Query(default=None),
     include_private: Optional[bool] = Query(default=None),
-    limit: int = Query(default=24, ge=1, le=200),
+    private_only: Optional[bool] = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=200),
 ) -> HTMLResponse:
+    only_private = bool(private_only)
     if view:
         view_key = view.lower()
         status = None
         review_decision = None
         include_private = True
+        only_private = False
         if view_key == "needs_review":
             status = "needs_review"
         elif view_key == "reviewed":
             review_decision = "confirmed"
+        elif view_key == "ignored":
+            review_decision = "ignored"
         elif view_key == "published":
             status = "published"
-        elif view_key == "ignored":
-            status = "ignored"
         elif view_key == "rejected":
             review_decision = "rejected"
+        elif view_key == "private":
+            only_private = True
         elif view_key == "public":
             include_private = False
     if include_private is None:
         include_private = True
+    counts = trip_admin.get_trip_status_counts()
     trips = trip_admin.list_trips(
         status=status,
         review_decision=review_decision,
         include_private=include_private,
+        only_private=only_private,
         limit=limit,
     )
     return _html_response(
@@ -5526,7 +5547,10 @@ def admin_homepage(
             status=status,
             review_decision=review_decision,
             include_private=include_private,
+            only_private=only_private,
             limit=limit,
+            counts=counts,
+            current_view=view,
         )
     )
 
@@ -5690,7 +5714,7 @@ async def review_trip_from_form(
         elif action == "mark_private":
             saved_key = "privacy"
             message = "Trip visibility updated."
-        elif action in {"confirm", "reject"}:
+        elif action in {"confirm", "reject", "ignore"}:
             saved_key = "review"
             message = "Review saved."
         _log_timing("admin_review_action", start_time)
@@ -5750,12 +5774,14 @@ def list_admin_trips(
     status: Optional[str] = Query(default=None),
     review_decision: Optional[str] = Query(default=None),
     include_private: bool = Query(default=True),
+    private_only: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> List[TripSummary]:
     return trip_admin.list_trips(
         status=status,
         review_decision=review_decision,
         include_private=include_private,
+        only_private=private_only,
         limit=limit,
     )
 

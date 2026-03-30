@@ -1326,6 +1326,7 @@ def list_trips(
     status: str | None = None,
     review_decision: str | None = None,
     include_private: bool = True,
+    only_private: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     filters: list[str] = []
@@ -1337,6 +1338,8 @@ def list_trips(
     if review_decision:
         filters.append("review_decision = %s")
         params.append(review_decision)
+    if only_private:
+        filters.append("is_private = TRUE")
     if not include_private:
         filters.append("is_private = FALSE")
 
@@ -1373,6 +1376,32 @@ def list_trips(
                 [*params, limit],
             )
             return [_normalize_trip(row) for row in cur.fetchall()]
+
+
+def get_trip_status_counts() -> dict[str, int]:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE review_decision = 'confirmed' OR status = 'published') AS reviewed,
+                    COUNT(*) FILTER (WHERE status = 'needs_review') AS needs_review,
+                    COUNT(*) FILTER (WHERE review_decision = 'ignored' OR status = 'ignored') AS ignored,
+                    COUNT(*) FILTER (WHERE review_decision = 'rejected') AS rejected,
+                    COUNT(*) FILTER (WHERE is_private = TRUE) AS private,
+                    COUNT(*) FILTER (WHERE is_private = FALSE) AS public
+                FROM trips
+                """
+            )
+            row = cur.fetchone() or {}
+            return {
+                "reviewed": int(row.get("reviewed") or 0),
+                "needs_review": int(row.get("needs_review") or 0),
+                "ignored": int(row.get("ignored") or 0),
+                "rejected": int(row.get("rejected") or 0),
+                "private": int(row.get("private") or 0),
+                "public": int(row.get("public") or 0),
+            }
 
 
 def list_published_trips(*, limit: int = 12, offset: int = 0) -> list[dict[str, Any]]:
