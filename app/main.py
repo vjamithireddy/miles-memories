@@ -198,7 +198,7 @@ def _render_public_homepage(
         )
         load_more_markup = f"""
         <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
-          <button class="button primary" type="button" data-load-more-button{" disabled" if not has_more else ""}>
+          <button class="button primary load-more-button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
             {"No more trips" if not has_more else "Load more trips"}
           </button>
           {noscript_markup}
@@ -547,6 +547,16 @@ def _render_public_homepage(
       display: flex;
       justify-content: center;
     }}
+    .load-more .load-more-button {{
+      min-width: 180px;
+      text-align: center;
+      border-color: var(--accent);
+    }}
+    .load-more .load-more-button:disabled {{
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }}
 
     .trip-card {{
       display: grid;
@@ -657,10 +667,10 @@ def _render_public_homepage(
             <input type="search" placeholder="Search parks..." data-parks-filter>
           </div>
           <div class="parks-tabs" data-parks-tabs>
-            <button class="parks-tab is-active" type="button" data-parks-tab="all">All</button>
-            <button class="parks-tab" type="button" data-parks-tab="visited">Visited</button>
+            <button class="parks-tab is-active" type="button" data-parks-tab="visited">Visited</button>
             <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
             <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
+            <button class="parks-tab" type="button" data-parks-tab="all">All</button>
           </div>
           <div class="parks-scroll" data-parks-list>
             <ul>
@@ -693,7 +703,11 @@ def _render_public_homepage(
       const filterInput = document.querySelector("[data-parks-filter]");
       const list = document.querySelector("[data-parks-list]");
       const tabs = document.querySelector("[data-parks-tabs]");
-      let activeStatus = "all";
+      let activeStatus = "visited";
+      const activeTab = tabs?.querySelector(".parks-tab.is-active");
+      if (activeTab?.dataset.parksTab) {{
+        activeStatus = activeTab.dataset.parksTab;
+      }}
       if (filterInput && list) {{
         const applyFilter = () => {{
           const term = filterInput.value.trim().toLowerCase();
@@ -1088,6 +1102,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       font-weight: 700;
       border-radius: 999px;
       padding: 12px 18px;
+    }}
+    .button.primary {{
+      background: var(--accent);
+      color: #fff7ef;
+      box-shadow: 0 12px 24px rgba(184, 95, 53, 0.18);
     }}
     .feature-grid {{
       display: grid;
@@ -2419,7 +2438,7 @@ def _render_public_maplibre_script() -> str:
     (() => {
       if (!window.maplibregl) return;
 
-      const lower48Bounds = [[-125.0, 24.4], [-66.5, 49.6]];
+      const lower48Bounds = [[-127.0, 24.0], [-66.0, 50.8]];
       let mapSequence = 0;
       const initializedNodes = new WeakSet();
       const popup = new maplibregl.Popup({
@@ -2800,18 +2819,6 @@ def _render_public_maplibre_script() -> str:
         }),
       });
 
-      const buildParkBounds = (parks = []) => {
-        if (!parks.length) return lower48Bounds;
-        const bounds = new maplibregl.LngLatBounds();
-        parks.forEach((park) => {
-          if (typeof park.lon === "number" && typeof park.lat === "number") {
-            bounds.extend([park.lon, park.lat]);
-          }
-        });
-        if (bounds.isEmpty()) return lower48Bounds;
-        return bounds.toArray();
-      };
-
       const initParksMap = async (node) => {
         const url = node.dataset.parksUrl || "/api/parks";
         const response = await fetch(url);
@@ -2819,8 +2826,11 @@ def _render_public_maplibre_script() -> str:
         const payload = await response.json();
         const parks = Array.isArray(payload.parks) ? payload.parks : [];
         const stopData = buildParkGeoJson(parks);
-        const bounds = buildParkBounds(parks);
-        initMap(node, { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds }, { clusterStops: true, fitMaxZoom: 4.5, maxZoom: 7 });
+        initMap(
+          node,
+          { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds: lower48Bounds },
+          { clusterStops: true, fitMaxZoom: 3.5, maxZoom: 7 }
+        );
       };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
@@ -3005,11 +3015,27 @@ def _render_admin_page(
     def selected(current: Optional[str], expected: str) -> str:
         return ' selected="selected"' if current == expected else ""
 
+    def view_key() -> str:
+        if not include_private:
+            return "public"
+        if status == "published":
+            return "published"
+        if status == "ignored":
+            return "ignored"
+        if status == "needs_review":
+            return "needs_review"
+        if status == "confirmed":
+            return "reviewed"
+        if review_decision == "rejected":
+            return "rejected"
+        return "all"
+
+    current_view = view_key()
     filter_query = urlencode(
         {
             "status": status or "",
             "review_decision": review_decision or "",
-            "include_private": "true" if include_private else "false",
+            "include_private": str(include_private).lower(),
             "limit": str(limit),
         }
     )
@@ -3132,7 +3158,7 @@ def _render_admin_page(
     }}
     .filters {{
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+      grid-template-columns: minmax(200px, 1.2fr) minmax(140px, 0.6fr) auto;
       gap: 14px;
       align-items: end;
       margin-bottom: 22px;
@@ -3152,13 +3178,6 @@ def _render_admin_page(
       font: inherit;
       color: var(--ink);
     }}
-    .checkbox {{
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding-bottom: 10px;
-    }}
-    .checkbox input {{ width: 18px; height: 18px; }}
     .button, button {{
       display: inline-block;
       border: 1px solid var(--accent);
@@ -3319,31 +3338,23 @@ def _render_admin_page(
 
     <section class="panel">
       <form method="get" action="/admin" class="filters" data-admin-filters>
-        <label>Status
-          <select name="status">
-            <option value="">Any status</option>
-            <option value="needs_review"{selected(status, "needs_review")}>Needs review</option>
-            <option value="confirmed"{selected(status, "confirmed")}>Reviewed</option>
-            <option value="published"{selected(status, "published")}>Published</option>
-            <option value="ignored"{selected(status, "ignored")}>Ignored</option>
-          </select>
-        </label>
-        <label>Review
-          <select name="review_decision">
-            <option value="">Any decision</option>
-            <option value="pending"{selected(review_decision, "pending")}>Needs review</option>
-            <option value="confirmed"{selected(review_decision, "confirmed")}>Reviewed</option>
-            <option value="ignored"{selected(review_decision, "ignored")}>Ignored</option>
-            <option value="rejected"{selected(review_decision, "rejected")}>Rejected</option>
+        <label>View
+          <select name="view" data-view-select>
+            <option value="all"{selected(current_view, "all")}>All trips</option>
+            <option value="needs_review"{selected(current_view, "needs_review")}>Needs review</option>
+            <option value="reviewed"{selected(current_view, "reviewed")}>Reviewed</option>
+            <option value="published"{selected(current_view, "published")}>Published</option>
+            <option value="ignored"{selected(current_view, "ignored")}>Ignored</option>
+            <option value="rejected"{selected(current_view, "rejected")}>Rejected</option>
+            <option value="public"{selected(current_view, "public")}>Public only</option>
           </select>
         </label>
         <label>Limit
           <input type="number" min="1" max="200" name="limit" value="{limit}">
         </label>
-        <input type="hidden" name="include_private" value="{str(include_private).lower()}" data-include-private-input>
-        <button class="filter-toggle{" is-active" if include_private else ""}" type="button" data-include-private-toggle aria-pressed="{str(include_private).lower()}">
-          Include private
-        </button>
+        <input type="hidden" name="status" value="{status or ''}" data-filter-status>
+        <input type="hidden" name="review_decision" value="{review_decision or ''}" data-filter-review>
+        <input type="hidden" name="include_private" value="{str(include_private).lower()}" data-filter-private>
         <div class="filter-actions">
           <button class="button ghost" type="button" data-reset-filters>Reset</button>
           <button class="button" type="submit">Apply filters</button>
@@ -3359,42 +3370,41 @@ def _render_admin_page(
     (() => {{
       const form = document.querySelector("[data-admin-filters]");
       if (!form) return;
-      const toggle = form.querySelector("[data-include-private-toggle]");
-      const hidden = form.querySelector("[data-include-private-input]");
+      const viewSelect = form.querySelector("[data-view-select]");
+      const statusInput = form.querySelector("[data-filter-status]");
+      const reviewInput = form.querySelector("[data-filter-review]");
+      const privateInput = form.querySelector("[data-filter-private]");
       const reset = form.querySelector("[data-reset-filters]");
-      const storageKey = "milesmemories_include_private";
+      const limitInput = form.querySelector("input[name='limit']");
 
-      const setToggle = (enabled) => {{
-        const value = enabled ? "true" : "false";
-        if (hidden) hidden.value = value;
-        if (toggle) {{
-          toggle.classList.toggle("is-active", enabled);
-          toggle.setAttribute("aria-pressed", value);
-        }}
+      const viewMap = {{
+        all: {{ status: "", review: "", includePrivate: "true" }},
+        needs_review: {{ status: "needs_review", review: "", includePrivate: "true" }},
+        reviewed: {{ status: "", review: "confirmed", includePrivate: "true" }},
+        published: {{ status: "published", review: "", includePrivate: "true" }},
+        ignored: {{ status: "ignored", review: "", includePrivate: "true" }},
+        rejected: {{ status: "", review: "rejected", includePrivate: "true" }},
+        public: {{ status: "", review: "", includePrivate: "false" }},
       }};
 
-      const params = new URLSearchParams(window.location.search);
-      if (!params.has("include_private")) {{
-        const stored = window.localStorage.getItem(storageKey);
-        if (stored === "true" || stored === "false") {{
-          setToggle(stored === "true");
-        }}
+      const applyView = (viewKey) => {{
+        const config = viewMap[viewKey] || viewMap.all;
+        if (statusInput) statusInput.value = config.status;
+        if (reviewInput) reviewInput.value = config.review;
+        if (privateInput) privateInput.value = config.includePrivate;
+      }};
+
+      if (viewSelect) {{
+        applyView(viewSelect.value || "all");
+        viewSelect.addEventListener("change", () => {{
+          applyView(viewSelect.value);
+        }});
       }}
 
-      toggle?.addEventListener("click", () => {{
-        const next = !(hidden?.value === "true");
-        setToggle(next);
-        window.localStorage.setItem(storageKey, next ? "true" : "false");
-      }});
-
       reset?.addEventListener("click", () => {{
-        form.querySelectorAll("select").forEach((select) => {{
-          select.value = "";
-        }});
-        const limit = form.querySelector("input[name='limit']");
-        if (limit) limit.value = "24";
-        setToggle(true);
-        window.localStorage.removeItem(storageKey);
+        if (viewSelect) viewSelect.value = "all";
+        if (limitInput) limitInput.value = "24";
+        applyView("all");
         form.submit();
       }});
     }})();
@@ -5479,11 +5489,29 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_homepage(
+    view: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     review_decision: Optional[str] = Query(default=None),
     include_private: Optional[bool] = Query(default=None),
     limit: int = Query(default=24, ge=1, le=200),
 ) -> HTMLResponse:
+    if view:
+        view_key = view.lower()
+        status = None
+        review_decision = None
+        include_private = True
+        if view_key == "needs_review":
+            status = "needs_review"
+        elif view_key == "reviewed":
+            review_decision = "confirmed"
+        elif view_key == "published":
+            status = "published"
+        elif view_key == "ignored":
+            status = "ignored"
+        elif view_key == "rejected":
+            review_decision = "rejected"
+        elif view_key == "public":
+            include_private = False
     if include_private is None:
         include_private = True
     trips = trip_admin.list_trips(
