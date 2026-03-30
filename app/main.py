@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.bootstrap import get_user_timezone
 from app import destination_overrides, parks, trip_admin
@@ -31,6 +32,18 @@ from app.settings import (
 
 app = FastAPI(title="MilesMemories API", version="0.1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    if exc.status_code == 404:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and not request.url.path.startswith("/api/"):
+            return HTMLResponse(_render_not_found_page(), status_code=404)
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept or request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
 
 def _html_response(content: str) -> HTMLResponse:
@@ -327,7 +340,7 @@ def _render_public_homepage(
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 8px;
+      margin-bottom: 8px;
     }}
 
     .parks-tab {{
@@ -553,6 +566,14 @@ def _render_public_homepage(
       border-color: var(--accent);
       background: transparent;
       color: var(--accent);
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 700;
+      appearance: none;
+    }}
+    .load-more .load-more-button:hover {{
+      background: rgba(200,100,59,0.12);
     }}
     .load-more .load-more-button:disabled {{
       opacity: 0.55;
@@ -665,14 +686,14 @@ def _render_public_homepage(
           </div>
         </div>
         <div class="parks-list">
-          <div class="parks-search">
-            <input type="search" placeholder="Search parks..." data-parks-filter>
-          </div>
           <div class="parks-tabs" data-parks-tabs>
             <button class="parks-tab is-active" type="button" data-parks-tab="visited">Visited</button>
             <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
             <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
             <button class="parks-tab" type="button" data-parks-tab="all">All</button>
+          </div>
+          <div class="parks-search">
+            <input type="search" placeholder="Search parks..." data-parks-filter>
           </div>
           <div class="parks-scroll" data-parks-list>
             <ul>
@@ -1639,6 +1660,87 @@ def _render_public_trip_detail_page(trip: dict) -> str:
 </html>"""
 
 
+def _render_not_found_page() -> str:
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Not found · MilesMemories</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.92);
+      --ink: #1d2430;
+      --muted: #5f6b7a;
+      --line: #d8c9b3;
+      --accent: #c8643b;
+      --shadow: rgba(50, 33, 15, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
+        radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
+        linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
+      display: grid;
+      place-items: center;
+      padding: 32px 18px;
+    }
+    .panel {
+      max-width: 640px;
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 30px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 4vw, 3rem);
+    }
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .button {
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Page not found</h1>
+    <p>That link doesn't exist. Head back to the public trips or the admin dashboard.</p>
+    <div class="actions">
+      <a class="button" href="/trips">Public trips</a>
+      <a class="button" href="/admin">Admin</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
 @app.get("/trips/{trip_ref}", response_class=HTMLResponse)
 def public_trip_detail_page(trip_ref: str) -> HTMLResponse:
     if trip_ref.isdigit():
@@ -2443,7 +2545,7 @@ def _render_public_maplibre_script() -> str:
     (() => {
       if (!window.maplibregl) return;
 
-      const lower48Bounds = [[-127.0, 24.0], [-66.0, 50.8]];
+      const lower48Bounds = [[-130.0, 23.5], [-65.0, 51.2]];
       let mapSequence = 0;
       const initializedNodes = new WeakSet();
       const popup = new maplibregl.Popup({
@@ -3427,19 +3529,19 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
         status_label = "Visited" if status == "visited" else "Planned" if status == "planned" else "Not visited"
         items.append(
             f"""
-            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}" data-park-visited="{str(bool(park.get('visited'))).lower()}" data-park-planned="{str(bool(park.get('planned'))).lower()}"
+            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}" data-park-status="{status}"
+                data-park-visited="{str(bool(park.get('visited'))).lower()}" data-park-planned="{str(bool(park.get('planned'))).lower()}"
                 data-park-filter="{escape((park['name'] + ' ' + location).lower())}">
-              <label class="park-select">
-                <input type="checkbox" data-park-select>
-              </label>
               <div class="park-main">
                 <h3>{escape(park['name'])}</h3>
                 <p>{escape(location)}</p>
               </div>
-              <div class="park-actions">
-                <span class="park-pill {status}" data-park-pill>{status_label}</span>
+              <div class="park-toggle" role="group" aria-label="Park status">
+                <button class="park-toggle-btn{" is-active" if status == "visited" else ""}" type="button" data-park-set="visited">Visited</button>
+                <button class="park-toggle-btn{" is-active" if status == "planned" else ""}" type="button" data-park-set="planned">Planned</button>
+                <button class="park-toggle-btn{" is-active" if status == "unvisited" else ""}" type="button" data-park-set="unvisited">Not visited</button>
               </div>
-              <span class="park-status" data-park-status></span>
+              <span class="park-pill {status}" data-park-pill>{status_label}</span>
             </li>
             """
         )
@@ -3524,24 +3626,40 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       background: var(--accent);
       color: #fff;
     }}
-    .parks-actions {{
-      display: flex;
-      flex-wrap: wrap;
+    .parks-controls {{
+      display: grid;
       gap: 12px;
-      align-items: center;
-      justify-content: space-between;
       margin-bottom: 16px;
     }}
-    .parks-actions input, .parks-actions select {{
+    .parks-controls input {{
       border: 1px solid var(--line);
       border-radius: 16px;
       padding: 10px 12px;
       font: inherit;
       background: #fffdf8;
     }}
-    .parks-actions .search {{
-      flex: 1;
-      min-width: 220px;
+    .parks-controls .search {{
+      width: 100%;
+    }}
+    .parks-tabs {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .parks-tab {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.65);
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .parks-tab.is-active {{
+      background: rgba(200, 100, 59, 0.16);
+      color: var(--accent);
+      border-color: rgba(200, 100, 59, 0.4);
     }}
     .parks-list {{
       list-style: none;
@@ -3555,10 +3673,14 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       border-radius: 18px;
       padding: 12px 14px;
       display: grid;
-      grid-template-columns: auto 1fr auto auto;
+      grid-template-columns: 1fr auto auto;
       gap: 14px;
       align-items: center;
       background: rgba(255, 255, 255, 0.6);
+    }}
+    .park-row:hover {{
+      border-color: rgba(184, 95, 53, 0.45);
+      box-shadow: 0 10px 22px rgba(37, 28, 14, 0.08);
     }}
     .park-main h3 {{
       margin: 0;
@@ -3569,9 +3691,33 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       color: var(--muted);
       font-size: 0.9rem;
     }}
-    .park-actions {{
-      display: flex;
-      gap: 12px;
+    .park-toggle {{
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.7);
+    }}
+    .park-toggle-btn {{
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .park-toggle-btn:disabled {{
+      opacity: 0.6;
+      cursor: wait;
+    }}
+    .park-toggle-btn.is-active {{
+      background: rgba(200, 100, 59, 0.18);
+      color: var(--accent);
+    }}
+    .park-toggle-btn + .park-toggle-btn {{
+      border-left: 1px solid var(--line);
     }}
     .park-pill {{
       display: inline-flex;
@@ -3595,30 +3741,16 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       color: #a3621e;
       border-color: rgba(210, 139, 60, 0.32);
     }}
-    .park-status {{
-      font-size: 0.82rem;
-      color: var(--muted);
-      min-width: 80px;
-      text-align: right;
-    }}
-    .park-select input {{
-      width: 18px;
-      height: 18px;
-    }}
     @media (max-width: 860px) {{
       .topbar {{
         flex-direction: column;
         align-items: flex-start;
       }}
       .park-row {{
-        grid-template-columns: auto 1fr;
-        grid-template-areas:
-          "select main"
-          "select actions"
-          "select status";
+        grid-template-columns: 1fr;
       }}
-      .park-actions {{
-        grid-area: actions;
+      .park-toggle {{
+        justify-content: flex-start;
       }}
     }}
   </style>
@@ -3629,7 +3761,7 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       <div>
         <div class="eyebrow">MilesMemories Admin</div>
         <h1>National parks checklist</h1>
-        <p class="sub">Select parks and apply bulk actions to mark visited or planned.</p>
+        <p class="sub">Update each park's status and keep the checklist current.</p>
       </div>
       <div class="links">
         <a class="button" href="/admin">Back to admin</a>
@@ -3638,29 +3770,31 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     </section>
 
     <section class="panel">
-      <div class="parks-actions">
-        <input class="search" type="search" placeholder="Search parks..." data-park-search>
-        <select data-park-bulk-action>
-          <option value="">Bulk action</option>
-          <option value="mark_visited">Mark visited</option>
-          <option value="clear_visited">Clear visited</option>
-          <option value="mark_planned">Mark planned</option>
-          <option value="clear_planned">Clear planned</option>
-        </select>
-        <button class="button" type="button" data-park-bulk-apply>Apply to selected</button>
+      <div class="parks-controls">
+        <div class="parks-tabs" data-admin-park-tabs>
+          <button class="parks-tab" type="button" data-admin-park-tab="visited">Visited</button>
+          <button class="parks-tab" type="button" data-admin-park-tab="planned">Planned</button>
+          <button class="parks-tab" type="button" data-admin-park-tab="unvisited">Not visited</button>
+          <button class="parks-tab is-active" type="button" data-admin-park-tab="all">All</button>
+        </div>
+        <input class="search" type="search" placeholder="Search parks..." data-admin-park-search>
       </div>
-      <ul class="parks-list" data-park-list>
+      <ul class="parks-list" data-admin-park-list>
         {''.join(items)}
       </ul>
     </section>
   </main>
   <script>
     (() => {{
-      const list = document.querySelector("[data-park-list]");
+      const list = document.querySelector("[data-admin-park-list]");
       if (!list) return;
-      const search = document.querySelector("[data-park-search]");
-      const bulkAction = document.querySelector("[data-park-bulk-action]");
-      const bulkApply = document.querySelector("[data-park-bulk-apply]");
+      const search = document.querySelector("[data-admin-park-search]");
+      const tabs = document.querySelector("[data-admin-park-tabs]");
+      let activeStatus = "all";
+      const activeTab = tabs?.querySelector(".parks-tab.is-active");
+      if (activeTab?.dataset.adminParkTab) {{
+        activeStatus = activeTab.dataset.adminParkTab;
+      }}
 
       const setStatusPill = (row) => {{
         const visited = row.dataset.parkVisited === "true";
@@ -3679,48 +3813,72 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
         pill.classList.remove("visited", "planned", "unvisited");
         pill.classList.add(status);
         pill.textContent = label;
+        row.dataset.parkStatus = status;
+        row.querySelectorAll("[data-park-set]").forEach((button) => {{
+          const isActive = button.dataset.parkSet === status;
+          button.classList.toggle("is-active", isActive);
+        }});
       }};
 
-      search?.addEventListener("input", () => {{
-        const term = search.value.trim().toLowerCase();
+      const applyFilter = () => {{
+        const term = (search?.value || "").trim().toLowerCase();
         list.querySelectorAll("[data-park-row]").forEach((row) => {{
           const haystack = row.dataset.parkFilter || "";
-          row.style.display = !term || haystack.includes(term) ? "" : "none";
+          const status = row.dataset.parkStatus || "unvisited";
+          const matchesTerm = !term || haystack.includes(term);
+          const matchesStatus = activeStatus === "all" || status === activeStatus;
+          row.style.display = matchesTerm && matchesStatus ? "" : "none";
         }});
+      }};
+
+      search?.addEventListener("input", applyFilter);
+
+      tabs?.addEventListener("click", (event) => {{
+        const button = event.target.closest("[data-admin-park-tab]");
+        if (!button) return;
+        activeStatus = button.dataset.adminParkTab || "all";
+        tabs.querySelectorAll(".parks-tab").forEach((tab) => {{
+          tab.classList.toggle("is-active", tab === button);
+        }});
+        applyFilter();
       }});
 
-      bulkApply?.addEventListener("click", async () => {{
-        const action = bulkAction?.value || "";
-        if (!action) return;
-        const selected = Array.from(list.querySelectorAll("[data-park-select]:checked"))
-          .map((input) => input.closest("[data-park-row]")?.dataset.parkCode)
-          .filter(Boolean);
-        if (!selected.length) return;
+      list.addEventListener("click", async (event) => {{
+        const button = event.target.closest("[data-park-set]");
+        if (!button) return;
+        const row = button.closest("[data-park-row]");
+        if (!row || row.dataset.parkSaving === "true") return;
+        const status = button.dataset.parkSet || "unvisited";
+        const code = row.dataset.parkCode;
+        if (!code) return;
+        const payload = {{
+          visited: status === "visited",
+          planned: status === "planned",
+        }};
+        row.dataset.parkSaving = "true";
+        row.querySelectorAll("[data-park-set]").forEach((btn) => (btn.disabled = true));
         try {{
-          const response = await fetch("/admin/parks/bulk", {{
+          const response = await fetch(`/admin/parks/${code}`, {{
             method: "POST",
             headers: {{ "Content-Type": "application/json" }},
-            body: JSON.stringify({{ action, park_codes: selected }}),
+            body: JSON.stringify(payload),
           }});
-          if (!response.ok) throw new Error("Bulk update failed");
-          if (action.includes("visited")) {{
-            list.querySelectorAll("[data-park-row]").forEach((row) => {{
-              if (!selected.includes(row.dataset.parkCode)) return;
-              row.dataset.parkVisited = action === "mark_visited" ? "true" : "false";
-              setStatusPill(row);
-            }});
-          }}
-          if (action.includes("planned")) {{
-            list.querySelectorAll("[data-park-row]").forEach((row) => {{
-              if (!selected.includes(row.dataset.parkCode)) return;
-              row.dataset.parkPlanned = action === "mark_planned" ? "true" : "false";
-              setStatusPill(row);
-            }});
-          }}
+          if (!response.ok) throw new Error("Update failed");
+          const data = await response.json();
+          const park = data.park || {{}};
+          row.dataset.parkVisited = park.visited ? "true" : "false";
+          row.dataset.parkPlanned = park.planned ? "true" : "false";
+          setStatusPill(row);
+          applyFilter();
         }} catch (error) {{
           console.error(error);
+        }} finally {{
+          row.dataset.parkSaving = "false";
+          row.querySelectorAll("[data-park-set]").forEach((btn) => (btn.disabled = false));
         }}
       }});
+
+      applyFilter();
     }})();
   </script>
 </body>
