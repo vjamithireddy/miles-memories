@@ -12,7 +12,7 @@ def list_parks() -> list[dict[str, Any]]:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT park_code, name, state, city, lat, lon, visited, planned, updated_at
+                SELECT park_code, name, state, city, lat, lon, visited, planned
                 FROM national_parks
                 ORDER BY name
                 """
@@ -56,7 +56,7 @@ def update_park_status(park_code: str, *, visited: bool | None, planned: bool | 
                 UPDATE national_parks
                 SET {", ".join(fields)}, updated_at = NOW()
                 WHERE park_code = %s
-                RETURNING park_code, name, state, city, lat, lon, visited, planned, updated_at
+                RETURNING park_code, name, state, city, lat, lon, visited, planned
                 """,
                 values,
             )

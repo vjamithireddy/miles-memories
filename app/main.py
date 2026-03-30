@@ -172,7 +172,7 @@ def _render_public_homepage(
         location = " · ".join(location_bits)
         parks_items.append(
             f"""
-            <li class="park-item" data-park-name="{escape(park['name'].lower())}">
+            <li class="park-item" data-park-name="{escape(park['name'].lower())}" data-park-status="{status}">
               <div>
                 <p class="park-name">{escape(park['name'])}</p>
                 <p class="park-meta">{escape(location)}</p>
@@ -198,7 +198,7 @@ def _render_public_homepage(
         )
         load_more_markup = f"""
         <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
-          <button class="button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
+          <button class="button primary" type="button" data-load-more-button{" disabled" if not has_more else ""}>
             {"No more trips" if not has_more else "Load more trips"}
           </button>
           {noscript_markup}
@@ -321,6 +321,30 @@ def _render_public_homepage(
       font: inherit;
       background: #fffdf8;
       color: var(--ink);
+    }}
+
+    .parks-tabs {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }}
+
+    .parks-tab {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.65);
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+
+    .parks-tab.is-active {{
+      background: rgba(200, 100, 59, 0.16);
+      color: var(--accent-dark);
+      border-color: rgba(200, 100, 59, 0.4);
     }}
 
     .parks-scroll {{
@@ -632,6 +656,12 @@ def _render_public_homepage(
           <div class="parks-search">
             <input type="search" placeholder="Search parks..." data-parks-filter>
           </div>
+          <div class="parks-tabs" data-parks-tabs>
+            <button class="parks-tab is-active" type="button" data-parks-tab="all">All</button>
+            <button class="parks-tab" type="button" data-parks-tab="visited">Visited</button>
+            <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
+            <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
+          </div>
           <div class="parks-scroll" data-parks-list>
             <ul>
               {parks_list_markup}
@@ -662,17 +692,28 @@ def _render_public_homepage(
     (() => {{
       const filterInput = document.querySelector("[data-parks-filter]");
       const list = document.querySelector("[data-parks-list]");
+      const tabs = document.querySelector("[data-parks-tabs]");
+      let activeStatus = "all";
       if (filterInput && list) {{
-        filterInput.addEventListener("input", () => {{
+        const applyFilter = () => {{
           const term = filterInput.value.trim().toLowerCase();
           list.querySelectorAll(".park-item").forEach((item) => {{
-            if (!term) {{
-              item.style.display = "";
-              return;
-            }}
             const name = item.dataset.parkName || "";
-            item.style.display = name.includes(term) ? "" : "none";
+            const status = item.dataset.parkStatus || "unvisited";
+            const matchesTerm = !term || name.includes(term);
+            const matchesStatus = activeStatus === "all" || status === activeStatus;
+            item.style.display = matchesTerm && matchesStatus ? "" : "none";
           }});
+        }};
+        filterInput.addEventListener("input", applyFilter);
+        tabs?.addEventListener("click", (event) => {{
+          const button = event.target.closest("[data-parks-tab]");
+          if (!button) return;
+          activeStatus = button.dataset.parksTab || "all";
+          tabs.querySelectorAll(".parks-tab").forEach((tab) => {{
+            tab.classList.toggle("is-active", tab === button);
+          }});
+          applyFilter();
         }});
       }}
     }})();
@@ -3367,9 +3408,11 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     for park in parks_list:
         location_bits = [bit for bit in [park.get("state"), park.get("city")] if bit]
         location = " · ".join(location_bits)
+        status = "visited" if park.get("visited") else "planned" if park.get("planned") else "unvisited"
+        status_label = "Visited" if status == "visited" else "Planned" if status == "planned" else "Not visited"
         items.append(
             f"""
-            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}"
+            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}" data-park-visited="{str(bool(park.get('visited'))).lower()}" data-park-planned="{str(bool(park.get('planned'))).lower()}"
                 data-park-filter="{escape((park['name'] + ' ' + location).lower())}">
               <label class="park-select">
                 <input type="checkbox" data-park-select>
@@ -3379,14 +3422,7 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
                 <p>{escape(location)}</p>
               </div>
               <div class="park-actions">
-                <label class="park-toggle">
-                  <input type="checkbox" data-park-visited {"checked" if park.get("visited") else ""}>
-                  <span>Visited</span>
-                </label>
-                <label class="park-toggle">
-                  <input type="checkbox" data-park-planned {"checked" if park.get("planned") else ""}>
-                  <span>Planned</span>
-                </label>
+                <span class="park-pill {status}" data-park-pill>{status_label}</span>
               </div>
               <span class="park-status" data-park-status></span>
             </li>
@@ -3522,12 +3558,27 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       display: flex;
       gap: 12px;
     }}
-    .park-toggle {{
+    .park-pill {{
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 0.9rem;
-      color: var(--muted);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: rgba(120, 130, 140, 0.18);
+      color: #66707e;
+      border: 1px solid rgba(120, 130, 140, 0.28);
+    }}
+    .park-pill.visited {{
+      background: rgba(47, 108, 91, 0.16);
+      color: #2f6c5b;
+      border-color: rgba(47, 108, 91, 0.28);
+    }}
+    .park-pill.planned {{
+      background: rgba(210, 139, 60, 0.2);
+      color: #a3621e;
+      border-color: rgba(210, 139, 60, 0.32);
     }}
     .park-status {{
       font-size: 0.82rem;
@@ -3563,7 +3614,7 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       <div>
         <div class="eyebrow">MilesMemories Admin</div>
         <h1>National parks checklist</h1>
-        <p class="sub">Mark visited and planned parks. Changes update immediately.</p>
+        <p class="sub">Select parks and apply bulk actions to mark visited or planned.</p>
       </div>
       <div class="links">
         <a class="button" href="/admin">Back to admin</a>
@@ -3596,34 +3647,24 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       const bulkAction = document.querySelector("[data-park-bulk-action]");
       const bulkApply = document.querySelector("[data-park-bulk-apply]");
 
-      const updatePark = async (code, payload, statusEl) => {{
-        try {{
-          const response = await fetch(`/admin/parks/${{code}}`, {{
-            method: "POST",
-            headers: {{ "Content-Type": "application/json" }},
-            body: JSON.stringify(payload),
-          }});
-          if (!response.ok) throw new Error("Update failed");
-          statusEl.textContent = "Saved";
-          window.setTimeout(() => {{ statusEl.textContent = ""; }}, 1200);
-        }} catch (error) {{
-          console.error(error);
-          statusEl.textContent = "Error";
+      const setStatusPill = (row) => {{
+        const visited = row.dataset.parkVisited === "true";
+        const planned = row.dataset.parkPlanned === "true";
+        const pill = row.querySelector("[data-park-pill]");
+        if (!pill) return;
+        let status = "unvisited";
+        let label = "Not visited";
+        if (visited) {{
+          status = "visited";
+          label = "Visited";
+        }} else if (planned) {{
+          status = "planned";
+          label = "Planned";
         }}
+        pill.classList.remove("visited", "planned", "unvisited");
+        pill.classList.add(status);
+        pill.textContent = label;
       }};
-
-      list.querySelectorAll("[data-park-row]").forEach((row) => {{
-        const code = row.dataset.parkCode;
-        const statusEl = row.querySelector("[data-park-status]");
-        const visited = row.querySelector("[data-park-visited]");
-        const planned = row.querySelector("[data-park-planned]");
-        visited?.addEventListener("change", () => {{
-          updatePark(code, {{ visited: visited.checked }}, statusEl);
-        }});
-        planned?.addEventListener("change", () => {{
-          updatePark(code, {{ planned: planned.checked }}, statusEl);
-        }});
-      }});
 
       search?.addEventListener("input", () => {{
         const term = search.value.trim().toLowerCase();
@@ -3650,15 +3691,15 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
           if (action.includes("visited")) {{
             list.querySelectorAll("[data-park-row]").forEach((row) => {{
               if (!selected.includes(row.dataset.parkCode)) return;
-              const visited = row.querySelector("[data-park-visited]");
-              if (visited) visited.checked = action === "mark_visited";
+              row.dataset.parkVisited = action === "mark_visited" ? "true" : "false";
+              setStatusPill(row);
             }});
           }}
           if (action.includes("planned")) {{
             list.querySelectorAll("[data-park-row]").forEach((row) => {{
               if (!selected.includes(row.dataset.parkCode)) return;
-              const planned = row.querySelector("[data-park-planned]");
-              if (planned) planned.checked = action === "mark_planned";
+              row.dataset.parkPlanned = action === "mark_planned" ? "true" : "false";
+              setStatusPill(row);
             }});
           }}
         }} catch (error) {{
