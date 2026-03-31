@@ -170,8 +170,8 @@ def _render_public_homepage(
     """
 
     intro = intro or {}
-    hero_note = "My experiences captured through hiking, driving, and trips."
-    highlight_line = ""
+    hero_note = "Travel stories from my own data."
+    highlight_line = "Experiences captured through hiking, driving, and trips."
 
     parks_list = parks_list or []
     parks_counts = parks_counts or {"total": 0, "visited": 0, "planned": 0}
@@ -349,13 +349,13 @@ def _render_public_homepage(
     .parks-tab {{
       border: 1px solid var(--line);
       border-radius: 999px;
-      height: 40px;
+      height: 42px;
       width: 100%;
-      padding: 0 12px;
+      padding: 0 16px;
       background: rgba(255, 255, 255, 0.65);
       color: var(--muted);
-      font-size: 0.84rem;
-      font-weight: 700;
+      font-size: 0.9rem;
+      font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -659,8 +659,8 @@ def _render_public_homepage(
   <main>
     <section class="panel hero">
       <div class="hero-copy">
-        <span class="eyebrow">Miles awaiting &amp; Memories created</span>
-        <h1>My travel stories from my own data.</h1>
+        <span class="eyebrow">MilesMemories</span>
+        <h1>Miles awaiting, memories created</h1>
         <p class="hero-note">{hero_note}</p>
         {f'<p class="hero-note">{highlight_line}</p>' if highlight_line else ''}
       </div>
@@ -3486,7 +3486,6 @@ def _render_admin_page(
         </label>
         <div class="filter-actions">
           <button class="button ghost" type="button" data-reset-filters>Reset</button>
-          <button class="button" type="submit">Apply filters</button>
         </div>
       </form>
 
@@ -3502,6 +3501,15 @@ def _render_admin_page(
       const viewSelect = form.querySelector("[data-view-select]");
       const reset = form.querySelector("[data-reset-filters]");
       const limitSelect = form.querySelector("select[name='limit']");
+      let submitTimer = null;
+
+      const scheduleSubmit = () => {{
+        if (submitTimer) window.clearTimeout(submitTimer);
+        submitTimer = window.setTimeout(() => form.submit(), 180);
+      }};
+
+      viewSelect?.addEventListener("change", scheduleSubmit);
+      limitSelect?.addEventListener("change", scheduleSubmit);
 
       reset?.addEventListener("click", () => {{
         if (viewSelect) viewSelect.value = "all";
@@ -3648,13 +3656,13 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     .parks-tab {{
       border: 1px solid var(--line);
       border-radius: 999px;
-      height: 40px;
+      height: 42px;
       width: 100%;
-      padding: 0 12px;
+      padding: 0 16px;
       background: rgba(255, 255, 255, 0.65);
       color: var(--muted);
-      font-size: 0.84rem;
-      font-weight: 700;
+      font-size: 0.9rem;
+      font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -4017,6 +4025,19 @@ def _render_overrides_page(overrides: List[dict], *, return_to: str = "") -> str
       text-transform: uppercase;
       font-size: 0.8rem;
       margin-bottom: 10px;
+    }}
+    .hero-head {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .hero-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }}
     h1, h2 {{ margin: 0 0 12px; }}
     p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
@@ -5284,7 +5305,14 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     {toast_markup}
     <section class="hero single-panel">
       <article class="panel">
-        <div class="eyebrow">Trip Overview</div>
+        <div class="hero-head">
+          <div class="eyebrow">Trip Overview</div>
+          <div class="hero-actions">
+            <a class="button" href="/admin">Back to queue</a>
+            <a class="button" href="{destination_href}">Destination context</a>
+            <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
+          </div>
+        </div>
         <form class="trip-overview-form" method="post" action="/admin/trip/{trip['id']}/review" data-review-submit="ajax">
           <label class="hero-title-field">
             <span class="sr-only">Trip name</span>
@@ -5334,11 +5362,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             </div>
           </div>
         </form>
-        <div class="actions">
-          <a class="button" href="/admin">Back to queue</a>
-          <a class="button" href="{destination_href}">Destination context</a>
-          <a class="button utility" href="/admin/trips/{trip['id']}">Open JSON</a>
-        </div>
       </article>
     </section>
 
