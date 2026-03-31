@@ -38,7 +38,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
     if exc.status_code == 404:
         accept = request.headers.get("accept", "")
-        if "text/html" in accept and not request.url.path.startswith("/api/"):
+        wants_html = "text/html" in accept or "*/*" in accept
+        if wants_html and not request.url.path.startswith("/api/"):
             return HTMLResponse(_render_not_found_page(), status_code=404)
     accept = request.headers.get("accept", "")
     if "application/json" in accept or request.url.path.startswith("/api/"):
@@ -319,10 +320,14 @@ def _render_public_homepage(
     .legend-unvisited {{ background: #9aa2ad; }}
 
     .parks-list {{
-      display: grid;
+      display: flex;
+      flex-direction: column;
       gap: 12px;
     }}
 
+    .parks-search {{
+      order: 1;
+    }}
     .parks-search input {{
       width: 100%;
       border: 1px solid var(--line);
@@ -334,21 +339,28 @@ def _render_public_homepage(
     }}
 
     .parks-tabs {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 8px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+      order: 0;
     }}
 
     .parks-tab {{
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 6px 12px;
+      height: 40px;
+      width: 100%;
+      padding: 0 12px;
       background: rgba(255, 255, 255, 0.65);
       color: var(--muted);
       font-size: 0.84rem;
       font-weight: 700;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
     }}
 
     .parks-tab.is-active {{
@@ -358,6 +370,7 @@ def _render_public_homepage(
     }}
 
     .parks-scroll {{
+      order: 2;
       border: 1px solid var(--line);
       border-radius: 22px;
       padding: 12px;
@@ -560,7 +573,7 @@ def _render_public_homepage(
     .load-more .load-more-button {{
       min-width: 180px;
       text-align: center;
-      border-color: var(--accent);
+      border: 1px solid var(--accent);
       background: transparent;
       color: var(--accent);
       border-radius: 999px;
@@ -728,29 +741,30 @@ def _render_public_homepage(
       if (activeTab?.dataset.parksTab) {{
         activeStatus = activeTab.dataset.parksTab;
       }}
-      if (filterInput && list) {{
-        const applyFilter = () => {{
-          const term = filterInput.value.trim().toLowerCase();
-          list.querySelectorAll(".park-item").forEach((item) => {{
-            const name = item.dataset.parkName || "";
-            const status = item.dataset.parkStatus || "unvisited";
-            const matchesTerm = !term || name.includes(term);
-            const matchesStatus = activeStatus === "all" || status === activeStatus;
-            item.style.display = matchesTerm && matchesStatus ? "" : "none";
-          }});
-        }};
-        applyFilter();
-        filterInput.addEventListener("input", applyFilter);
-        tabs?.addEventListener("click", (event) => {{
-          const button = event.target.closest("[data-parks-tab]");
-          if (!button) return;
-          activeStatus = button.dataset.parksTab || "all";
-          tabs.querySelectorAll(".parks-tab").forEach((tab) => {{
-            tab.classList.toggle("is-active", tab === button);
-          }});
-          applyFilter();
-        }});
+      if (!list) {{
+        return;
       }}
+      const applyFilter = () => {{
+        const term = (filterInput?.value || "").trim().toLowerCase();
+        list.querySelectorAll(".park-item").forEach((item) => {{
+          const name = item.dataset.parkName || "";
+          const status = item.dataset.parkStatus || "unvisited";
+          const matchesTerm = !term || name.includes(term);
+          const matchesStatus = activeStatus === "all" || status === activeStatus;
+          item.style.display = matchesTerm && matchesStatus ? "" : "none";
+        }});
+      }};
+      applyFilter();
+      filterInput?.addEventListener("input", applyFilter);
+      tabs?.addEventListener("click", (event) => {{
+        const button = event.target.closest("[data-parks-tab]");
+        if (!button) return;
+        activeStatus = button.dataset.parksTab || "all";
+        tabs.querySelectorAll(".parks-tab").forEach((tab) => {{
+          tab.classList.toggle("is-active", tab === button);
+        }});
+        applyFilter();
+      }});
     }})();
   </script>
   {f'''
@@ -1875,9 +1889,7 @@ def _trip_review_state(trip: dict) -> Optional[str]:
     status = (trip.get("status") or "").lower()
     if review == "confirmed" or status == "published":
         return "yes"
-    if review == "ignored" or status == "ignored":
-        return "ignored"
-    if review == "rejected":
+    if review in {"rejected", "ignored"} or status == "ignored":
         return "no"
     return None
 
@@ -2542,7 +2554,7 @@ def _render_public_maplibre_script() -> str:
     (() => {
       if (!window.maplibregl) return;
 
-      const lower48Bounds = [[-130.0, 23.5], [-65.0, 51.2]];
+      const lower48Bounds = [[-137.0, 23.0], [-62.0, 52.5]];
       let mapSequence = 0;
       const initializedNodes = new WeakSet();
       const popup = new maplibregl.Popup({
@@ -2933,7 +2945,7 @@ def _render_public_maplibre_script() -> str:
         initMap(
           node,
           { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds: lower48Bounds },
-          { clusterStops: true, fitMaxZoom: 3.5, maxZoom: 7 }
+          { clusterStops: true, fitMaxZoom: 3.1, maxZoom: 7 }
         );
       };
 
@@ -3079,9 +3091,7 @@ def _review_step_hint(review_state: Optional[str]) -> str:
         return "Review complete. Choose whether this trip should stay private or be visible on the public site."
     if review_state == "no":
         return "Marked as not a trip. Public visibility is disabled for rejected items."
-    if review_state == "ignored":
-        return "Marked as ignored. Public visibility is disabled for ignored items."
-    return "Start by answering Yes, No, or Ignored. Visibility becomes available only after the trip is reviewed."
+    return "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed."
 
 
 def _format_duration(start: datetime, end: datetime) -> str:
@@ -3117,15 +3127,6 @@ def _render_admin_page(
     counts: dict[str, int],
     current_view: Optional[str] = None,
 ) -> str:
-    counter_views = {
-        "reviewed": "reviewed",
-        "needs_review": "needs_review",
-        "ignored": "ignored",
-        "rejected": "rejected",
-        "private": "private",
-        "public": "public",
-    }
-
     def selected(current: Optional[str], expected: str) -> str:
         return ' selected="selected"' if current == expected else ""
 
@@ -3136,13 +3137,11 @@ def _render_admin_page(
             return "public"
         if status == "published":
             return "published"
-        if status == "ignored":
-            return "ignored"
         if status == "needs_review":
             return "needs_review"
         if review_decision == "confirmed":
             return "reviewed"
-        if review_decision == "rejected":
+        if review_decision in {"rejected", "ignored"} or status == "ignored":
             return "rejected"
         return "all"
 
@@ -3459,7 +3458,6 @@ def _render_admin_page(
     <section class="stats">
       <a class="panel stat stat-link" href="/admin?view=reviewed&limit={limit}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
       <a class="panel stat stat-link" href="/admin?view=needs_review&limit={limit}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
-      <a class="panel stat stat-link" href="/admin?view=ignored&limit={limit}"><strong>{counts.get("ignored", 0)}</strong><span>Ignored</span></a>
       <a class="panel stat stat-link" href="/admin?view=rejected&limit={limit}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
       <a class="panel stat stat-link" href="/admin?view=private&limit={limit}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
       <a class="panel stat stat-link" href="/admin?view=public&limit={limit}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
@@ -3472,7 +3470,6 @@ def _render_admin_page(
             <option value="all"{selected(current_view, "all")}>All trips</option>
             <option value="needs_review"{selected(current_view, "needs_review")}>Needs review</option>
             <option value="reviewed"{selected(current_view, "reviewed")}>Reviewed</option>
-            <option value="ignored"{selected(current_view, "ignored")}>Ignored</option>
             <option value="rejected"{selected(current_view, "rejected")}>Rejected</option>
             <option value="published"{selected(current_view, "published")}>Published</option>
             <option value="public"{selected(current_view, "public")}>Public only</option>
@@ -3520,17 +3517,22 @@ def _render_admin_page(
 def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     items = []
     for park in parks_list:
-        location_bits = [bit for bit in [park.get("state"), park.get("city")] if bit]
+        park_code = str(park.get("park_code") or "")
+        name = str(park.get("name") or "Unknown park")
+        state = str(park.get("state") or "")
+        city = str(park.get("city") or "")
+        location_bits = [bit for bit in [state, city] if bit]
         location = " · ".join(location_bits)
         status = "visited" if park.get("visited") else "planned" if park.get("planned") else "unvisited"
         status_label = "Visited" if status == "visited" else "Planned" if status == "planned" else "Not visited"
+        search_blob = f"{name} {location}".lower().strip()
         items.append(
             f"""
-            <li class="park-row" data-park-row data-park-code="{escape(park['park_code'])}" data-park-status="{status}"
+            <li class="park-row" data-park-row data-park-code="{escape(park_code)}" data-park-status="{status}"
                 data-park-visited="{str(bool(park.get('visited'))).lower()}" data-park-planned="{str(bool(park.get('planned'))).lower()}"
-                data-park-filter="{escape((park['name'] + ' ' + location).lower())}">
+                data-park-filter="{escape(search_blob)}">
               <div class="park-main">
-                <h3>{escape(park['name'])}</h3>
+                <h3>{escape(name)}</h3>
                 <p>{escape(location)}</p>
               </div>
               <div class="park-toggle" role="group" aria-label="Park status">
@@ -3639,19 +3641,25 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       width: 100%;
     }}
     .parks-tabs {{
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }}
     .parks-tab {{
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 6px 12px;
+      height: 40px;
+      width: 100%;
+      padding: 0 12px;
       background: rgba(255, 255, 255, 0.65);
       color: var(--muted);
       font-size: 0.84rem;
       font-weight: 700;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
     }}
     .parks-tab.is-active {{
       background: rgba(200, 100, 59, 0.16);
@@ -3855,7 +3863,7 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
         row.dataset.parkSaving = "true";
         row.querySelectorAll("[data-park-set]").forEach((btn) => (btn.disabled = true));
         try {{
-          const response = await fetch(`/admin/parks/${code}`, {{
+          const response = await fetch(`/admin/parks/${{encodeURIComponent(code)}}`, {{
             method: "POST",
             headers: {{ "Content-Type": "application/json" }},
             body: JSON.stringify(payload),
@@ -5315,7 +5323,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               <div class="segmented-control" role="group" aria-label="Review decision">
                 <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm" aria-pressed="{'true' if review_state == 'yes' else 'false'}">Yes</button>
                 <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject" aria-pressed="{'true' if review_state == 'no' else 'false'}">No</button>
-                <button class="button{' is-current' if review_state == 'ignored' else ''}" type="submit" name="action" value="ignore" aria-pressed="{'true' if review_state == 'ignored' else 'false'}">Ignored</button>
               </div>
             </div>
             <div class="action-group">
@@ -5535,7 +5542,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
               const reviewMap = {{
                 confirm: "yes",
                 reject: "no",
-                ignore: "ignored",
               }};
               reviewButtons.forEach((node) => {{
                 const expected = reviewMap[node.value] || "";
@@ -5556,8 +5562,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                   workflowHelp.textContent = "Review complete. Choose whether this trip should stay private or be visible on the public site. Text edits autosave when you leave a field.";
                 }} else if (payload.review_state === "no") {{
                   workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
-                }} else if (payload.review_state === "ignored") {{
-                  workflowHelp.textContent = "Marked as ignored. Public visibility is disabled for ignored items. Text edits autosave when you leave a field.";
                 }} else {{
                   workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
                 }}
@@ -5676,11 +5680,11 @@ def admin_homepage(
             status = "needs_review"
         elif view_key == "reviewed":
             review_decision = "confirmed"
-        elif view_key == "ignored":
-            review_decision = "ignored"
         elif view_key == "published":
             status = "published"
         elif view_key == "rejected":
+            review_decision = "rejected"
+        elif view_key == "ignored":
             review_decision = "rejected"
         elif view_key == "private":
             only_private = True

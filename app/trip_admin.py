@@ -1069,8 +1069,8 @@ def record_review_light(
     action_map = {
         "save": (None, None),
         "confirm": ("confirmed", "confirmed"),
-        "reject": ("ignored", "rejected"),
-        "ignore": ("ignored", "ignored"),
+        "reject": (None, "rejected"),
+        "ignore": (None, "rejected"),
         "publish": ("published", "confirmed"),
         "mark_private": ("confirmed", "confirmed"),
     }
@@ -1336,8 +1336,12 @@ def list_trips(
         filters.append("status = %s")
         params.append(status)
     if review_decision:
-        filters.append("review_decision = %s")
-        params.append(review_decision)
+        if review_decision == "rejected":
+            filters.append("(review_decision = %s OR review_decision = 'ignored' OR status = 'ignored')")
+            params.append(review_decision)
+        else:
+            filters.append("review_decision = %s")
+            params.append(review_decision)
     if only_private:
         filters.append("is_private = TRUE")
     if not include_private:
@@ -1386,8 +1390,7 @@ def get_trip_status_counts() -> dict[str, int]:
                 SELECT
                     COUNT(*) FILTER (WHERE review_decision = 'confirmed' OR status = 'published') AS reviewed,
                     COUNT(*) FILTER (WHERE status = 'needs_review') AS needs_review,
-                    COUNT(*) FILTER (WHERE review_decision = 'ignored' OR status = 'ignored') AS ignored,
-                    COUNT(*) FILTER (WHERE review_decision = 'rejected') AS rejected,
+                    COUNT(*) FILTER (WHERE review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored') AS rejected,
                     COUNT(*) FILTER (WHERE is_private = TRUE) AS private,
                     COUNT(*) FILTER (WHERE is_private = FALSE) AS public
                 FROM trips
@@ -1397,7 +1400,6 @@ def get_trip_status_counts() -> dict[str, int]:
             return {
                 "reviewed": int(row.get("reviewed") or 0),
                 "needs_review": int(row.get("needs_review") or 0),
-                "ignored": int(row.get("ignored") or 0),
                 "rejected": int(row.get("rejected") or 0),
                 "private": int(row.get("private") or 0),
                 "public": int(row.get("public") or 0),
@@ -1874,8 +1876,8 @@ def record_review(
     action_map = {
         "save": (None, None),
         "confirm": ("confirmed", "confirmed"),
-        "reject": ("ignored", "rejected"),
-        "ignore": ("ignored", "ignored"),
+        "reject": (None, "rejected"),
+        "ignore": (None, "rejected"),
         "publish": ("published", "confirmed"),
         "mark_private": ("confirmed", "confirmed"),
     }
