@@ -178,7 +178,6 @@ def _render_public_homepage(
     parks_items = []
     for park in parks_list:
         status = "visited" if park.get("visited") else "planned" if park.get("planned") else "unvisited"
-        status_label = "Visited" if status == "visited" else "Planned" if status == "planned" else "Not visited"
         location_bits = [bit for bit in [park.get("state"), park.get("city")] if bit]
         location = " · ".join(location_bits)
         parks_items.append(
@@ -3524,7 +3523,6 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
                 <button class="park-toggle-btn{" is-active" if status == "planned" else ""}" type="button" data-park-set="planned">Planned</button>
                 <button class="park-toggle-btn{" is-active" if status == "unvisited" else ""}" type="button" data-park-set="unvisited">Not visited</button>
               </div>
-              <span class="park-pill {status}" data-park-pill>{status_label}</span>
             </li>
             """
         )
@@ -3708,28 +3706,6 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     .park-toggle-btn + .park-toggle-btn {{
       border-left: 1px solid var(--line);
     }}
-    .park-pill {{
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      background: rgba(120, 130, 140, 0.18);
-      color: #66707e;
-      border: 1px solid rgba(120, 130, 140, 0.28);
-    }}
-    .park-pill.visited {{
-      background: rgba(47, 108, 91, 0.16);
-      color: #2f6c5b;
-      border-color: rgba(47, 108, 91, 0.28);
-    }}
-    .park-pill.planned {{
-      background: rgba(210, 139, 60, 0.2);
-      color: #a3621e;
-      border-color: rgba(210, 139, 60, 0.32);
-    }}
     @media (max-width: 860px) {{
       .topbar {{
         flex-direction: column;
@@ -3788,20 +3764,12 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       const setStatusPill = (row) => {{
         const visited = row.dataset.parkVisited === "true";
         const planned = row.dataset.parkPlanned === "true";
-        const pill = row.querySelector("[data-park-pill]");
-        if (!pill) return;
         let status = "unvisited";
-        let label = "Not visited";
         if (visited) {{
           status = "visited";
-          label = "Visited";
         }} else if (planned) {{
           status = "planned";
-          label = "Planned";
         }}
-        pill.classList.remove("visited", "planned", "unvisited");
-        pill.classList.add(status);
-        pill.textContent = label;
         row.dataset.parkStatus = status;
         row.querySelectorAll("[data-park-set]").forEach((button) => {{
           const isActive = button.dataset.parkSet === status;
