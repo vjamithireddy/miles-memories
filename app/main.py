@@ -188,7 +188,6 @@ def _render_public_homepage(
                 <p class="park-name">{escape(park['name'])}</p>
                 <p class="park-meta">{escape(location)}</p>
               </div>
-              <span class="park-status {status}">{status_label}</span>
             </li>
             """
         )
@@ -413,29 +412,6 @@ def _render_public_homepage(
       color: var(--muted);
     }}
 
-    .park-status {{
-      align-self: center;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }}
-
-    .park-status.visited {{
-      background: rgba(47, 108, 91, 0.16);
-      color: #2f6c5b;
-    }}
-
-    .park-status.planned {{
-      background: rgba(210, 139, 60, 0.2);
-      color: #a3621e;
-    }}
-
-    .park-status.unvisited {{
-      background: rgba(120, 130, 140, 0.18);
-      color: #66707e;
-    }}
 
     .hero-copy {{
       display: grid;
