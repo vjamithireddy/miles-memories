@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS photo_person_hints (
 CREATE TABLE IF NOT EXISTS activities (
     id BIGSERIAL PRIMARY KEY,
     import_id BIGINT REFERENCES imports(id) ON DELETE SET NULL,
+    source TEXT NOT NULL DEFAULT 'garmin',
     source_activity_id TEXT,
     activity_type TEXT NOT NULL,
     activity_name TEXT,
@@ -193,6 +194,11 @@ CREATE TABLE IF NOT EXISTS activities (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_source_activity
+    ON activities(source, source_activity_id);
+
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'garmin';
 
 CREATE TABLE IF NOT EXISTS trip_segments (
     id BIGSERIAL PRIMARY KEY,
