@@ -1531,8 +1531,8 @@ def build_public_home_intro(*, limit: int | None = None) -> dict[str, str]:
     if len(places) > 4:
         place_line = f"{place_line} · and more"
 
-    hero_note = f"My experiences captured through hiking, driving, and trips."
-    highlight_line = f"Places I’ve been: {place_line}. Activities include {activity_line}."
+    hero_note = "Travel stories from my own data."
+    highlight_line = "Experiences captured through hiking, driving, and trips."
     return {
         "hero_note": hero_note,
         "highlight_line": highlight_line,

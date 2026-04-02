@@ -660,7 +660,7 @@ def _render_public_homepage(
     <section class="panel hero">
       <div class="hero-copy">
         <span class="eyebrow">MilesMemories</span>
-        <h1>Miles awaiting, memories created</h1>
+        <h1>Miles awaiting &amp; memories created</h1>
         <p class="hero-note">{hero_note}</p>
         {f'<p class="hero-note">{highlight_line}</p>' if highlight_line else ''}
       </div>
