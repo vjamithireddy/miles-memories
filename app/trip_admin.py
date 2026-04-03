@@ -1048,6 +1048,7 @@ def list_unattached_activities(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
     limit: int = 200,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -1081,9 +1082,9 @@ def list_unattached_activities(
                 FROM activities
                 WHERE {where}
                 ORDER BY start_time DESC
-                LIMIT %s
+                LIMIT %s OFFSET %s
                 """,
-                params + [limit],
+                params + [limit, offset],
             )
             return cur.fetchall()
 

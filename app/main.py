@@ -872,7 +872,9 @@ def admin_unattached_activities_page(
     activity_type: str = Query(default=""),
     start_date: str = Query(default=""),
     end_date: str = Query(default=""),
-    limit: int = Query(default=200),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=25, ge=1, le=200),
+    partial: int = Query(default=0),
 ) -> HTMLResponse:
     start_dt = _parse_date(start_date)
     end_dt = _parse_date(end_date)
@@ -881,9 +883,16 @@ def admin_unattached_activities_page(
         activity_type=activity_type or None,
         start_date=start_dt,
         end_date=end_dt,
-        limit=limit,
+        limit=per_page + 1,
+        offset=(page - 1) * per_page,
     )
+    has_more = len(activities) > per_page
+    activities = activities[:per_page]
     activity_types = trip_admin.list_unattached_activity_types()
+    if partial:
+        return JSONResponse(
+            {"html": _render_activity_rows(activities), "next_page": page + 1, "has_more": has_more}
+        )
     return _html_response(
         _render_admin_activities_page(
             activities,
@@ -892,7 +901,8 @@ def admin_unattached_activities_page(
             activity_type=activity_type,
             start_date=start_date,
             end_date=end_date,
-            limit=limit,
+            page=page,
+            has_more=has_more,
         )
     )
 
@@ -1827,6 +1837,43 @@ def _render_public_trip_detail_page(trip: dict) -> str:
   </script>
 </body>
 </html>"""
+
+
+def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
+    rows = []
+    for item in activities:
+        name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
+        activity_kind = escape(item.get("activity_type") or "activity")
+        start_time = item.get("start_time")
+        end_time = item.get("end_time")
+        duration = ""
+        if start_time and end_time:
+            duration = _format_duration(start_time, end_time)
+        elif item.get("duration_seconds") is not None:
+            duration = _format_duration_seconds(item.get("duration_seconds"))
+        distance = _format_distance_miles(item.get("distance_meters"))
+        elevation = item.get("elevation_gain_meters")
+        meta_parts = [activity_kind]
+        if start_time:
+            meta_parts.append(_format_local_datetime(start_time))
+        if duration:
+            meta_parts.append(duration)
+        if distance:
+            meta_parts.append(distance)
+        if elevation:
+            meta_parts.append(f"+{int(elevation)} m")
+        meta = " · ".join(meta_parts)
+        rows.append(
+            f"""
+            <li class="activity-row">
+              <div>
+                <strong>{name}</strong>
+                <div class="activity-meta">{escape(meta)}</div>
+              </div>
+            </li>
+            """
+        )
+    return "".join(rows)
 
 
 def _render_not_found_page() -> str:
@@ -4059,51 +4106,30 @@ def _render_admin_activities_page(
     activity_type: str,
     start_date: str,
     end_date: str,
-    limit: int,
+    page: int,
+    has_more: bool,
 ) -> str:
     type_options = "".join(
         f'<option value="{escape(kind)}"{_selected_attr(activity_type, kind)}>{escape(kind)}</option>'
         for kind in activity_types
     )
-    rows = []
-    for item in activities:
-        name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
-        activity_kind = escape(item.get("activity_type") or "activity")
-        start_time = item.get("start_time")
-        end_time = item.get("end_time")
-        duration = ""
-        if start_time and end_time:
-            duration = _format_duration(start_time, end_time)
-        elif item.get("duration_seconds") is not None:
-            duration = _format_duration_seconds(item.get("duration_seconds"))
-        distance = _format_distance_miles(item.get("distance_meters"))
-        elevation = item.get("elevation_gain_meters")
-        meta_parts = [activity_kind]
-        if start_time:
-            meta_parts.append(_format_local_datetime(start_time))
-        if duration:
-            meta_parts.append(duration)
-        if distance:
-            meta_parts.append(distance)
-        if elevation:
-            meta_parts.append(f"+{int(elevation)} m")
-        meta = " · ".join(meta_parts)
-        rows.append(
-            f"""
-            <li class="activity-row">
-              <div>
-                <strong>{name}</strong>
-                <div class="activity-meta">{escape(meta)}</div>
-              </div>
-            </li>
-            """
-        )
-    rows_markup = "".join(rows) or """
+    rows_markup = _render_activity_rows(activities) or """
       <li class="activity-row empty-state">
         <strong>No unattached activities.</strong>
         <div class="activity-meta">All Garmin activities are linked to trips.</div>
       </li>
     """
+    next_page = page + 1
+    load_more = (
+        f"""
+      <div class="load-more">
+        <button class="button" type="button" data-next-page="{next_page}">Load more activities</button>
+        <noscript><a class="button" href="/admin/activities?page={next_page}">Next page</a></noscript>
+      </div>
+        """
+        if has_more
+        else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4202,6 +4228,14 @@ def _render_admin_activities_page(
       font-size: 0.92rem;
       margin-top: 6px;
     }}
+    .load-more {{
+      display: flex;
+      justify-content: center;
+      padding: 8px 0 16px;
+    }}
+    .load-more .button {{
+      min-width: 220px;
+    }}
     .empty-state {{
       text-align: center;
     }}
@@ -4248,9 +4282,6 @@ def _render_admin_activities_page(
         <label>End date
           <input type="date" name="end_date" value="{escape(end_date)}">
         </label>
-        <label>Limit
-          <input type="number" name="limit" min="1" max="1000" value="{limit}">
-        </label>
         <div class="filter-actions">
           <button class="button" type="submit">Apply</button>
         </div>
@@ -4261,8 +4292,47 @@ def _render_admin_activities_page(
       <ul class="activity-list">
         {rows_markup}
       </ul>
+      {load_more}
     </section>
   </main>
+  <script>
+    (function () {{
+      const button = document.querySelector(".load-more button");
+      if (!button) return;
+      let isLoading = false;
+      button.addEventListener("click", async () => {{
+        if (isLoading) return;
+        isLoading = true;
+        const nextPage = button.getAttribute("data-next-page");
+        const params = new URLSearchParams(window.location.search);
+        params.set("page", nextPage);
+        params.set("partial", "1");
+        button.disabled = true;
+        button.textContent = "Loading…";
+        try {{
+          const response = await fetch(`/admin/activities?${{params.toString()}}`, {{
+            headers: {{ "Accept": "application/json" }},
+          }});
+          if (!response.ok) throw new Error("Unable to load more activities");
+          const data = await response.json();
+          const list = document.querySelector(".activity-list");
+          list.insertAdjacentHTML("beforeend", data.html);
+          if (data.has_more) {{
+            button.disabled = false;
+            button.textContent = "Load more activities";
+            button.setAttribute("data-next-page", data.next_page);
+          }} else {{
+            button.textContent = "No more activities";
+          }}
+        }} catch (err) {{
+          button.disabled = false;
+          button.textContent = "Load more activities";
+        }} finally {{
+          isLoading = false;
+        }}
+      }});
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -6264,6 +6334,7 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
         trip["travel_legs"] = []
         trip["map_points"] = []
         trip["activities_summary"] = None
+    trip["activities_summary"] = trip_admin.get_trip_activity_summary(trip_id, limit=3)
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
     response = _html_response(_render_trip_detail_page(trip, saved=saved))
