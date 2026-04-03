@@ -148,6 +148,34 @@ def _parse_datetime(value: str | int | float | None) -> datetime | None:
     return None
 
 
+def _normalize_duration(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    if numeric > 1_000_000:
+        numeric /= 1000.0
+    return int(round(numeric))
+
+
+def _normalize_distance(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    if numeric > 1_000_000:
+        numeric /= 100.0
+    return numeric
+
+
 def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -174,14 +202,12 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
         activity_type_info = entry.get("activityType")
         if isinstance(activity_type_info, dict):
             activity_type = activity_type_info.get("typeKey") or activity_type
+        elif isinstance(activity_type_info, str):
+            activity_type = activity_type_info
         activity_type = entry.get("activityTypeKey") or activity_type
         activity_name = entry.get("name") or entry.get("activityName") or activity_type
         start_time = _parse_datetime(entry.get("startTimeGmt") or entry.get("startTimeLocal"))
-        duration_seconds = entry.get("duration")
-        try:
-            duration_seconds = int(duration_seconds) if duration_seconds is not None else None
-        except (TypeError, ValueError):
-            duration_seconds = None
+        duration_seconds = _normalize_duration(entry.get("duration"))
         end_time = _parse_datetime(entry.get("endTimeGmt") or entry.get("endTimeLocal"))
         if end_time is None and start_time and duration_seconds:
             end_time = start_time + timedelta(seconds=duration_seconds)
@@ -195,13 +221,13 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
                 start_time=start_time or datetime.now(timezone.utc),
                 end_time=end_time,
                 duration_seconds=duration_seconds,
-                distance_meters=entry.get("distance"),
+                distance_meters=_normalize_distance(entry.get("distance")),
                 elevation_gain_meters=entry.get("totalElevationGain")
                 or entry.get("elevationGain"),
                 elevation_loss_meters=entry.get("totalElevationLoss")
                 or entry.get("elevationLoss"),
-                moving_time_seconds=entry.get("movingDuration"),
-                elapsed_time_seconds=entry.get("elapsedDuration"),
+                moving_time_seconds=_normalize_duration(entry.get("movingDuration")),
+                elapsed_time_seconds=_normalize_duration(entry.get("elapsedDuration")),
                 average_speed_mps=entry.get("averageSpeed"),
                 max_speed_mps=entry.get("maxSpeed"),
                 average_heart_rate=entry.get("averageHR"),
