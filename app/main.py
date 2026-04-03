@@ -1,6 +1,6 @@
 import base64
 import binascii
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import escape
 import json
 import math
@@ -55,6 +55,20 @@ def _html_response(content: str) -> HTMLResponse:
             "Pragma": "no-cache",
         },
     )
+
+
+def _parse_date(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if isinstance(parsed, datetime):
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
 
 
 @app.get("/map-tiles/osm/{z}/{x}/{y}.png")
@@ -852,6 +866,37 @@ def admin_parks_page() -> HTMLResponse:
     return _html_response(_render_admin_parks_page(parks_list))
 
 
+@app.get("/admin/activities", response_class=HTMLResponse)
+def admin_unattached_activities_page(
+    search: str = Query(default=""),
+    activity_type: str = Query(default=""),
+    start_date: str = Query(default=""),
+    end_date: str = Query(default=""),
+    limit: int = Query(default=200),
+) -> HTMLResponse:
+    start_dt = _parse_date(start_date)
+    end_dt = _parse_date(end_date)
+    activities = trip_admin.list_unattached_activities(
+        search=search or None,
+        activity_type=activity_type or None,
+        start_date=start_dt,
+        end_date=end_dt,
+        limit=limit,
+    )
+    activity_types = trip_admin.list_unattached_activity_types()
+    return _html_response(
+        _render_admin_activities_page(
+            activities,
+            activity_types=activity_types,
+            search=search,
+            activity_type=activity_type,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
+    )
+
+
 @app.post("/admin/parks/bulk", response_class=JSONResponse)
 async def admin_parks_bulk(request: Request) -> JSONResponse:
     if request.headers.get("content-type", "").startswith("application/json"):
@@ -890,6 +935,45 @@ async def admin_update_park(park_code: str, request: Request) -> JSONResponse:
     if not updated:
         raise HTTPException(status_code=404, detail="Park not found")
     return JSONResponse({"park": updated})
+
+
+def _render_activity_items(
+    items: list[dict],
+    empty_label: str | None = None,
+) -> str:
+    if not items:
+        message = escape(empty_label or "No activities matched this trip window.")
+        return f'<li class="timeline-item"><p>{message}</p></li>'
+    rendered: list[str] = []
+    for item in items:
+        name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
+        activity_type = escape(item.get("activity_type") or "activity")
+        start_time = item.get("start_time")
+        end_time = item.get("end_time")
+        duration = ""
+        if start_time and end_time:
+            duration = _format_duration(start_time, end_time)
+        elif item.get("duration_seconds") is not None:
+            duration = _format_duration_seconds(item.get("duration_seconds"))
+        distance = _format_distance_miles(item.get("distance_meters"))
+        elevation = item.get("elevation_gain_meters")
+        meta_parts = [activity_type]
+        if distance:
+            meta_parts.append(distance)
+        if elevation:
+            meta_parts.append(f"+{int(elevation)} m")
+        meta = " · ".join(meta_parts)
+        time_label = escape(_format_local_datetime(start_time)) if start_time else "Unknown time"
+        rendered.append(
+            f"""
+            <li class="timeline-item">
+              <strong>{name}</strong>
+              <p class="timeline-meta">{time_label}{f" · {escape(duration)}" if duration else ""}</p>
+              <p class="timeline-copy">{escape(meta)}</p>
+            </li>
+            """
+        )
+    return "".join(rendered)
 
 
 def _render_public_trip_detail_page(trip: dict) -> str:
@@ -962,6 +1046,21 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         if notable_places
         else "Start and finish from the published travel record."
     )
+    activities_summary = trip.get("activities_summary") or {}
+    activity_count = int(activities_summary.get("count") or 0)
+    activity_items = activities_summary.get("items") or []
+    activity_names = [
+        escape(item.get("activity_name") or item.get("activity_type") or "Activity")
+        for item in activity_items
+        if isinstance(item, dict)
+    ]
+    if activity_count:
+        top_labels = ", ".join(activity_names[:3]) if activity_names else "Garmin activities"
+        activity_value = f"{activity_count} linked"
+        activity_note = f"Top activities: {top_labels}"
+    else:
+        activity_value = "No Garmin activities"
+        activity_note = "Activities will appear once Garmin data matches this trip."
     route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
     trip_map_markup = _render_public_trip_map(
         _build_public_trip_map_payload(
@@ -1563,6 +1662,36 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       overflow: hidden;
       background: #efe5d7;
     }}
+    details.public-activities {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,0.6);
+      overflow: clip;
+    }}
+    details.public-activities > summary {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      padding: 16px 20px;
+      list-style: none;
+      background: rgba(255, 248, 239, 0.98);
+    }}
+    details.public-activities > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    details.public-activities[open] > summary {{
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.08);
+    }}
+    .public-activities-body {{
+      padding: 18px 20px 20px;
+    }}
+    .public-activities-body .list {{
+      display: grid;
+      gap: 12px;
+    }}
     .public-leg-map .leg-map-frame {{
       width: 100%;
       min-height: 0;
@@ -1608,6 +1737,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
         </article>
+        <article class="story-card">
+          <span class="story-card-label">Activities</span>
+          <div class="story-card-value">{escape(activity_value)}</div>
+          <p class="story-card-note">{escape(activity_note)}</p>
+        </article>
         <article class="story-card wide">
           <span class="story-card-label">Route</span>
           <div class="story-card-value">{escape(route_summary)}</div>
@@ -1639,9 +1773,58 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         </div>
       </details>
     </section>
+
+    <section class="panel">
+      <h2>Activities</h2>
+      <p>Garmin activities linked to this trip timeline. Expand to view all matched activities.</p>
+      <details class="public-activities" data-trip-id="{trip['id']}">
+        <summary>
+          <span class="collapse-copy">
+            <strong>{activity_count} activit{"ies" if activity_count != 1 else "y"}</strong>
+            <span class="collapse-hint">Activities are attached by time overlap.</span>
+          </span>
+          <span class="public-leg-toggle"><span class="toggle-icon"></span><span>Expand</span></span>
+        </summary>
+        <div class="public-activities-body">
+          <ul class="list" data-activity-list>
+            <li class="timeline-item"><p>Activities load on demand.</p></li>
+          </ul>
+        </div>
+      </details>
+    </section>
   </main>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   {_render_public_maplibre_script()}
+  <script>
+    document.querySelectorAll("details.public-activities").forEach((details) => {{
+      const list = details.querySelector("[data-activity-list]");
+      const tripId = details.dataset.tripId;
+      if (!list || !tripId) return;
+      let loaded = false;
+      const loadActivities = async () => {{
+        if (loaded) return;
+        loaded = true;
+        try {{
+          const response = await fetch(`/trips/${{tripId}}/activities`, {{
+            credentials: "same-origin"
+          }});
+          if (!response.ok) {{
+            throw new Error(`Failed to load activities (${{response.status}})`);
+          }}
+          const html = await response.text();
+          list.innerHTML = html;
+        }} catch (error) {{
+          console.error(error);
+          list.innerHTML = "<li class='timeline-item'><p>Unable to load activities.</p></li>";
+        }}
+      }};
+      details.addEventListener("toggle", () => {{
+        if (details.open) {{
+          loadActivities();
+        }}
+      }});
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -3081,6 +3264,31 @@ def _format_duration(start: datetime, end: datetime) -> str:
     return " ".join(parts)
 
 
+def _format_duration_seconds(seconds: Optional[int]) -> str:
+    if not seconds:
+        return "0m"
+    total_seconds = max(int(seconds), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes = remainder // 60
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or not parts:
+        parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def _format_distance_miles(distance_meters: Optional[float]) -> Optional[str]:
+    if distance_meters is None:
+        return None
+    miles = distance_meters / 1609.34
+    if miles < 0.1:
+        return f"{miles:.2f} mi"
+    if miles < 10:
+        return f"{miles:.1f} mi"
+    return f"{miles:.0f} mi"
+
+
 def _button_class(*names: str) -> str:
     classes = ["button", *names]
     return " ".join(part for part in classes if part)
@@ -3426,6 +3634,7 @@ def _render_admin_page(
         <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
         <a class="button" href="/admin/overrides">Destination overrides</a>
         <a class="button" href="/admin/parks">National parks</a>
+        <a class="button" href="/admin/activities">Activities</a>
         <a class="button" href="/trips">Homepage</a>
       </div>
     </section>
@@ -3838,6 +4047,222 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       applyFilter();
     }})();
   </script>
+</body>
+</html>"""
+
+
+def _render_admin_activities_page(
+    activities: list[dict[str, Any]],
+    *,
+    activity_types: list[str],
+    search: str,
+    activity_type: str,
+    start_date: str,
+    end_date: str,
+    limit: int,
+) -> str:
+    type_options = "".join(
+        f'<option value="{escape(kind)}"{selected(activity_type, kind)}>{escape(kind)}</option>'
+        for kind in activity_types
+    )
+    rows = []
+    for item in activities:
+        name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
+        activity_kind = escape(item.get("activity_type") or "activity")
+        start_time = item.get("start_time")
+        end_time = item.get("end_time")
+        duration = ""
+        if start_time and end_time:
+            duration = _format_duration(start_time, end_time)
+        elif item.get("duration_seconds") is not None:
+            duration = _format_duration_seconds(item.get("duration_seconds"))
+        distance = _format_distance_miles(item.get("distance_meters"))
+        elevation = item.get("elevation_gain_meters")
+        meta_parts = [activity_kind]
+        if start_time:
+            meta_parts.append(_format_local_datetime(start_time))
+        if duration:
+            meta_parts.append(duration)
+        if distance:
+            meta_parts.append(distance)
+        if elevation:
+            meta_parts.append(f"+{int(elevation)} m")
+        meta = " · ".join(meta_parts)
+        rows.append(
+            f"""
+            <li class="activity-row">
+              <div>
+                <strong>{name}</strong>
+                <div class="activity-meta">{escape(meta)}</div>
+              </div>
+            </li>
+            """
+        )
+    rows_markup = "".join(rows) or """
+      <li class="activity-row empty-state">
+        <strong>No unattached activities.</strong>
+        <div class="activity-meta">All Garmin activities are linked to trips.</div>
+      </li>
+    """
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unattached activities · MilesMemories</title>
+  <style>
+    :root {{
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.94);
+      --ink: #1d2430;
+      --muted: #5f6b7a;
+      --line: #d8c9b3;
+      --accent: #c8643b;
+      --shadow: rgba(50, 33, 15, 0.12);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
+        radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
+        linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
+    }}
+    main {{
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 20px 60px;
+      display: grid;
+      gap: 24px;
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 26px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3rem);
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }}
+    .button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 10px 16px;
+    }}
+    .filters {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      align-items: end;
+    }}
+    label {{
+      display: grid;
+      gap: 6px;
+      font-weight: 600;
+      color: var(--muted);
+    }}
+    input, select {{
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font: inherit;
+      background: #fffaf2;
+    }}
+    .activity-list {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 12px;
+    }}
+    .activity-row {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.7);
+    }}
+    .activity-meta {{
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-top: 6px;
+    }}
+    .empty-state {{
+      text-align: center;
+    }}
+    @media (max-width: 960px) {{
+      .filters {{
+        grid-template-columns: 1fr 1fr;
+      }}
+      .topbar {{
+        flex-direction: column;
+        align-items: flex-start;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">MilesMemories Admin</div>
+          <h1>Unattached Garmin activities</h1>
+          <p class="sub">Activities with no matching trip window.</p>
+        </div>
+        <div class="links">
+          <a class="button" href="/admin">Back to admin</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <form class="filters" method="get" action="/admin/activities">
+        <label>Search
+          <input type="text" name="search" value="{escape(search)}" placeholder="Activity name or type">
+        </label>
+        <label>Activity type
+          <select name="activity_type">
+            <option value="">All types</option>
+            {type_options}
+          </select>
+        </label>
+        <label>Start date
+          <input type="date" name="start_date" value="{escape(start_date)}">
+        </label>
+        <label>End date
+          <input type="date" name="end_date" value="{escape(end_date)}">
+        </label>
+        <label>Limit
+          <input type="number" name="limit" min="1" max="1000" value="{limit}">
+        </label>
+        <div class="filter-actions">
+          <button class="button" type="submit">Apply</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <ul class="activity-list">
+        {rows_markup}
+      </ul>
+    </section>
+  </main>
 </body>
 </html>"""
 
@@ -4351,6 +4776,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
     travel_legs = trip.get("travel_legs", [])
     leg_count = len(travel_legs) if travel_legs else int(trip.get("leg_count") or 0)
+    activities_summary = trip.get("activities_summary") or {}
+    activity_count = int(activities_summary.get("count") or 0)
     map_points = trip.get("map_points") or [
         {
             "lat": item["latitude"],
@@ -5320,6 +5747,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       </details>
     </section>
 
+    <section class="panel">
+      <h2>Activities</h2>
+      <details class="admin-activities" data-trip-id="{trip['id']}">
+        <summary>Expand activities ({activity_count})</summary>
+        <div class="admin-activities-body">
+          <div class="activity-loading">Activities load on demand.</div>
+          <ul class="list" data-activity-list></ul>
+        </div>
+      </details>
+    </section>
+
     <section class="panel map-shell">
       <div class="map-copy">
         <h2>Trip map</h2>
@@ -5612,6 +6050,46 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         }}
       }});
 
+      document.querySelectorAll("details.admin-activities").forEach((details) => {{
+        const list = details.querySelector("[data-activity-list]");
+        const loading = details.querySelector(".activity-loading");
+        const tripId = details.dataset.tripId;
+        if (!list || !tripId) return;
+        let loaded = false;
+
+        const loadActivities = async () => {{
+          if (loaded) return;
+          loaded = true;
+          if (loading) {{
+            loading.textContent = "Loading activities…";
+          }}
+          try {{
+            const response = await fetch(`/admin/trip/${{tripId}}/activities`, {{
+              credentials: "same-origin"
+            }});
+            if (!response.ok) {{
+              throw new Error(`Failed to load activities (${{response.status}})`);
+            }}
+            const html = await response.text();
+            list.innerHTML = html;
+            if (loading) {{
+              loading.remove();
+            }}
+          }} catch (error) {{
+            console.error(error);
+            if (loading) {{
+              loading.textContent = "Unable to load activities.";
+            }}
+          }}
+        }};
+
+        details.addEventListener("toggle", () => {{
+          if (details.open) {{
+            loadActivities();
+          }}
+        }});
+      }});
+
       const toast = document.querySelector("[data-toast]");
       if (toast) {{
         window.setTimeout(() => {{
@@ -5769,12 +6247,15 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
         public_payload = snapshot["public"]
         trip["travel_legs"] = public_payload.get("travel_legs", [])
         trip["map_points"] = public_payload.get("map_points", [])
+        trip["activities_summary"] = public_payload.get("activities_summary")
     elif trip.get("leg_count"):
         trip["travel_legs"] = []
         trip["map_points"] = trip_admin.get_trip_route_points(trip_id, append_home_if_close=True)
+        trip["activities_summary"] = None
     else:
         trip["travel_legs"] = []
         trip["map_points"] = []
+        trip["activities_summary"] = None
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
     response = _html_response(_render_trip_detail_page(trip, saved=saved))
@@ -5791,6 +6272,28 @@ def admin_trip_leg_items(trip_id: int) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Trip not found")
     travel_legs = snapshot.get("public", {}).get("travel_legs", [])
     return HTMLResponse(_render_admin_leg_items(trip_id, travel_legs))
+
+
+@app.get("/admin/trip/{trip_id}/activities", response_class=HTMLResponse)
+def admin_trip_activity_items(trip_id: int) -> HTMLResponse:
+    trip = trip_admin.get_trip_light(trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    items = trip_admin.list_trip_activities(trip_id)
+    return HTMLResponse(
+        _render_activity_items(items, empty_label="No Garmin activities matched this trip.")
+    )
+
+
+@app.get("/trips/{trip_id}/activities", response_class=HTMLResponse)
+def public_trip_activity_items(trip_id: int) -> HTMLResponse:
+    trip = trip_admin.get_public_trip_by_id(trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    items = trip_admin.list_trip_activities(trip_id)
+    return HTMLResponse(
+        _render_activity_items(items, empty_label="No Garmin activities matched this trip.")
+    )
 
 
 @app.post("/admin/trip/{trip_id}/review")

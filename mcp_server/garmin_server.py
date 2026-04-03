@@ -23,7 +23,7 @@ def ingest_garmin_export(file_path: str) -> dict[str, Any]:
     import_id = create_import("garmin_export", "garmin", file_path)
     try:
         activity = parse_activity(file_path)
-        activity_id = save_activity(import_id, activity)
+        activity_id, _, _ = save_activity(import_id, activity)
         complete_import(import_id)
     except Exception as exc:
         fail_import(import_id, str(exc))

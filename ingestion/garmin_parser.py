@@ -120,23 +120,46 @@ def _parse_gpx(path: str) -> ActivityRecord:
     )
 
 
-def _parse_datetime(value: str | None) -> datetime | None:
-    if not value:
+def _parse_datetime(value: str | int | float | None) -> datetime | None:
+    if value is None:
         return None
-    txt = value.strip().replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(txt)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed
+    if isinstance(value, (int, float)):
+        epoch = float(value)
+        if epoch > 1_000_000_000_000:
+            epoch /= 1000.0
+        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.isdigit():
+            epoch = float(stripped)
+            if epoch > 1_000_000_000_000:
+                epoch /= 1000.0
+            return datetime.fromtimestamp(epoch, tz=timezone.utc)
+        txt = stripped.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(txt)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
 
 
 def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
-    entries = payload.get("summarizedActivitiesExport") if isinstance(payload, dict) else payload
+    if isinstance(payload, dict):
+        entries = payload.get("summarizedActivitiesExport")
+    elif isinstance(payload, list):
+        if payload and isinstance(payload[0], dict) and "summarizedActivitiesExport" in payload[0]:
+            entries = payload[0].get("summarizedActivitiesExport")
+        else:
+            entries = payload
+    else:
+        entries = None
     if not isinstance(entries, list):
         return []
 
@@ -259,7 +282,7 @@ def _link_activity_to_trip(activity_id: int, start_time: datetime, end_time: dat
             return trip_id
 
 
-def save_activity(import_id: int, record: ActivityRecord) -> tuple[int, bool]:
+def save_activity(import_id: int, record: ActivityRecord) -> tuple[int, bool, int | None]:
     with get_conn() as conn:
         with conn.cursor() as cur:
             raw_payload = (
@@ -341,5 +364,5 @@ def save_activity(import_id: int, record: ActivityRecord) -> tuple[int, bool]:
                 if record.duration_seconds
                 else record.start_time
             )
-            _link_activity_to_trip(int(activity_id), start_time, end_time)
-            return int(activity_id), bool(inserted)
+            trip_id = _link_activity_to_trip(int(activity_id), start_time, end_time)
+            return int(activity_id), bool(inserted), trip_id

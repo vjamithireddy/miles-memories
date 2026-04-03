@@ -956,9 +956,27 @@ def build_trip_snapshot(trip_id: int) -> dict[str, Any] | None:
         return None
     travel_legs = trip.get("travel_legs", [])
     map_points = get_trip_route_points(trip_id, append_home_if_close=True)
+    activity_summary = get_trip_activity_summary(trip_id, limit=3)
+    serialized_activity_items = []
+    for item in activity_summary.get("items", []):
+        serialized_activity_items.append(
+            {
+                "activity_name": item.get("activity_name"),
+                "activity_type": item.get("activity_type"),
+                "start_time": item.get("start_time").isoformat() if item.get("start_time") else None,
+                "end_time": item.get("end_time").isoformat() if item.get("end_time") else None,
+                "duration_seconds": item.get("duration_seconds"),
+                "distance_meters": item.get("distance_meters"),
+                "elevation_gain_meters": item.get("elevation_gain_meters"),
+            }
+        )
     public_payload = {
         "travel_legs": _serialize_travel_legs(travel_legs),
         "map_points": map_points,
+        "activities_summary": {
+            "count": activity_summary.get("count", 0),
+            "items": serialized_activity_items,
+        },
     }
     admin_payload = {
         "map_points": map_points,
@@ -968,9 +986,122 @@ def build_trip_snapshot(trip_id: int) -> dict[str, Any] | None:
         "public": {
             "travel_legs": travel_legs,
             "map_points": map_points,
+            "activities_summary": public_payload["activities_summary"],
         },
         "admin": admin_payload,
     }
+
+
+def list_trip_activities(trip_id: int, *, limit: int | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            query = """
+                SELECT
+                    id,
+                    activity_name,
+                    activity_type,
+                    start_time,
+                    end_time,
+                    duration_seconds,
+                    distance_meters,
+                    elevation_gain_meters
+                FROM activities
+                WHERE trip_id = %s
+                  AND source = 'garmin'
+                ORDER BY start_time ASC, id ASC
+            """
+            params: list[Any] = [trip_id]
+            if limit:
+                query += " LIMIT %s"
+                params.append(limit)
+            cur.execute(query, params)
+            rows = cur.fetchall()
+    return rows
+
+
+def get_trip_activity_summary(trip_id: int, *, limit: int = 3) -> dict[str, Any]:
+    items = list_trip_activities(trip_id, limit=limit)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*)::BIGINT
+                FROM activities
+                WHERE trip_id = %s
+                  AND source = 'garmin'
+                """,
+                (trip_id,),
+            )
+            count_row = cur.fetchone()
+    count = int(count_row[0]) if count_row else 0
+    return {
+        "count": count,
+        "items": items,
+    }
+
+
+def list_unattached_activities(
+    *,
+    search: str | None = None,
+    activity_type: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            clauses = ["source = 'garmin'", "trip_id IS NULL"]
+            params: list[Any] = []
+            if search:
+                clauses.append("(activity_name ILIKE %s OR activity_type ILIKE %s)")
+                term = f"%{search}%"
+                params.extend([term, term])
+            if activity_type:
+                clauses.append("activity_type = %s")
+                params.append(activity_type)
+            if start_date:
+                clauses.append("start_time >= %s")
+                params.append(start_date)
+            if end_date:
+                clauses.append("start_time <= %s")
+                params.append(end_date)
+            where = " AND ".join(clauses)
+            cur.execute(
+                f"""
+                SELECT
+                    id,
+                    activity_name,
+                    activity_type,
+                    start_time,
+                    end_time,
+                    duration_seconds,
+                    distance_meters,
+                    elevation_gain_meters
+                FROM activities
+                WHERE {where}
+                ORDER BY start_time DESC
+                LIMIT %s
+                """,
+                params + [limit],
+            )
+            return cur.fetchall()
+
+
+def list_unattached_activity_types() -> list[str]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT activity_type
+                FROM activities
+                WHERE source = 'garmin'
+                  AND trip_id IS NULL
+                  AND activity_type IS NOT NULL
+                ORDER BY activity_type
+                """
+            )
+            return [row[0] for row in cur.fetchall() if row and row[0]]
 
 
 def get_trip_light(trip_id: int) -> dict[str, Any] | None:
@@ -1586,9 +1717,11 @@ def get_public_trip_by_slug(trip_slug: str) -> dict[str, Any] | None:
         public_payload = snapshot["public"]
         trip["travel_legs"] = public_payload.get("travel_legs", [])
         trip["map_points"] = public_payload.get("map_points", [])
+        trip["activities_summary"] = public_payload.get("activities_summary")
     else:
         trip["travel_legs"] = []
         trip["map_points"] = []
+        trip["activities_summary"] = None
     return trip
 
 
@@ -1639,9 +1772,11 @@ def get_public_trip_by_id(trip_id: int) -> dict[str, Any] | None:
         public_payload = snapshot["public"]
         trip["travel_legs"] = public_payload.get("travel_legs", [])
         trip["map_points"] = public_payload.get("map_points", [])
+        trip["activities_summary"] = public_payload.get("activities_summary")
     else:
         trip["travel_legs"] = []
         trip["map_points"] = []
+        trip["activities_summary"] = None
     return trip
 
 

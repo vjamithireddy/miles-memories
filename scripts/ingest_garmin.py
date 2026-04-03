@@ -16,16 +16,24 @@ def main() -> None:
         if not activities:
             raise ValueError(f"No activities found in {args.file}")
         activity_id = None
+        trip_ids: set[int] = set()
         for activity in activities:
-            activity_id, inserted = save_activity(import_id, activity)
+            activity_id, inserted, trip_id = save_activity(import_id, activity)
             if inserted:
                 inserted_count += 1
             else:
                 updated_count += 1
+            if trip_id:
+                trip_ids.add(trip_id)
         complete_import(import_id)
     except Exception as exc:
         fail_import(import_id, str(exc))
         raise
+    if trip_ids:
+        from app import trip_admin
+
+        for trip_id in sorted(trip_ids):
+            trip_admin.build_trip_snapshot(trip_id)
     summary = get_import_summary(import_id)
     print(
         f"Garmin import complete: id={summary['id']} status={summary['status']} "
