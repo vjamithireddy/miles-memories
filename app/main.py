@@ -4062,7 +4062,7 @@ def _render_admin_activities_page(
     limit: int,
 ) -> str:
     type_options = "".join(
-        f'<option value="{escape(kind)}"{selected(activity_type, kind)}>{escape(kind)}</option>'
+        f'<option value="{escape(kind)}"{_selected_attr(activity_type, kind)}>{escape(kind)}</option>'
         for kind in activity_types
     )
     rows = []
@@ -4283,6 +4283,10 @@ def _parse_optional_bool(value: object) -> bool | None:
         if cleaned in {"0", "false", "no", "off"}:
             return False
     return None
+
+
+def _selected_attr(current: str | None, expected: str) -> str:
+    return " selected" if (current or "") == expected else ""
 
 
 def _query_text(value: object) -> str:
@@ -6088,6 +6092,10 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             loadActivities();
           }}
         }});
+
+        if (details.open) {{
+          loadActivities();
+        }}
       }});
 
       const toast = document.querySelector("[data-toast]");
