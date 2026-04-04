@@ -957,7 +957,8 @@ def _render_activity_items(
     rendered: list[str] = []
     for item in items:
         name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
-        activity_type = escape(item.get("activity_type") or "activity")
+        activity_type_raw = item.get("activity_type")
+        activity_type = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
         end_time = item.get("end_time")
         duration = ""
@@ -965,21 +966,29 @@ def _render_activity_items(
             duration = _format_duration(start_time, end_time)
         elif item.get("duration_seconds") is not None:
             duration = _format_duration_seconds(item.get("duration_seconds"))
-        distance = _format_distance_miles(item.get("distance_meters"))
-        elevation = item.get("elevation_gain_meters")
+        distance = _format_activity_distance_miles(
+            item.get("distance_meters"),
+            duration_seconds=item.get("duration_seconds"),
+            activity_type=activity_type_raw,
+        )
+        elevation = _format_activity_elevation_feet(item.get("elevation_gain_meters"))
         meta_parts = [activity_type]
         if distance:
             meta_parts.append(distance)
         if elevation:
-            meta_parts.append(f"+{int(elevation)} m")
-        meta = " · ".join(meta_parts)
+            meta_parts.append(elevation)
+        meta = " · ".join(part for part in meta_parts if part)
         time_label = escape(_format_local_datetime(start_time)) if start_time else "Unknown time"
+        detail_parts = [time_label]
+        if duration:
+            detail_parts.append(escape(duration))
+        if meta:
+            detail_parts.append(escape(meta))
+        detail_line = " · ".join(detail_parts)
         rendered.append(
             f"""
             <li class="timeline-item">
-              <strong>{name}</strong>
-              <p class="timeline-meta">{time_label}{f" · {escape(duration)}" if duration else ""}</p>
-              <p class="timeline-copy">{escape(meta)}</p>
+              <div class="activity-line"><strong>{name}</strong> · {detail_line}</div>
             </li>
             """
         )
@@ -1843,7 +1852,8 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
     rows = []
     for item in activities:
         name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
-        activity_kind = escape(item.get("activity_type") or "activity")
+        activity_type_raw = item.get("activity_type")
+        activity_kind = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
         end_time = item.get("end_time")
         duration = ""
@@ -1851,8 +1861,12 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
             duration = _format_duration(start_time, end_time)
         elif item.get("duration_seconds") is not None:
             duration = _format_duration_seconds(item.get("duration_seconds"))
-        distance = _format_distance_miles(item.get("distance_meters"))
-        elevation = item.get("elevation_gain_meters")
+        distance = _format_activity_distance_miles(
+            item.get("distance_meters"),
+            duration_seconds=item.get("duration_seconds"),
+            activity_type=activity_type_raw,
+        )
+        elevation = _format_activity_elevation_feet(item.get("elevation_gain_meters"))
         meta_parts = [activity_kind]
         if start_time:
             meta_parts.append(_format_local_datetime(start_time))
@@ -1861,15 +1875,12 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
         if distance:
             meta_parts.append(distance)
         if elevation:
-            meta_parts.append(f"+{int(elevation)} m")
-        meta = " · ".join(meta_parts)
+            meta_parts.append(elevation)
+        meta = " · ".join(part for part in meta_parts if part)
         rows.append(
             f"""
             <li class="activity-row">
-              <div>
-                <strong>{name}</strong>
-                <div class="activity-meta">{escape(meta)}</div>
-              </div>
+              <div class="activity-line"><strong>{name}</strong> · {escape(meta)}</div>
             </li>
             """
         )
@@ -3334,6 +3345,67 @@ def _format_distance_miles(distance_meters: Optional[float]) -> Optional[str]:
     if miles < 10:
         return f"{miles:.1f} mi"
     return f"{miles:.0f} mi"
+
+
+def _normalize_activity_distance_meters(
+    distance_meters: Optional[float],
+    *,
+    duration_seconds: Optional[int],
+    activity_type: Optional[str],
+) -> Optional[float]:
+    if distance_meters is None:
+        return None
+    try:
+        numeric = float(distance_meters)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    if duration_seconds and duration_seconds > 0:
+        speed_mps = numeric / duration_seconds
+        if speed_mps > 20:
+            return numeric / 100.0
+        if activity_type in {"running", "walking", "hiking", "other"} and speed_mps > 12:
+            return numeric / 100.0
+    if activity_type in {"running", "walking", "hiking", "other"} and numeric > 200_000:
+        return numeric / 100.0
+    return numeric
+
+
+def _format_activity_distance_miles(
+    distance_meters: Optional[float],
+    *,
+    duration_seconds: Optional[int],
+    activity_type: Optional[str],
+) -> Optional[str]:
+    normalized = _normalize_activity_distance_meters(
+        distance_meters,
+        duration_seconds=duration_seconds,
+        activity_type=activity_type,
+    )
+    return _format_distance_miles(normalized)
+
+
+def _format_activity_elevation_feet(elevation_meters: Optional[float]) -> Optional[str]:
+    if elevation_meters is None:
+        return None
+    try:
+        numeric = float(elevation_meters)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    feet = numeric * 3.28084
+    return f"+{int(round(feet))} ft"
+
+
+def _format_activity_type_label(activity_type: Optional[str]) -> str:
+    if not activity_type:
+        return "Activity"
+    lowered = activity_type.replace("_", " ").strip().lower()
+    if lowered == "other":
+        return "Activity"
+    return lowered.title()
 
 
 def _button_class(*names: str) -> str:
