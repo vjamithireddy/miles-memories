@@ -1070,19 +1070,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     )
     activities_summary = trip.get("activities_summary") or {}
     activity_count = int(activities_summary.get("count") or 0)
-    activity_items = activities_summary.get("items") or []
-    activity_names = [
-        escape(item.get("activity_name") or item.get("activity_type") or "Activity")
-        for item in activity_items
-        if isinstance(item, dict)
-    ]
-    if activity_count:
-        top_labels = ", ".join(activity_names[:3]) if activity_names else "Garmin activities"
-        activity_value = f"{activity_count} linked"
-        activity_note = f"Top activities: {top_labels}"
-    else:
-        activity_value = "No Garmin activities"
-        activity_note = "Activities will appear once Garmin data matches this trip."
     route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
     trip_map_markup = _render_public_trip_map(
         _build_public_trip_map_payload(
@@ -1758,11 +1745,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <span class="story-card-label">Travel modes</span>
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
-        </article>
-        <article class="story-card">
-          <span class="story-card-label">Activities</span>
-          <div class="story-card-value">{escape(activity_value)}</div>
-          <p class="story-card-note">{escape(activity_note)}</p>
         </article>
         <article class="story-card wide">
           <span class="story-card-label">Route</span>
@@ -5409,10 +5391,23 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       font-weight: 700;
       color: var(--accent);
       list-style: none;
-      display: inline-flex;
+      display: flex;
+      justify-content: space-between;
       align-items: center;
       gap: 12px;
-      margin-bottom: 12px;
+      padding: 16px 20px;
+      margin: 0;
+      background: rgba(255, 248, 239, 0.98);
+    }}
+    details.admin-activities {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.6);
+      overflow: clip;
+    }}
+    details.admin-activities[open] > summary {{
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.08);
     }}
     details.admin-legs > summary::-webkit-details-marker {{
       display: none;
@@ -5439,6 +5434,11 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .admin-legs-body {{
       display: grid;
       gap: 14px;
+    }}
+    .admin-activities-body {{
+      display: grid;
+      gap: 14px;
+      padding: 18px 20px 20px;
     }}
     .leg-loading {{
       color: var(--muted);
