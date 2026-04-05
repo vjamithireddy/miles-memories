@@ -888,7 +888,7 @@ def admin_unattached_activities_page(
     )
     has_more = len(activities) > per_page
     activities = activities[:per_page]
-    activity_types = trip_admin.list_unattached_activity_types()
+        activity_types = trip_admin.list_garmin_activity_types()
     if partial:
         return JSONResponse(
             {"html": _render_activity_rows(activities), "next_page": page + 1, "has_more": has_more}
@@ -971,7 +971,10 @@ def _render_activity_items(
             duration_seconds=item.get("duration_seconds"),
             activity_type=activity_type_raw,
         )
-        elevation = _format_activity_elevation_feet(item.get("elevation_gain_meters"))
+        elevation = _format_activity_elevation_pair(
+            item.get("elevation_gain_meters"),
+            item.get("elevation_loss_meters"),
+        )
         meta_parts = [activity_type]
         if distance:
             meta_parts.append(distance)
@@ -1866,7 +1869,10 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
             duration_seconds=item.get("duration_seconds"),
             activity_type=activity_type_raw,
         )
-        elevation = _format_activity_elevation_feet(item.get("elevation_gain_meters"))
+        elevation = _format_activity_elevation_pair(
+            item.get("elevation_gain_meters"),
+            item.get("elevation_loss_meters"),
+        )
         meta_parts = [activity_kind]
         if start_time:
             meta_parts.append(_format_local_datetime(start_time))
@@ -3397,6 +3403,17 @@ def _format_activity_elevation_feet(elevation_meters: Optional[float]) -> Option
         return None
     feet = numeric * 3.28084
     return f"+{int(round(feet))} ft"
+
+
+def _format_activity_elevation_pair(
+    gain_meters: Optional[float],
+    loss_meters: Optional[float],
+) -> Optional[str]:
+    gain = _format_activity_elevation_feet(gain_meters)
+    loss = _format_activity_elevation_feet(loss_meters)
+    if gain and loss:
+        return f"{gain} / {loss.replace('+', '-')}"
+    return gain or loss
 
 
 def _format_activity_type_label(activity_type: Optional[str]) -> str:
@@ -5387,7 +5404,20 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       gap: 12px;
       margin-bottom: 12px;
     }}
+    details.admin-activities > summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }}
     details.admin-legs > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    details.admin-activities > summary::-webkit-details-marker {{
       display: none;
     }}
     details.admin-legs > summary::after {{
@@ -5395,7 +5425,15 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       font-size: 0.88rem;
       color: var(--muted);
     }}
+    details.admin-activities > summary::after {{
+      content: "Show";
+      font-size: 0.88rem;
+      color: var(--muted);
+    }}
     details.admin-legs[open] > summary::after {{
+      content: "Hide";
+    }}
+    details.admin-activities[open] > summary::after {{
       content: "Hide";
     }}
     .admin-legs-body {{

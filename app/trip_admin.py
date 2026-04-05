@@ -1005,7 +1005,8 @@ def list_trip_activities(trip_id: int, *, limit: int | None = None) -> list[dict
                     end_time,
                     duration_seconds,
                     distance_meters,
-                    elevation_gain_meters
+                    elevation_gain_meters,
+                    elevation_loss_meters
                 FROM activities
                 WHERE trip_id = %s
                   AND source = 'garmin'
@@ -1078,7 +1079,8 @@ def list_unattached_activities(
                     end_time,
                     duration_seconds,
                     distance_meters,
-                    elevation_gain_meters
+                    elevation_gain_meters,
+                    elevation_loss_meters
                 FROM activities
                 WHERE {where}
                 ORDER BY start_time DESC
@@ -1087,6 +1089,21 @@ def list_unattached_activities(
                 params + [limit, offset],
             )
             return cur.fetchall()
+
+
+def list_garmin_activity_types() -> list[str]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT activity_type
+                FROM activities
+                WHERE source = 'garmin'
+                  AND activity_type IS NOT NULL
+                ORDER BY activity_type
+                """
+            )
+            return [row[0] for row in cur.fetchall() if row and row[0]]
 
 
 def list_unattached_activity_types() -> list[str]:
