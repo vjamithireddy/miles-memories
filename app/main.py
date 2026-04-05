@@ -4982,26 +4982,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     )
     trip_map_markup = _render_admin_trip_map(trip_map_payload)
 
-    timeline_items = "".join(
-        f"""
-        <li class="timeline-item">
-          <div class="timeline-time">{escape(_format_local_datetime(item['event_time']))}</div>
-          <div>
-            <strong>{escape(item['timeline_label'] or item['event_type'])}</strong>
-            <p>{escape(item['event_type'])} · ref {escape(str(item['event_ref_id']))}{f" · {item['latitude']:.5f}, {item['longitude']:.5f}" if item.get('latitude') is not None and item.get('longitude') is not None else ""}</p>
-          </div>
-        </li>
-        """
-        for item in trip["timeline"]
-    ) or """
-      <li class="timeline-item">
-        <div>
-          <strong>No timeline events yet.</strong>
-          <p>Run trip detection and inspect linked events once source data is available.</p>
-        </div>
-      </li>
-    """
-
     history_items = "".join(
         f"""
         <li class="history-item">
@@ -5015,21 +4995,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       <li class="history-item">
         <strong>No review history yet.</strong>
         <p>This trip has not been reviewed.</p>
-      </li>
-    """
-
-    count_items = "".join(
-        f"""
-        <li class="count-item">
-          <strong>{escape(item['event_type'])}</strong>
-          <span>{escape(str(item['total']))}</span>
-        </li>
-        """
-        for item in trip["event_counts"]
-    ) or """
-      <li class="count-item">
-        <strong>No linked event counts</strong>
-        <span>0</span>
       </li>
     """
 
@@ -5954,23 +5919,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       <h2>Review history</h2>
       <ul class="list">
         {history_items}
-      </ul>
-    </section>
-
-    <section class="panel">
-      <h2>Timeline</h2>
-      <details class="timeline-collapse">
-        <summary>Expand full timeline ({len(trip["timeline"])} events)</summary>
-        <ul class="list">
-          {timeline_items}
-        </ul>
-      </details>
-    </section>
-
-    <section class="panel">
-      <h2>Linked events</h2>
-      <ul class="list">
-        {count_items}
       </ul>
     </section>
   </main>
