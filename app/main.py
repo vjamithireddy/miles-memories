@@ -958,7 +958,6 @@ def _render_activity_items(
     for item in items:
         name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
         activity_type_raw = item.get("activity_type")
-        activity_type = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
         end_time = item.get("end_time")
         duration = ""
@@ -975,7 +974,7 @@ def _render_activity_items(
             item.get("elevation_gain_meters"),
             item.get("elevation_loss_meters"),
         )
-        meta_parts = [activity_type]
+        meta_parts = []
         if distance:
             meta_parts.append(distance)
         if elevation:
@@ -1068,8 +1067,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         if notable_places
         else "Start and finish from the published travel record."
     )
-    activities_summary = trip.get("activities_summary") or {}
-    activity_count = int(activities_summary.get("count") or 0)
     route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
     trip_map_markup = _render_public_trip_map(
         _build_public_trip_map_payload(
@@ -1671,36 +1668,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       overflow: hidden;
       background: #efe5d7;
     }}
-    details.public-activities {{
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      background: rgba(255,255,255,0.6);
-      overflow: clip;
-    }}
-    details.public-activities > summary {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-      padding: 16px 20px;
-      list-style: none;
-      background: rgba(255, 248, 239, 0.98);
-    }}
-    details.public-activities > summary::-webkit-details-marker {{
-      display: none;
-    }}
-    details.public-activities[open] > summary {{
-      border-bottom: 1px solid var(--line);
-      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.08);
-    }}
-    .public-activities-body {{
-      padding: 18px 20px 20px;
-    }}
-    .public-activities-body .list {{
-      display: grid;
-      gap: 12px;
-    }}
     .public-leg-map .leg-map-frame {{
       width: 100%;
       min-height: 0;
@@ -1778,56 +1745,10 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       </details>
     </section>
 
-    <section class="panel">
-      <h2>Activities</h2>
-      <p>Garmin activities linked to this trip timeline. Expand to view all matched activities.</p>
-      <details class="public-activities" data-trip-id="{trip['id']}">
-        <summary>
-          <span class="collapse-copy">
-            <strong>{activity_count} activit{"ies" if activity_count != 1 else "y"}</strong>
-            <span class="collapse-hint">Activities are attached by time overlap.</span>
-          </span>
-          <span class="public-leg-toggle"><span class="toggle-icon"></span><span>Expand</span></span>
-        </summary>
-        <div class="public-activities-body">
-          <ul class="list" data-activity-list>
-            <li class="timeline-item"><p>Activities load on demand.</p></li>
-          </ul>
-        </div>
-      </details>
-    </section>
   </main>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   {_render_public_maplibre_script()}
   <script>
-    document.querySelectorAll("details.public-activities").forEach((details) => {{
-      const list = details.querySelector("[data-activity-list]");
-      const tripId = details.dataset.tripId;
-      if (!list || !tripId) return;
-      let loaded = false;
-      const loadActivities = async () => {{
-        if (loaded) return;
-        loaded = true;
-        try {{
-          const response = await fetch(`/trips/${{tripId}}/activities`, {{
-            credentials: "same-origin"
-          }});
-          if (!response.ok) {{
-            throw new Error(`Failed to load activities (${{response.status}})`);
-          }}
-          const html = await response.text();
-          list.innerHTML = html;
-        }} catch (error) {{
-          console.error(error);
-          list.innerHTML = "<li class='timeline-item'><p>Unable to load activities.</p></li>";
-        }}
-      }};
-      details.addEventListener("toggle", () => {{
-        if (details.open) {{
-          loadActivities();
-        }}
-      }});
-    }});
   </script>
 </body>
 </html>"""
@@ -1838,7 +1759,6 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
     for item in activities:
         name = escape(item.get("activity_name") or item.get("activity_type") or "Activity")
         activity_type_raw = item.get("activity_type")
-        activity_kind = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
         end_time = item.get("end_time")
         duration = ""
@@ -1855,7 +1775,7 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
             item.get("elevation_gain_meters"),
             item.get("elevation_loss_meters"),
         )
-        meta_parts = [activity_kind]
+        meta_parts = []
         if start_time:
             meta_parts.append(_format_local_datetime(start_time))
         if duration:
@@ -4921,7 +4841,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     confidence = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
     travel_legs = trip.get("travel_legs", [])
     leg_count = len(travel_legs) if travel_legs else int(trip.get("leg_count") or 0)
-    activities_summary = trip.get("activities_summary") or {}
+    activities_summary = trip_admin.get_trip_activity_summary(trip["id"], limit=3)
     activity_count = int(activities_summary.get("count") or 0)
     map_points = trip.get("map_points") or [
         {
@@ -5404,6 +5324,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       display: grid;
       gap: 14px;
       padding: 18px 20px 20px;
+    }}
+    .admin-activities-body .timeline-item {{
+      grid-template-columns: 1fr;
     }}
     .leg-loading {{
       color: var(--muted);
