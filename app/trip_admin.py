@@ -13,6 +13,7 @@ from app.db import get_conn
 from trip_engine.detector import (
     _destination_title,
     _haversine_km,
+    _is_downranked_destination_name,
     _resolve_destination_profile,
 )
 
@@ -248,6 +249,46 @@ def _best_nearby_place_name(
     if not candidate:
         return None
     return candidate["name"]
+
+
+def _is_broad_place_type(place_type: str | None) -> bool:
+    if not place_type:
+        return False
+    return place_type.lower() in {
+        "city",
+        "town",
+        "village",
+        "municipality",
+        "county",
+        "state",
+        "region",
+        "administrative",
+        "locality",
+    }
+
+
+def _should_prefer_nearby_candidate(
+    title: str | None,
+    row: dict[str, Any],
+    nearby_candidate: dict[str, str] | None,
+) -> bool:
+    if not nearby_candidate:
+        return False
+    nearby_name = nearby_candidate.get("name")
+    if not nearby_name:
+        return False
+    if not title:
+        return True
+    if _segment_place_role(nearby_name) and not _segment_place_role(title):
+        return True
+    if _is_downranked_destination_name(title):
+        return True
+    if _is_broad_place_type(row.get("place_type")):
+        return True
+    row_city = (row.get("city") or "").strip().lower()
+    if row_city and title.strip().lower() == row_city and nearby_name.strip().lower() != row_city:
+        return True
+    return False
 
 
 def _enrich_nearby_endpoint_places(latitude: float, longitude: float) -> int:
@@ -569,7 +610,7 @@ def _leg_point_place_details(latitude: float | None, longitude: float | None) ->
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT id, place_name, place_type, source, city
+                SELECT id, place_name, place_type, source, city, latitude, longitude
                 FROM places
                 WHERE round(latitude::numeric, 3) = round(%s::numeric, 3)
                   AND round(longitude::numeric, 3) = round(%s::numeric, 3)
@@ -608,16 +649,18 @@ def _leg_point_place_details(latitude: float | None, longitude: float | None) ->
         "classification": row["source"],
     }
     title = _destination_title(profile)
-    if title and not _is_regional_place(title):
-        return {
-            "name": title,
-            "place_type": row.get("place_type") or "",
-        }
     nearby_candidate = _best_nearby_place_candidate(
         nearby_rows,
         latitude=float(latitude),
         longitude=float(longitude),
     )
+    if _should_prefer_nearby_candidate(title, row, nearby_candidate):
+        return nearby_candidate
+    if title and not _is_regional_place(title):
+        return {
+            "name": title,
+            "place_type": row.get("place_type") or "",
+        }
     if nearby_candidate:
         return nearby_candidate
     if title:
