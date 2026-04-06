@@ -5405,6 +5405,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       gap: 14px;
       padding: 18px 20px 20px;
     }}
+    .admin-activities-body .timeline-item {{
+      grid-template-columns: 1fr;
+    }}
     .leg-loading {{
       color: var(--muted);
       font-weight: 600;
