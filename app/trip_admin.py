@@ -422,12 +422,12 @@ def _leg_default_summary(
     leg_type = leg["leg_type"]
     trip_context = _trip_context_name(trip_name)
     preferred_destination = _preferred_segment_place(
-        destination_name,
         end_name,
         start_name,
+        destination_name,
         fallback_trip_name=trip_context,
     )
-    preferred_origin = _preferred_segment_place(origin_name, start_name)
+    preferred_origin = _preferred_segment_place(start_name, origin_name)
     specific_place = _segment_place_phrase(end_name, start_name, preferred_destination)
     specific_role = _segment_place_role(specific_place)
 
@@ -451,6 +451,8 @@ def _leg_default_summary(
         if next_leg_type in {"walk", "hike", "run"}:
             if specific_place:
                 return f"Drive to {specific_place}."
+            if preferred_destination:
+                return f"Drive to trailhead in {preferred_destination}."
             if trip_context:
                 return f"Drive to trailhead in {trip_context}."
             return "Drive to trailhead."
@@ -461,6 +463,8 @@ def _leg_default_summary(
                 if specific_role == "village":
                     return f"Drive from trail into {specific_place}."
                 return f"Drive from trail toward {specific_place}."
+            if preferred_destination:
+                return f"Drive from trail in {preferred_destination}."
             if trip_context:
                 return f"Drive from trail in {trip_context}."
         if start_name and end_name and start_name != end_name:
@@ -495,10 +499,10 @@ def _leg_default_summary(
         verb = {"walk": "Walk", "hike": "Hike", "run": "Run"}[leg_type]
         if leg_type == "hike" and trip_summary_text:
             return trip_summary_text.rstrip(".") + "."
-        if trip_context:
-            return f"{verb} in {trip_context}."
         if preferred_destination:
             return f"{verb} in {preferred_destination}."
+        if trip_context:
+            return f"{verb} in {trip_context}."
         if end_name:
             return f"{verb} toward {end_name}."
         if start_name:
@@ -654,6 +658,18 @@ def _leg_point_place_details(latitude: float | None, longitude: float | None) ->
         latitude=float(latitude),
         longitude=float(longitude),
     )
+    if _is_broad_place_type(row.get("place_type")):
+        refreshed = _resolve_destination_profile(
+            float(latitude),
+            float(longitude),
+            force_refresh=True,
+        )
+        refreshed_title = _destination_title(refreshed)
+        if refreshed_title and not _is_regional_place(refreshed_title) and refreshed_title != title:
+            return {
+                "name": refreshed_title,
+                "place_type": refreshed.get("category") or row.get("place_type") or "",
+            }
     if _should_prefer_nearby_candidate(title, row, nearby_candidate):
         return nearby_candidate
     if title and not _is_regional_place(title):
