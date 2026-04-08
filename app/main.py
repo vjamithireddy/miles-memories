@@ -4997,6 +4997,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
         <p>This trip has not been reviewed.</p>
       </li>
     """
+    history_count = len(trip["review_history"])
 
     toast_markup = _build_trip_toast(saved)
     detail_badges = _render_trip_badges(trip)
@@ -5357,6 +5358,16 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       gap: 12px;
       margin-bottom: 12px;
     }}
+    details.admin-history > summary {{
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }}
     details.admin-activities > summary {{
       cursor: pointer;
       font-weight: 700;
@@ -5383,10 +5394,18 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     details.admin-legs > summary::-webkit-details-marker {{
       display: none;
     }}
+    details.admin-history > summary::-webkit-details-marker {{
+      display: none;
+    }}
     details.admin-activities > summary::-webkit-details-marker {{
       display: none;
     }}
     details.admin-legs > summary::after {{
+      content: "Show";
+      font-size: 0.88rem;
+      color: var(--muted);
+    }}
+    details.admin-history > summary::after {{
       content: "Show";
       font-size: 0.88rem;
       color: var(--muted);
@@ -5397,6 +5416,9 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       color: var(--muted);
     }}
     details.admin-legs[open] > summary::after {{
+      content: "Hide";
+    }}
+    details.admin-history[open] > summary::after {{
       content: "Hide";
     }}
     details.admin-activities[open] > summary::after {{
@@ -5926,9 +5948,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
     <section class="panel">
       <h2>Review history</h2>
-      <ul class="list">
-        {history_items}
-      </ul>
+      <details class="admin-history">
+        <summary>Expand review history ({history_count})</summary>
+        <ul class="list">
+          {history_items}
+        </ul>
+      </details>
     </section>
   </main>
   <script>
