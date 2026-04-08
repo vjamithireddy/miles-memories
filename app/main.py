@@ -990,7 +990,7 @@ def _render_activity_items(
         detail_line = " · ".join(detail_parts)
         rendered.append(
             f"""
-            <li class="timeline-item">
+            <li class="activity-row">
               <div class="activity-line"><strong>{name}</strong> · {detail_line}</div>
             </li>
             """
@@ -5157,6 +5157,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
       gap: 12px;
     }}
     .count-item, .timeline-item, .history-item {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.5);
+    }}
+    .activity-row {{
       border: 1px solid var(--line);
       border-radius: 18px;
       padding: 14px 16px;
