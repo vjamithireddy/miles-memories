@@ -131,6 +131,22 @@ def _is_airport_like(value: str | None) -> bool:
 def _segment_place_phrase(*names: str | None) -> str | None:
     keywords = (
         "trailhead",
+        "trail",
+        "park",
+        "mountain",
+        "wilderness",
+        "canyon",
+        "falls",
+        "lake",
+        "river",
+        "creek",
+        "peak",
+        "ridge",
+        "mesa",
+        "preserve",
+        "monument",
+        "forest",
+        "recreation area",
         "viewpoint",
         "overlook",
         "visitor center",
@@ -157,6 +173,9 @@ def _segment_place_role(name: str | None) -> str | None:
     lowered = name.lower()
     role_keywords = (
         ("trailhead", "trailhead"),
+        ("trail", "trailhead"),
+        ("park", "park"),
+        ("mountain", "mountain"),
         ("viewpoint", "viewpoint"),
         ("overlook", "viewpoint"),
         ("visitor center", "visitor center"),
@@ -181,6 +200,42 @@ def _is_regional_place(name: str | None) -> bool:
     return any(token in lowered for token in ("county", "state", "region"))
 
 
+def _has_specific_place_keyword(name: str | None) -> bool:
+    if not name:
+        return False
+    lowered = name.lower()
+    keywords = (
+        "trailhead",
+        "trail",
+        "park",
+        "mountain",
+        "wilderness",
+        "canyon",
+        "falls",
+        "lake",
+        "river",
+        "creek",
+        "peak",
+        "ridge",
+        "mesa",
+        "preserve",
+        "monument",
+        "forest",
+        "recreation area",
+        "scenic",
+        "overlook",
+        "viewpoint",
+        "visitor center",
+        "campground",
+        "camp",
+        "lodge",
+        "hotel",
+        "inn",
+        "resort",
+    )
+    return any(keyword in lowered for keyword in keywords)
+
+
 def _prefer_locality_over_region(name: str | None, locality: str | None) -> str | None:
     cleaned_name = _clean_segment_place_name(name)
     cleaned_locality = _clean_segment_place_name(locality)
@@ -191,13 +246,19 @@ def _prefer_locality_over_region(name: str | None, locality: str | None) -> str 
     return cleaned_name or cleaned_locality
 
 
-def _place_candidate_score(place_name: str | None, locality: str | None) -> tuple[int, int, int]:
+def _place_candidate_score(
+    place_name: str | None,
+    locality: str | None,
+    place_type: str | None = None,
+) -> tuple[int, int, int, int, int]:
     cleaned_name = _clean_segment_place_name(place_name)
     cleaned_locality = _clean_segment_place_name(locality)
+    is_specific_keyword = int(_has_specific_place_keyword(cleaned_name))
+    not_broad_type = int(not _is_broad_place_type(place_type))
     has_specific_name = int(bool(cleaned_name and not _is_regional_place(cleaned_name)))
     has_locality = int(bool(cleaned_locality and not _is_regional_place(cleaned_locality)))
     has_any_name = int(bool(cleaned_name or cleaned_locality))
-    return (has_specific_name, has_locality, has_any_name)
+    return (is_specific_keyword, not_broad_type, has_specific_name, has_locality, has_any_name)
 
 
 def _candidate_distance_sq(
@@ -222,8 +283,18 @@ def _best_nearby_place_candidate(
         preferred_name = _prefer_locality_over_region(row.get("place_name"), row.get("city"))
         if not preferred_name or _is_regional_place(preferred_name):
             continue
+        score = _place_candidate_score(
+            row.get("place_name"),
+            row.get("city"),
+            row.get("place_type"),
+        )
         shortlisted.append(
             (
+                -score[0],
+                -score[1],
+                -score[2],
+                -score[3],
+                -score[4],
                 _candidate_distance_sq(latitude, longitude, row.get("latitude"), row.get("longitude")),
                 -int(row.get("id") or 0),
                 preferred_name,
@@ -234,8 +305,8 @@ def _best_nearby_place_candidate(
         return None
     shortlisted.sort()
     return {
-        "name": shortlisted[0][2],
-        "place_type": shortlisted[0][3],
+        "name": shortlisted[0][7],
+        "place_type": shortlisted[0][8],
     }
 
 
@@ -640,7 +711,7 @@ def _leg_point_place_details(latitude: float | None, longitude: float | None) ->
     row = max(
         rows,
         key=lambda candidate: (
-            *_place_candidate_score(candidate["place_name"], candidate["city"]),
+            *_place_candidate_score(candidate["place_name"], candidate["city"], candidate.get("place_type")),
             int(candidate.get("id") or 0),
         ),
     )
