@@ -176,6 +176,22 @@ def _normalize_distance(value: object) -> float | None:
     return numeric
 
 
+def _normalize_elevation(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    # Garmin exports sometimes provide elevation gain/loss in centimeters.
+    # Detect unrealistic magnitudes and convert to meters.
+    if numeric > 10_000:
+        numeric /= 100.0
+    return numeric
+
+
 def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -222,10 +238,12 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
                 end_time=end_time,
                 duration_seconds=duration_seconds,
                 distance_meters=_normalize_distance(entry.get("distance")),
-                elevation_gain_meters=entry.get("totalElevationGain")
-                or entry.get("elevationGain"),
-                elevation_loss_meters=entry.get("totalElevationLoss")
-                or entry.get("elevationLoss"),
+                elevation_gain_meters=_normalize_elevation(
+                    entry.get("totalElevationGain") or entry.get("elevationGain")
+                ),
+                elevation_loss_meters=_normalize_elevation(
+                    entry.get("totalElevationLoss") or entry.get("elevationLoss")
+                ),
                 moving_time_seconds=_normalize_duration(entry.get("movingDuration")),
                 elapsed_time_seconds=_normalize_duration(entry.get("elapsedDuration")),
                 average_speed_mps=entry.get("averageSpeed"),
