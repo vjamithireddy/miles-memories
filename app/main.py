@@ -1215,10 +1215,19 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       display: grid;
       gap: 18px;
     }}
+    .trip-hero {{
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      align-items: start;
+    }}
     .hero-copy {{
       max-width: 42rem;
       display: grid;
       gap: 12px;
+    }}
+    .hero-aside {{
+      display: grid;
+      gap: 16px;
+      align-content: start;
     }}
     .eyebrow {{
       display: inline-block;
@@ -1775,7 +1784,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
 </head>
 <body>
   <main>
-    <section class="panel hero">
+    <section class="panel hero trip-hero">
       <div class="hero-copy">
         <span class="eyebrow">Published Trip</span>
         <h1>{title}</h1>
@@ -1786,24 +1795,14 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <span class="trip-chip muted">{timing}</span>
         </div>
       </div>
-      <div><a class="button" href="/">Back to published trips</a></div>
-    </section>
-
-    <section class="panel">
-      <h2>Trip details</h2>
-      <p>This public page focuses on the story of the trip: where it went, how long it lasted, and how the journey unfolded.</p>
-      <div class="story-grid">
-        <article class="story-card">
-          <span class="story-card-label">When</span>
-          <div class="story-card-value">{short_timing}</div>
-          <p class="story-card-note">{trip_duration} total</p>
-        </article>
+      <div class="hero-aside">
+        <a class="button" href="/">Back to published trips</a>
         <article class="story-card">
           <span class="story-card-label">Travel modes</span>
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
         </article>
-        <article class="story-card wide">
+        <article class="story-card">
           <span class="story-card-label">Route</span>
           <div class="story-card-value">{escape(route_summary)}</div>
           <p class="story-card-note">{escape(route_note)}</p>
