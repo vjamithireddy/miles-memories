@@ -1685,11 +1685,27 @@ def get_trip_status_counts() -> dict[str, int]:
             }
 
 
-def list_published_trips(*, limit: int = 12, offset: int = 0) -> list[dict[str, Any]]:
+def list_published_trips(
+    *, limit: int = 12, offset: int = 0, search: str | None = None
+) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
+            search = (search or "").strip()
+            params: list[Any] = []
+            search_clause = ""
+            if search:
+                search_clause = """
+                  AND (
+                    trip_name ILIKE %s
+                    OR primary_destination_name ILIKE %s
+                    OR origin_place_name ILIKE %s
+                  )
                 """
+                like_value = f"%{search}%"
+                params.extend([like_value, like_value, like_value])
+            params.extend([limit, offset])
+            cur.execute(
+                f"""
                 SELECT
                     id,
                     trip_name,
@@ -1716,20 +1732,34 @@ def list_published_trips(*, limit: int = 12, offset: int = 0) -> list[dict[str, 
                     OR publish_ready = TRUE
                     OR published_at IS NOT NULL
                   )
+                {search_clause}
                 ORDER BY start_date DESC, end_date DESC, id DESC
                 LIMIT %s
                 OFFSET %s
                 """,
-                (limit, offset),
+                params,
             )
             return [_normalize_trip(row) for row in cur.fetchall()]
 
 
-def count_published_trips() -> int:
+def count_published_trips(*, search: str | None = None) -> int:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
+            search = (search or "").strip()
+            params: list[Any] = []
+            search_clause = ""
+            if search:
+                search_clause = """
+                  AND (
+                    trip_name ILIKE %s
+                    OR primary_destination_name ILIKE %s
+                    OR origin_place_name ILIKE %s
+                  )
                 """
+                like_value = f"%{search}%"
+                params.extend([like_value, like_value, like_value])
+            cur.execute(
+                f"""
                 SELECT COUNT(*)::BIGINT AS total
                 FROM trips
                 WHERE is_private = FALSE
@@ -1738,7 +1768,9 @@ def count_published_trips() -> int:
                     OR publish_ready = TRUE
                     OR published_at IS NOT NULL
                   )
-                """
+                {search_clause}
+                """,
+                params,
             )
             row = cur.fetchone()
             return int(row["total"] or 0)

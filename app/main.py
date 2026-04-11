@@ -168,6 +168,7 @@ def _render_public_homepage(
     show_load_more: bool = False,
     parks_list: list[dict[str, Any]] | None = None,
     parks_counts: dict[str, int] | None = None,
+    search_query: str = "",
 ) -> str:
     published_total = total if total is not None else len(trips)
     latest_label = "No published trips yet"
@@ -214,13 +215,14 @@ def _render_public_homepage(
     load_more_markup = ""
     if show_load_more and published_total:
         next_page = page + 1
+        search_param = f"&q={escape(search_query)}" if search_query else ""
         noscript_markup = (
-            f'<noscript><a class="button" href="/trips?page={next_page}">Next page</a></noscript>'
+            f'<noscript><a class="button" href="/trips?page={next_page}{search_param}">Next page</a></noscript>'
             if has_more
             else ""
         )
         load_more_markup = f"""
-        <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}">
+        <div class="load-more" data-load-more data-page="{page}" data-per-page="{per_page}" data-total="{published_total}" data-search="{escape(search_query)}">
           <button class="button load-more-button" type="button" data-load-more-button{" disabled" if not has_more else ""}>
             {"No more trips" if not has_more else "Load more trips"}
           </button>
@@ -621,6 +623,29 @@ def _render_public_homepage(
       align-items: baseline;
       margin-bottom: 16px;
     }}
+    .section-head .section-actions {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .published-search input {{
+      min-width: 220px;
+      max-width: 320px;
+      width: 100%;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      background: #fffaf2;
+      font-family: inherit;
+      font-size: 0.95rem;
+      color: var(--ink);
+    }}
+    .published-search input:focus {{
+      outline: 2px solid rgba(200, 92, 47, 0.2);
+      border-color: var(--accent);
+    }}
 
     .foot {{
       color: var(--muted);
@@ -707,9 +732,14 @@ def _render_public_homepage(
       <div class="section-head">
         <div>
           <span class="eyebrow">Published Archive</span>
-          <h2>Recent published trips</h2>
+          <h2>Published trips</h2>
         </div>
-        <p>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
+        <div class="section-actions">
+          <div class="published-search">
+            <input type="search" placeholder="Search trips..." value="{escape(search_query)}" data-published-search>
+          </div>
+          <p>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
+        </div>
       </div>
       {f'<div class=\"archive-link\"><a class=\"button\" href=\"/trips?page=1\">View all trips</a></div>' if show_archive_link else ''}
       <div class="published-grid">
@@ -767,6 +797,7 @@ def _render_public_homepage(
       let page = Number(container.dataset.page || "1");
       const perPage = Number(container.dataset.perPage || "{per_page}");
       const total = Number(container.dataset.total || "0");
+      const searchQuery = (container.dataset.search || "").trim();
 
       const setButton = (enabled) => {{
         button.disabled = !enabled;
@@ -783,7 +814,8 @@ def _render_public_homepage(
         button.textContent = "Loading...";
         try {{
           const nextPage = page + 1;
-          const response = await fetch(`/trips?partial=1&page=${{nextPage}}&per_page=${{perPage}}`);
+          const query = searchQuery ? `&q=${{encodeURIComponent(searchQuery)}}` : "";
+          const response = await fetch(`/trips?partial=1&page=${{nextPage}}&per_page=${{perPage}}${{query}}`);
           if (!response.ok) throw new Error("Unable to load more trips");
           const payload = await response.json();
           if (payload.html) {{
@@ -801,6 +833,28 @@ def _render_public_homepage(
     }})();
   </script>
   ''' if show_load_more else ''}
+  <script>
+    (() => {{
+      const input = document.querySelector("[data-published-search]");
+      if (!input) return;
+      let timer;
+      const submit = () => {{
+        const term = input.value.trim();
+        const url = new URL(window.location.href);
+        if (term) {{
+          url.searchParams.set("q", term);
+        }} else {{
+          url.searchParams.delete("q");
+        }}
+        url.searchParams.delete("page");
+        window.location.href = url.toString();
+      }};
+      input.addEventListener("input", () => {{
+        window.clearTimeout(timer);
+        timer = window.setTimeout(submit, 400);
+      }});
+    }})();
+  </script>
 </body>
 </html>
 """
@@ -816,11 +870,13 @@ def public_trips_page(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=12, ge=1, le=48),
     partial: bool = Query(default=False),
+    q: str = Query(default=""),
 ) -> HTMLResponse:
     start_time = time.perf_counter()
-    total = trip_admin.count_published_trips()
+    search_query = q.strip()
+    total = trip_admin.count_published_trips(search=search_query)
     offset = (page - 1) * per_page
-    trips = trip_admin.list_published_trips(limit=per_page, offset=offset)
+    trips = trip_admin.list_published_trips(limit=per_page, offset=offset, search=search_query)
     intro = trip_admin.build_public_home_intro()
     if partial:
         html = _render_public_trip_cards(trips)
@@ -847,6 +903,7 @@ def public_trips_page(
             show_load_more=True,
             parks_list=parks_list,
             parks_counts=parks_counts,
+            search_query=search_query,
         )
     )
     _log_timing("public_trips_page", start_time)
