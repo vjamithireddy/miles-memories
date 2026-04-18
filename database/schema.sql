@@ -195,10 +195,10 @@ CREATE TABLE IF NOT EXISTS activities (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'garmin';
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_source_activity
     ON activities(source, source_activity_id);
-
-ALTER TABLE activities ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'garmin';
 
 CREATE TABLE IF NOT EXISTS trip_segments (
     id BIGSERIAL PRIMARY KEY,

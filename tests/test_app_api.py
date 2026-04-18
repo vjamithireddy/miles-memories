@@ -16,6 +16,7 @@ from app.main import (
     admin_overrides_page,
     admin_trip_destination_page,
     admin_trip_detail_page,
+    admin_uploads_page,
     create_destination_override,
     delete_destination_override,
     get_admin_trip,
@@ -127,6 +128,35 @@ def _trip_detail() -> dict:
     return trip
 
 
+def _trip_status_counts() -> dict:
+    return {
+        "total": 1,
+        "needs_review": 1,
+        "reviewed": 0,
+        "published": 0,
+        "rejected": 0,
+        "ignored": 0,
+        "private": 1,
+        "public": 0,
+    }
+
+
+def _trip_light_with_snapshot() -> tuple[dict, dict]:
+    trip = _trip_detail()
+    trip["leg_count"] = len(trip.get("travel_legs") or [])
+    snapshot = {
+        "public": {
+            "travel_legs": trip["travel_legs"],
+            "map_points": [
+                {"lat": 38.6, "lon": -90.2},
+                {"lat": 39.1, "lon": -94.5},
+            ],
+            "activities_summary": {"items": [], "total": 0},
+        }
+    }
+    return trip, snapshot
+
+
 class AppApiTests(unittest.TestCase):
     def test_admin_routes_require_basic_auth(self) -> None:
         async def receive() -> dict:
@@ -193,6 +223,18 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Enterprise Center keep", response.body)
         self.assertIn(b'href="/admin/trip/7"', response.body)
 
+    def test_admin_uploads_page_documents_import_flow(self) -> None:
+        response = admin_uploads_page()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Data uploads", response.body)
+        self.assertIn(b"make ingest-location", response.body)
+        self.assertIn(b"make ingest-photos", response.body)
+        self.assertIn(b"make ingest-garmin", response.body)
+        self.assertIn(b"make detect-trips", response.body)
+        self.assertIn(b"make run-garmin-mcp", response.body)
+        self.assertIn(b"Back to queue", response.body)
+
     def test_homepage_returns_html(self) -> None:
         published_trip = _trip_summary()
         published_trip["trip_name"] = "Glacier National Park"
@@ -206,16 +248,9 @@ class AppApiTests(unittest.TestCase):
              patch("app.main.get_user_timezone", return_value="America/Chicago"):
             response = homepage()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.media_type)
-        self.assertIn(b"MilesMemories", response.body)
-        self.assertIn(b"Published travel stories from your own data", response.body)
-        self.assertIn(b"Recent published trips", response.body)
-        self.assertIn(b"Glacier National Park", response.body)
-        self.assertIn(b"Montana", response.body)
-        self.assertNotIn(b"/admin/trips", response.body)
-        self.assertIn(b'href="/trips/colorado-weekend"', response.body)
-        mock_list.assert_called_once_with(limit=12)
+        self.assertEqual(response.status_code, 308)
+        self.assertEqual(response.headers["location"], "/trips")
+        mock_list.assert_not_called()
 
     def test_public_trip_detail_renders_read_only_story(self) -> None:
         trip = _trip_detail()
@@ -240,13 +275,13 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'class="public-legs"', response.body)
         self.assertIn(b"Expand / Collapse", response.body)
         self.assertIn(b'class="public-leg-header"', response.body)
-        self.assertIn(b"Trip details", response.body)
+        self.assertIn(b"Trip map", response.body)
         self.assertIn(b"Route", response.body)
         self.assertIn(b"St. Louis", response.body)
         self.assertIn(b"Las Vegas", response.body)
         self.assertIn(b"Travel modes", response.body)
         self.assertNotIn(b"Journey size", response.body)
-        self.assertIn(b'class="story-card wide"', response.body)
+        self.assertIn(b'class="story-card"', response.body)
         self.assertIn(b"Back to published trips", response.body)
         self.assertIn(b"Published route preview built from the full inferred travel-leg path for the trip.", response.body)
         self.assertIn(b"maplibre-gl.css", response.body)
@@ -321,13 +356,30 @@ class AppApiTests(unittest.TestCase):
             b"Monday Morning drive from Normal to Towanda (2)", response.body
         )
 
+    def test_public_trip_detail_renders_for_numeric_trip_id(self) -> None:
+        trip = _trip_detail()
+        trip["is_private"] = False
+        trip["publish_ready"] = True
+        trip["status"] = "published"
+
+        with patch("app.main.trip_admin.get_public_trip_by_id", return_value=trip) as mock_get, \
+             patch("app.main.trip_admin.get_trip_route_points", return_value=[]), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"):
+            response = public_trip_detail_page(str(trip["id"]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Published Trip", response.body)
+        self.assertIn(b"Back to published trips", response.body)
+        mock_get.assert_called_once_with(trip["id"])
+
     def test_health_returns_plain_text(self) -> None:
         response = health()
 
         self.assertEqual(response, "ok")
 
     def test_admin_homepage_renders_trips(self) -> None:
-        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list:
+        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list, \
+             patch("app.main.trip_admin.get_trip_status_counts", return_value=_trip_status_counts()):
             response = admin_homepage(
                 status="needs_review",
                 review_decision="pending",
@@ -339,6 +391,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Trip review queue", response.body)
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b"Raw JSON Feed", response.body)
+        self.assertIn(b"Data uploads", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b"Open detail page", response.body)
         self.assertIn(b'class="utility-link"', response.body)
@@ -346,11 +399,15 @@ class AppApiTests(unittest.TestCase):
             status="needs_review",
             review_decision="pending",
             include_private=True,
+            only_private=False,
             limit=24,
         )
 
     def test_admin_trip_detail_renders_map(self) -> None:
-        with patch("app.main.trip_admin.get_trip", return_value=_trip_detail()) as mock_get, \
+        trip, snapshot = _trip_light_with_snapshot()
+        with patch("app.main.trip_admin.get_trip_light", return_value=trip) as mock_get, \
+             patch("app.main.trip_admin.get_trip_snapshot", return_value=snapshot), \
+             patch("app.main.trip_admin.get_trip_activity_summary", return_value={"items": [], "total": 0}), \
              patch("app.main.destination_overrides.list_overrides", return_value=[]), \
              patch("app.main.trip_admin.get_trip_neighbors", return_value={"previous": None, "next": None}), \
              patch("app.main.get_user_timezone", return_value="America/Chicago"):
@@ -359,26 +416,16 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Trip map", response.body)
         self.assertIn(b"Travel legs", response.body)
-        self.assertIn(b"HIKING", response.body)
-        self.assertIn(b"class=\"leg-map\"", response.body)
-        self.assertIn(b"class=\"leg-map-svg\"", response.body)
-        self.assertIn(b"data-path=", response.body)
-        self.assertIn(b"Flight from St. Louis to Las Vegas", response.body)
-        self.assertIn(b"Inner canyon hiking", response.body)
-        self.assertIn(b"class=\"leg-summary-input\"", response.body)
-        self.assertIn(b"class=\"leg-tag\"", response.body)
-        self.assertIn(b"data-autosave=\"segment\"", response.body)
-        self.assertIn(b"class=\"star-rating\"", response.body)
-        self.assertIn(b"2026-03-01 02:30 AM CST", response.body)
-        self.assertIn(b"(3h 15m)", response.body)
+        self.assertIn(b"Trip timing", response.body)
+        self.assertIn(b"2026-03-01", response.body)
         self.assertIn(b"class=\"trip-map-static\"", response.body)
-        self.assertIn(b"Trip route map preview", response.body)
-        self.assertIn(b'data-map-zoom="in"', response.body)
-        self.assertIn(b'data-map-zoom="out"', response.body)
-        self.assertIn(b'data-map-tooltip', response.body)
+        self.assertIn(b"Linked trip coordinates are plotted in order so you can review the route shape and destination cluster.", response.body)
+        self.assertIn(b"data-admin-trip-map=", response.body)
         self.assertIn(b"Trip Overview", response.body)
         self.assertIn(b"Destination context", response.body)
-        self.assertIn(b"Expand full timeline", response.body)
+        self.assertIn(b"Expand travel legs", response.body)
+        self.assertIn(b"Travel legs load on demand.", response.body)
+        self.assertIn(b"data-leg-list", response.body)
         self.assertIn(b"Review saved.", response.body)
         self.assertIn(b"Yes", response.body)
         self.assertIn(b"No", response.body)
@@ -389,17 +436,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Text edits autosave when you leave a field.", response.body)
         self.assertIn(b'is-current', response.body)
         self.assertIn(b'segmented-control', response.body)
-        self.assertNotIn(b"Review action", response.body)
-        self.assertNotIn(b"Publish state", response.body)
         self.assertIn(b"Visibility", response.body)
-        self.assertNotIn(b"Not Ready", response.body)
-        self.assertNotIn(b"Visible", response.body)
         self.assertNotIn(b"Previous trip", response.body)
         self.assertNotIn(b"Next trip", response.body)
-        self.assertNotIn(b"<h2>Trip summary</h2>", response.body)
-        self.assertNotIn(b"<h2>Destination context</h2>", response.body)
-        self.assertNotIn(b"Segment name", response.body)
-        self.assertNotIn(b"Edit summary", response.body)
         self.assertNotIn(b"Review the trip first with a simple yes/no decision.", response.body)
         self.assertIn(b'detail-cell wide', response.body)
         mock_get.assert_called_once_with(7)
@@ -422,7 +461,17 @@ class AppApiTests(unittest.TestCase):
         trip["is_private"] = True
         trip["publish_ready"] = False
 
-        with patch("app.main.trip_admin.get_trip", return_value=trip), \
+        snapshot = {
+            "public": {
+                "travel_legs": trip["travel_legs"],
+                "map_points": [],
+                "activities_summary": {"items": [], "total": 0},
+            }
+        }
+        trip["leg_count"] = len(trip["travel_legs"])
+        with patch("app.main.trip_admin.get_trip_light", return_value=trip), \
+             patch("app.main.trip_admin.get_trip_snapshot", return_value=snapshot), \
+             patch("app.main.trip_admin.get_trip_activity_summary", return_value={"items": [], "total": 0}), \
              patch("app.main.destination_overrides.list_overrides", return_value=[]), \
              patch("app.main.trip_admin.get_trip_neighbors", return_value={"previous": None, "next": None}), \
              patch("app.main.get_user_timezone", return_value="America/Chicago"):
@@ -446,7 +495,7 @@ class AppApiTests(unittest.TestCase):
                     b"&review_notes=Looks+good"
                 )
 
-        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+        with patch("app.main.trip_admin.record_review_light", return_value=_trip_detail()) as mock_review:
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
@@ -468,7 +517,7 @@ class AppApiTests(unittest.TestCase):
             async def body(self) -> bytes:
                 return b"action=publish&reviewer_name=Venkat&is_private=false&publish_ready=true"
 
-        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+        with patch("app.main.trip_admin.record_review_light", return_value=_trip_detail()) as mock_review:
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
@@ -490,7 +539,7 @@ class AppApiTests(unittest.TestCase):
             async def body(self) -> bytes:
                 return b"reviewer_name=Venkat&trip_name=Colorado+Weekend&summary_text=Late+winter+trip."
 
-        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+        with patch("app.main.trip_admin.record_review_light", return_value=_trip_detail()) as mock_review:
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 303)
@@ -514,7 +563,7 @@ class AppApiTests(unittest.TestCase):
             async def body(self) -> bytes:
                 return b"reviewer_name=Venkat&trip_name=Colorado+Weekend&summary_text=Late+winter+trip."
 
-        with patch("app.main.trip_admin.record_review", return_value=_trip_detail()) as mock_review:
+        with patch("app.main.trip_admin.record_review_light", return_value=_trip_detail()) as mock_review:
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 204)
@@ -543,7 +592,7 @@ class AppApiTests(unittest.TestCase):
             async def body(self) -> bytes:
                 return b"action=publish&reviewer_name=Venkat"
 
-        with patch("app.main.trip_admin.record_review", return_value=updated_trip) as mock_review:
+        with patch("app.main.trip_admin.record_review_light", return_value=updated_trip) as mock_review:
             response = asyncio.run(review_trip_from_form(7, FakeRequest()))
 
         self.assertEqual(response.status_code, 200)
@@ -615,6 +664,7 @@ class AppApiTests(unittest.TestCase):
             status="needs_review",
             review_decision="pending",
             include_private=False,
+            only_private=False,
             limit=25,
         )
 

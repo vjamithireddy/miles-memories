@@ -964,6 +964,11 @@ def admin_unattached_activities_page(
     )
 
 
+@app.get("/admin/uploads", response_class=HTMLResponse)
+def admin_uploads_page() -> HTMLResponse:
+    return _html_response(_render_admin_uploads_page())
+
+
 @app.post("/admin/parks/bulk", response_class=JSONResponse)
 async def admin_parks_bulk(request: Request) -> JSONResponse:
     if request.headers.get("content-type", "").startswith("application/json"):
@@ -1221,7 +1226,14 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     }}
     .hero-copy {{
       max-width: 42rem;
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }}
+    .hero-footer {{
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
       gap: 12px;
     }}
     .hero-aside {{
@@ -1789,25 +1801,27 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         <span class="eyebrow">Published Trip</span>
         <h1>{title}</h1>
         <p>{summary}</p>
-        <div class="meta-row">
-          <span class="trip-chip">{trip_type}</span>
-          <span class="trip-chip">{destination}</span>
-          <span class="trip-chip muted">{timing}</span>
+        <div class="hero-footer">
+          <div class="meta-row">
+            <span class="trip-chip">{trip_type}</span>
+            <span class="trip-chip">{destination}</span>
+            <span class="trip-chip muted">{timing}</span>
+          </div>
+          <a class="button" href="/">Back to published trips</a>
         </div>
       </div>
       <div class="hero-aside">
-        <a class="button" href="/">Back to published trips</a>
         <article class="story-card">
           <span class="story-card-label">Travel modes</span>
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
         </article>
-        <article class="story-card">
-          <span class="story-card-label">Route</span>
-          <div class="story-card-value">{escape(route_summary)}</div>
-          <p class="story-card-note">{escape(route_note)}</p>
-        </article>
       </div>
+      <article class="story-card wide">
+        <span class="story-card-label">Route</span>
+        <div class="story-card-value">{escape(route_summary)}</div>
+        <p class="story-card-note">{escape(route_note)}</p>
+      </article>
     </section>
 
     <section class="feature-grid">
@@ -2023,7 +2037,7 @@ def public_trip_detail_page(trip_ref: str) -> HTMLResponse:
     trip = trip_admin.get_public_trip_by_slug(trip_ref)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return RedirectResponse(url=f"/trips/{trip['id']}", status_code=307)
+    return _html_response(_render_public_trip_detail_page(trip))
 
 
 def _trip_badge_class(value: str) -> str:
@@ -3806,6 +3820,7 @@ def _render_admin_page(
       </div>
       <div class="links">
         <a class="button" href="/admin/trips?{filter_query}">Raw JSON Feed</a>
+        <a class="button" href="/admin/uploads">Data uploads</a>
         <a class="button" href="/admin/overrides">Destination overrides</a>
         <a class="button" href="/admin/parks">National parks</a>
         <a class="button" href="/admin/activities">Activities</a>
@@ -3876,6 +3891,236 @@ def _render_admin_page(
       }});
     }})();
   </script>
+</body>
+</html>"""
+
+
+def _render_admin_uploads_page() -> str:
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Uploads · MilesMemories Admin</title>
+  <style>
+    :root {
+      --bg: #f3efe7;
+      --panel: rgba(255, 249, 240, 0.94);
+      --line: #dcccb4;
+      --ink: #182233;
+      --muted: #657286;
+      --accent: #b85f35;
+      --shadow: rgba(37, 28, 14, 0.12);
+      --good: #2e6a4b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(233, 206, 177, 0.82), rgba(243, 239, 231, 0.98) 30%),
+        radial-gradient(circle at right top, rgba(46, 106, 75, 0.08), transparent 28%);
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 34px 18px 64px;
+      display: grid;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: 24px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .eyebrow {
+      font-size: 0.8rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.05;
+    }
+    h1 {
+      margin-top: 8px;
+      font-size: clamp(2rem, 5vw, 3.8rem);
+    }
+    h2 {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+    p, li {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .actions, .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .button {
+      display: inline-block;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 12px 18px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      background: transparent;
+    }
+    .button.utility {
+      border-color: var(--line);
+      color: var(--muted);
+    }
+    .badge {
+      display: inline-block;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(184, 95, 53, 0.12);
+      color: var(--accent);
+      font-size: 0.84rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .checklist, .steps {
+      margin: 0;
+      padding-left: 20px;
+      display: grid;
+      gap: 8px;
+    }
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fffdf8;
+      color: var(--ink);
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+    code {
+      font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    }
+    .callout {
+      border: 1px solid rgba(46, 106, 75, 0.22);
+      background: rgba(46, 106, 75, 0.08);
+      border-radius: 18px;
+      padding: 16px 18px;
+    }
+    .callout strong {
+      color: var(--good);
+    }
+    @media (max-width: 920px) {
+      .hero, .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel hero">
+      <div>
+        <span class="eyebrow">MilesMemories Admin</span>
+        <h1>Data uploads</h1>
+        <p>Use this page as the operator checklist for loading fresh Google Takeout and Garmin data before running trip detection and review.</p>
+        <div class="meta-row">
+          <span class="badge">Google location history</span>
+          <span class="badge">Google Photos Takeout</span>
+          <span class="badge">Garmin GPX exports</span>
+        </div>
+        <div class="actions">
+          <a class="button" href="/admin">Back to queue</a>
+          <a class="button utility" href="/trips">Public site</a>
+        </div>
+      </div>
+      <article class="panel">
+        <h2>Before you start</h2>
+        <ul class="checklist">
+          <li>Start PostgreSQL with <code>docker compose up -d db</code>.</li>
+          <li>Apply the schema with <code>make db-init</code> or <code>make db-init-docker</code>.</li>
+          <li>Set home coordinates once for the local dataset with <code>make set-home LAT=&lt;home_lat&gt; LON=&lt;home_lon&gt; RADIUS=16093</code>.</li>
+          <li>Keep absolute file paths handy for every import command.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Upload flow</h2>
+        <ol class="steps">
+          <li>Import location history from Google Takeout.</li>
+          <li>Import Google Photos Takeout ZIPs.</li>
+          <li>Import Garmin activities as GPX exports.</li>
+          <li>Run trip detection after the new source data is loaded.</li>
+          <li>Return to the review queue in admin and inspect detected trips.</li>
+        </ol>
+      </article>
+      <article class="panel">
+        <h2>Detection step</h2>
+        <pre><code>make detect-trips</code></pre>
+        <p>Run detection after imports complete so the review queue reflects the latest location, photo, and Garmin events.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Location history</h2>
+        <pre><code>make ingest-location FILE=/absolute/path/Location\\ History.json</code></pre>
+        <p>Use the exported Google Takeout location history JSON. This is the main source for timeline movement and stay detection.</p>
+      </article>
+      <article class="panel">
+        <h2>Google Photos</h2>
+        <pre><code>make ingest-photos FILE=/absolute/path/google-photos-takeout.zip</code></pre>
+        <p>Import the Takeout ZIP so geotagged photos can strengthen trip confidence and improve trip storytelling.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Garmin activities</h2>
+        <pre><code>make ingest-garmin FILE=/absolute/path/activity.gpx</code></pre>
+        <p>Load Garmin GPX exports to attach activities to trips and improve trip confidence away from home.</p>
+      </article>
+      <article class="panel">
+        <h2>Garmin MCP option</h2>
+        <pre><code>make run-garmin-mcp</code></pre>
+        <p>Use the local MCP server if you need the Garmin tools workflow instead of one-off GPX ingestion.</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Local MVP sequence</h2>
+      <pre><code>docker compose up -d db
+make db-init
+make set-home LAT=38.9517 LON=-92.3341
+make ingest-location FILE=/absolute/path/Location\\ History.json
+make ingest-photos FILE=/absolute/path/google-photos-takeout.zip
+make ingest-garmin FILE=/absolute/path/activity.gpx
+make detect-trips</code></pre>
+    </section>
+
+    <section class="panel callout">
+      <strong>After imports:</strong>
+      <p>Open the admin review queue, inspect new trips, and use the Activities and trip detail views to confirm the imported data is linking correctly.</p>
+    </section>
+  </main>
 </body>
 </html>"""
 
@@ -4488,6 +4733,12 @@ def _selected_attr(current: str | None, expected: str) -> str:
 
 def _query_text(value: object) -> str:
     return value if isinstance(value, str) else ""
+
+
+def _query_optional_bool(value: object) -> bool | None:
+    if hasattr(value, "default"):
+        return _parse_optional_bool(getattr(value, "default"))
+    return _parse_optional_bool(value)
 
 
 def _get_local_zone() -> ZoneInfo:
@@ -6340,12 +6591,15 @@ def admin_homepage(
     private_only: Optional[bool] = Query(default=None),
     limit: int = Query(default=25, ge=1, le=200),
 ) -> HTMLResponse:
-    only_private = bool(private_only)
-    if view:
-        view_key = view.lower()
+    normalized_view = _query_text(view)
+    normalized_include_private = _query_optional_bool(include_private)
+    normalized_private_only = _query_optional_bool(private_only)
+    only_private = bool(normalized_private_only)
+    if normalized_view:
+        view_key = normalized_view.lower()
         status = None
         review_decision = None
-        include_private = True
+        normalized_include_private = True
         only_private = False
         if view_key == "needs_review":
             status = "needs_review"
@@ -6360,14 +6614,14 @@ def admin_homepage(
         elif view_key == "private":
             only_private = True
         elif view_key == "public":
-            include_private = False
-    if include_private is None:
-        include_private = True
+            normalized_include_private = False
+    if normalized_include_private is None:
+        normalized_include_private = True
     counts = trip_admin.get_trip_status_counts()
     trips = trip_admin.list_trips(
         status=status,
         review_decision=review_decision,
-        include_private=include_private,
+        include_private=normalized_include_private,
         only_private=only_private,
         limit=limit,
     )
@@ -6376,11 +6630,11 @@ def admin_homepage(
             trips,
             status=status,
             review_decision=review_decision,
-            include_private=include_private,
+            include_private=normalized_include_private,
             only_private=only_private,
             limit=limit,
             counts=counts,
-            current_view=view,
+            current_view=normalized_view or None,
         )
     )
 
@@ -6485,7 +6739,7 @@ def admin_trip_detail_page(trip_id: int, saved: str = Query(default="")) -> HTML
     trip["activities_summary"] = trip_admin.get_trip_activity_summary(trip_id, limit=3)
     trip["matching_overrides"] = _matching_overrides_for_trip(trip)
     trip["neighbors"] = trip_admin.get_trip_neighbors(trip_id)
-    response = _html_response(_render_trip_detail_page(trip, saved=saved))
+    response = _html_response(_render_trip_detail_page(trip, saved=_query_text(saved)))
     _log_timing("admin_trip_detail", start_time)
     return response
 
@@ -6527,9 +6781,11 @@ def public_trip_activity_items(trip_id: int) -> HTMLResponse:
 async def review_trip_from_form(
     trip_id: int,
     request: Request,
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks = None,
 ) -> Response:
     start_time = time.perf_counter()
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
     payload = parse_qs((await request.body()).decode("utf-8"))
     request_headers = getattr(request, "headers", {}) or {}
     action = (payload.get("action") or ["save"])[0].strip() or "save"
@@ -6599,8 +6855,10 @@ async def update_trip_segment_from_form(
     trip_id: int,
     segment_id: int,
     request: Request,
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks = None,
 ) -> Response:
+    if background_tasks is None:
+        background_tasks = BackgroundTasks()
     payload = parse_qs((await request.body()).decode("utf-8"))
     summary_text = (payload.get("summary_text") or [""])[0].strip() or None
     rating_text = (payload.get("rating") or [""])[0].strip()
@@ -6633,11 +6891,13 @@ def list_admin_trips(
     private_only: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> List[TripSummary]:
+    normalized_include_private = _query_optional_bool(include_private)
+    normalized_private_only = _query_optional_bool(private_only)
     return trip_admin.list_trips(
         status=status,
         review_decision=review_decision,
-        include_private=include_private,
-        only_private=private_only,
+        include_private=True if normalized_include_private is None else normalized_include_private,
+        only_private=bool(normalized_private_only),
         limit=limit,
     )
 

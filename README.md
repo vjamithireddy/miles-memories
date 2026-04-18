@@ -33,6 +33,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 - `make ingest-location FILE=/path/to/location.json`
 - `make ingest-photos FILE=/path/to/takeout.zip`
 - `make ingest-garmin FILE=/path/to/activity.gpx`
+- `make ingest-garmin FILE=/path/to/garmin-export-directory`
 - `make set-home LAT=<home_lat> LON=<home_lon> RADIUS=16093`
 - `make detect-trips` run rules-based trip detection (v0)
 - `make run-garmin-mcp` run MCP server for Garmin activity tools over stdio
@@ -47,6 +48,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
    - `make ingest-location FILE=/absolute/path/Location\ History.json`
    - `make ingest-photos FILE=/absolute/path/google-photos-takeout.zip`
    - `make ingest-garmin FILE=/absolute/path/activity.gpx`
+   - `make ingest-garmin FILE=/absolute/path/garmin-export-directory`
 5. Detect trips:
    - `make detect-trips`
 
