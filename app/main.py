@@ -1132,6 +1132,11 @@ def _render_public_trip_detail_page(trip: dict) -> str:
     )
     activities_summary = trip.get("activities_summary") or {}
     activity_count = int(activities_summary.get("count") or 0)
+    activity_preview_items = activities_summary.get("items") or []
+    activity_preview_markup = _render_activity_items(
+        activity_preview_items,
+        empty_label="No Garmin activities matched this trip.",
+    )
     route_stop_markers = _build_route_stop_markers(travel_legs, route_places)
     trip_map_markup = _render_public_trip_map(
         _build_public_trip_map_payload(
@@ -1240,6 +1245,10 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       display: grid;
       gap: 16px;
       align-content: start;
+    }}
+    .hero-aside .button {{
+      width: 100%;
+      text-align: center;
     }}
     .eyebrow {{
       display: inline-block;
@@ -1807,7 +1816,6 @@ def _render_public_trip_detail_page(trip: dict) -> str:
             <span class="trip-chip">{destination}</span>
             <span class="trip-chip muted">{timing}</span>
           </div>
-          <a class="button" href="/">Back to published trips</a>
         </div>
       </div>
       <div class="hero-aside">
@@ -1816,6 +1824,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           <div class="story-card-value">{escape(travel_modes)}</div>
           <p class="story-card-note">Based on inferred travel legs.</p>
         </article>
+        <a class="button" href="/">Back to published trips</a>
       </div>
       <article class="story-card wide">
         <span class="story-card-label">Route</span>
@@ -1861,7 +1870,7 @@ def _render_public_trip_detail_page(trip: dict) -> str:
         </summary>
         <div class="public-activities-body">
           <ul class="list" data-activity-list>
-            <li class="timeline-item"><p>Activities load on demand.</p></li>
+            {activity_preview_markup}
           </ul>
         </div>
       </details>
@@ -1897,6 +1906,9 @@ def _render_public_trip_detail_page(trip: dict) -> str:
           loadActivities();
         }}
       }});
+      if (details.open) {{
+        loadActivities();
+      }}
     }});
   </script>
 </body>

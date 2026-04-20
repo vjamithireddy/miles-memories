@@ -57,6 +57,31 @@ def _trip_summary() -> dict:
 
 def _trip_detail() -> dict:
     trip = _trip_summary()
+    trip["activities_summary"] = {
+        "count": 2,
+        "items": [
+            {
+                "activity_name": "South Kaibab Hike",
+                "activity_type": "hiking",
+                "start_time": datetime(2026, 3, 1, 13, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 3, 1, 16, 15, tzinfo=timezone.utc),
+                "duration_seconds": 11_700,
+                "distance_meters": 17_500,
+                "elevation_gain_meters": 820,
+                "elevation_loss_meters": 1_340,
+            },
+            {
+                "activity_name": "Desert View Walk",
+                "activity_type": "walking",
+                "start_time": datetime(2026, 3, 2, 18, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 3, 2, 19, 5, tzinfo=timezone.utc),
+                "duration_seconds": 3_900,
+                "distance_meters": 4_100,
+                "elevation_gain_meters": 60,
+                "elevation_loss_meters": 55,
+            },
+        ],
+    }
     trip["event_counts"] = [{"event_type": "location_event", "total": 12}]
     trip["timeline"] = [
         {
@@ -283,6 +308,9 @@ class AppApiTests(unittest.TestCase):
         self.assertNotIn(b"Journey size", response.body)
         self.assertIn(b'class="story-card"', response.body)
         self.assertIn(b"Back to published trips", response.body)
+        self.assertIn(b'South Kaibab Hike', response.body)
+        self.assertIn(b'Desert View Walk', response.body)
+        self.assertNotIn(b"Activities load on demand.", response.body)
         self.assertIn(b"Published route preview built from the full inferred travel-leg path for the trip.", response.body)
         self.assertIn(b"maplibre-gl.css", response.body)
         self.assertIn(b"maplibre-gl.js", response.body)
