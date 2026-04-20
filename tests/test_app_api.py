@@ -389,6 +389,9 @@ class AppApiTests(unittest.TestCase):
         trip["is_private"] = False
         trip["publish_ready"] = True
         trip["status"] = "published"
+        for item in trip["activities_summary"]["items"]:
+            item["start_time"] = item["start_time"].isoformat()
+            item["end_time"] = item["end_time"].isoformat()
 
         with patch("app.main.trip_admin.get_public_trip_by_id", return_value=trip) as mock_get, \
              patch("app.main.trip_admin.get_trip_route_points", return_value=[]), \
@@ -398,6 +401,7 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Published Trip", response.body)
         self.assertIn(b"Back to published trips", response.body)
+        self.assertIn(b"South Kaibab Hike", response.body)
         mock_get.assert_called_once_with(trip["id"])
 
     def test_health_returns_plain_text(self) -> None:

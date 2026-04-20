@@ -1022,7 +1022,11 @@ def _render_activity_items(
         activity_type_raw = item.get("activity_type")
         activity_type = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
+        if isinstance(start_time, str):
+            start_time = _parse_date(start_time)
         end_time = item.get("end_time")
+        if isinstance(end_time, str):
+            end_time = _parse_date(end_time)
         duration = ""
         if start_time and end_time:
             duration = _format_duration(start_time, end_time)
@@ -1922,7 +1926,11 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
         activity_type_raw = item.get("activity_type")
         activity_kind = escape(_format_activity_type_label(activity_type_raw))
         start_time = item.get("start_time")
+        if isinstance(start_time, str):
+            start_time = _parse_date(start_time)
         end_time = item.get("end_time")
+        if isinstance(end_time, str):
+            end_time = _parse_date(end_time)
         duration = ""
         if start_time and end_time:
             duration = _format_duration(start_time, end_time)
