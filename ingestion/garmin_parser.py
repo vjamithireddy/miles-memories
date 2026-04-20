@@ -176,7 +176,12 @@ def _normalize_distance(value: object) -> float | None:
     return numeric
 
 
-def _normalize_elevation(value: object) -> float | None:
+def _normalize_elevation(
+    value: object,
+    *,
+    distance_meters: float | None,
+    duration_seconds: int | None,
+) -> float | None:
     if value is None:
         return None
     try:
@@ -185,10 +190,14 @@ def _normalize_elevation(value: object) -> float | None:
         return None
     if numeric <= 0:
         return None
-    # Garmin exports sometimes provide elevation gain/loss in centimeters.
-    # Detect unrealistic magnitudes and convert to meters.
-    if numeric > 10_000:
-        numeric /= 100.0
+    # Garmin summary exports can encode ascent/descent in centimeters.
+    # Normalize obviously implausible meter values before storing them.
+    if numeric >= 5_000:
+        return numeric / 100.0
+    if distance_meters and numeric >= 2_000 and numeric >= distance_meters * 0.25:
+        return numeric / 100.0
+    if duration_seconds and duration_seconds <= 4 * 3600 and numeric >= 2_000:
+        return numeric / 100.0
     return numeric
 
 
@@ -227,6 +236,7 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
         end_time = _parse_datetime(entry.get("endTimeGmt") or entry.get("endTimeLocal"))
         if end_time is None and start_time and duration_seconds:
             end_time = start_time + timedelta(seconds=duration_seconds)
+        distance_meters = _normalize_distance(entry.get("distance"))
 
         records.append(
             ActivityRecord(
@@ -237,12 +247,16 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
                 start_time=start_time or datetime.now(timezone.utc),
                 end_time=end_time,
                 duration_seconds=duration_seconds,
-                distance_meters=_normalize_distance(entry.get("distance")),
+                distance_meters=distance_meters,
                 elevation_gain_meters=_normalize_elevation(
-                    entry.get("totalElevationGain") or entry.get("elevationGain")
+                    entry.get("totalElevationGain") or entry.get("elevationGain"),
+                    distance_meters=distance_meters,
+                    duration_seconds=duration_seconds,
                 ),
                 elevation_loss_meters=_normalize_elevation(
-                    entry.get("totalElevationLoss") or entry.get("elevationLoss")
+                    entry.get("totalElevationLoss") or entry.get("elevationLoss"),
+                    distance_meters=distance_meters,
+                    duration_seconds=duration_seconds,
                 ),
                 moving_time_seconds=_normalize_duration(entry.get("movingDuration")),
                 elapsed_time_seconds=_normalize_duration(entry.get("elapsedDuration")),

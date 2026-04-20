@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
 from app.main import (
+    _format_activity_elevation_pair,
     admin_basic_auth,
     admin_homepage,
     admin_overrides_page,
@@ -311,6 +312,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'South Kaibab Hike', response.body)
         self.assertIn(b'Desert View Walk', response.body)
         self.assertNotIn(b"Activities load on demand.", response.body)
+        self.assertIn(b"ascent 2690 ft / descent 4396 ft", response.body)
         self.assertIn(b"Published route preview built from the full inferred travel-leg path for the trip.", response.body)
         self.assertIn(b"maplibre-gl.css", response.body)
         self.assertIn(b"maplibre-gl.js", response.body)
@@ -403,6 +405,17 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Back to published trips", response.body)
         self.assertIn(b"South Kaibab Hike", response.body)
         mock_get.assert_called_once_with(trip["id"])
+
+    def test_activity_elevation_pair_normalizes_centimeter_scale_values(self) -> None:
+        rendered = _format_activity_elevation_pair(
+            6500,
+            11700,
+            distance_meters=830709.9609375,
+            duration_seconds=7380,
+            activity_type="other",
+        )
+
+        self.assertEqual(rendered, "ascent 213 ft / descent 384 ft")
 
     def test_health_returns_plain_text(self) -> None:
         response = health()

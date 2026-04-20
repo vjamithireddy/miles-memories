@@ -1040,6 +1040,9 @@ def _render_activity_items(
         elevation = _format_activity_elevation_pair(
             item.get("elevation_gain_meters"),
             item.get("elevation_loss_meters"),
+            distance_meters=item.get("distance_meters"),
+            duration_seconds=item.get("duration_seconds"),
+            activity_type=activity_type_raw,
         )
         meta_parts = [activity_type]
         if distance:
@@ -1944,6 +1947,9 @@ def _render_activity_rows(activities: list[dict[str, Any]]) -> str:
         elevation = _format_activity_elevation_pair(
             item.get("elevation_gain_meters"),
             item.get("elevation_loss_meters"),
+            distance_meters=item.get("distance_meters"),
+            duration_seconds=item.get("duration_seconds"),
+            activity_type=activity_type_raw,
         )
         meta_parts = [activity_kind]
         if start_time:
@@ -3464,7 +3470,13 @@ def _format_activity_distance_miles(
     return _format_distance_miles(normalized)
 
 
-def _format_activity_elevation_feet(elevation_meters: Optional[float]) -> Optional[str]:
+def _normalize_activity_elevation_meters(
+    elevation_meters: Optional[float],
+    *,
+    distance_meters: Optional[float],
+    duration_seconds: Optional[int],
+    activity_type: Optional[str],
+) -> Optional[float]:
     if elevation_meters is None:
         return None
     try:
@@ -3473,18 +3485,64 @@ def _format_activity_elevation_feet(elevation_meters: Optional[float]) -> Option
         return None
     if numeric <= 0:
         return None
-    feet = numeric * 3.28084
-    return f"+{int(round(feet))} ft"
+    normalized_distance = _normalize_activity_distance_meters(
+        distance_meters,
+        duration_seconds=duration_seconds,
+        activity_type=activity_type,
+    )
+    if numeric >= 5_000:
+        return numeric / 100.0
+    if normalized_distance and numeric >= 2_000 and numeric >= normalized_distance * 0.25:
+        return numeric / 100.0
+    if duration_seconds and duration_seconds <= 4 * 3600 and numeric >= 2_000:
+        return numeric / 100.0
+    return numeric
+
+
+def _format_activity_elevation_feet(
+    elevation_meters: Optional[float],
+    *,
+    distance_meters: Optional[float],
+    duration_seconds: Optional[int],
+    activity_type: Optional[str],
+    label: str,
+) -> Optional[str]:
+    normalized = _normalize_activity_elevation_meters(
+        elevation_meters,
+        distance_meters=distance_meters,
+        duration_seconds=duration_seconds,
+        activity_type=activity_type,
+    )
+    if normalized is None:
+        return None
+    feet = normalized * 3.28084
+    return f"{label} {int(round(feet))} ft"
 
 
 def _format_activity_elevation_pair(
     gain_meters: Optional[float],
     loss_meters: Optional[float],
+    *,
+    distance_meters: Optional[float],
+    duration_seconds: Optional[int],
+    activity_type: Optional[str],
 ) -> Optional[str]:
-    gain = _format_activity_elevation_feet(gain_meters)
-    loss = _format_activity_elevation_feet(loss_meters)
+    gain = _format_activity_elevation_feet(
+        gain_meters,
+        distance_meters=distance_meters,
+        duration_seconds=duration_seconds,
+        activity_type=activity_type,
+        label="ascent",
+    )
+    loss = _format_activity_elevation_feet(
+        loss_meters,
+        distance_meters=distance_meters,
+        duration_seconds=duration_seconds,
+        activity_type=activity_type,
+        label="descent",
+    )
     if gain and loss:
-        return f"{gain} / {loss.replace('+', '-')}"
+        return f"{gain} / {loss}"
     return gain or loss
 
 
