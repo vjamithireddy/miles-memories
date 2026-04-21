@@ -3391,7 +3391,7 @@ def _review_step_hint(review_state: Optional[str]) -> str:
         return "Review complete. Choose whether this trip should stay private or be visible on the public site."
     if review_state == "no":
         return "Marked as not a trip. Public visibility is disabled for rejected items."
-    return "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed."
+    return "Start by marking the item as Trip or Reject. Visibility becomes available only after the trip is reviewed."
 
 
 def _format_duration(start: datetime, end: datetime) -> str:
@@ -3565,46 +3565,7 @@ def _log_timing(label: str, start_time: float) -> None:
     print(f"[perf] {label} {elapsed_ms}ms")
 
 
-def _render_admin_page(
-    trips: List[dict],
-    *,
-    status: Optional[str],
-    review_decision: Optional[str],
-    include_private: bool,
-    only_private: bool,
-    limit: int,
-    counts: dict[str, int],
-    current_view: Optional[str] = None,
-) -> str:
-    def selected(current: Optional[str], expected: str) -> str:
-        return ' selected="selected"' if current == expected else ""
-
-    def view_key() -> str:
-        if only_private:
-            return "private"
-        if not include_private:
-            return "public"
-        if status == "published":
-            return "published"
-        if status == "needs_review":
-            return "needs_review"
-        if review_decision == "confirmed":
-            return "reviewed"
-        if review_decision in {"rejected", "ignored"} or status == "ignored":
-            return "rejected"
-        return "all"
-
-    current_view = current_view or view_key()
-    filter_query = urlencode(
-        {
-            "status": status or "",
-            "review_decision": review_decision or "",
-            "include_private": str(include_private).lower(),
-            "private_only": str(only_private).lower(),
-            "limit": str(limit),
-        }
-    )
-
+def _render_admin_trip_cards(trips: List[dict]) -> str:
     cards = []
     for trip in trips:
         title = escape(trip["trip_name"] or "Untitled trip")
@@ -3637,13 +3598,76 @@ def _render_admin_page(
             </article>
             """
         )
-
-    cards_html = "".join(cards) if cards else """
+    return "".join(cards) if cards else """
       <article class="trip-card empty-state">
         <h3>No trips match these filters.</h3>
         <p>Adjust the filters or run trip detection after importing location and Garmin data.</p>
       </article>
     """
+
+
+def _render_admin_page(
+    trips: List[dict],
+    *,
+    status: Optional[str],
+    review_decision: Optional[str],
+    include_private: bool,
+    only_private: bool,
+    per_page: int,
+    page: int,
+    has_more: bool,
+    counts: dict[str, int],
+) -> str:
+    cards_html = _render_admin_trip_cards(trips)
+
+    def admin_query(
+        *,
+        status_value: Optional[str] = status,
+        review_value: Optional[str] = review_decision,
+        include_private_value: bool = include_private,
+        private_only_value: bool = only_private,
+        page_value: int = 1,
+    ) -> str:
+        return urlencode(
+            {
+                "status": status_value or "",
+                "review_decision": review_value or "",
+                "include_private": str(include_private_value).lower(),
+                "private_only": str(private_only_value).lower(),
+                "page": str(page_value),
+                "per_page": str(per_page),
+            }
+        )
+
+    def filter_label() -> str:
+        if only_private:
+            return "Private trips"
+        if not include_private:
+            return "Public trips"
+        if status == "published":
+            return "Published trips"
+        if status == "needs_review":
+            return "Needs review"
+        if review_decision == "confirmed":
+            return "Reviewed trips"
+        if review_decision in {"rejected", "ignored"} or status == "ignored":
+            return "Rejected trips"
+        return "All trips"
+
+    filter_query = admin_query(page_value=1)
+    showing_start = ((page - 1) * per_page) + 1 if trips else 0
+    showing_end = ((page - 1) * per_page) + len(trips)
+    active_summary = f"Showing {showing_start}-{showing_end} · {filter_label()}" if trips else filter_label()
+    show_reset = any([status, review_decision, only_private, not include_private])
+    load_more_markup = (
+        f"""
+        <div class="load-more" data-admin-load-more>
+          <button class="button" type="button" data-next-page="{page + 1}">Load more</button>
+        </div>
+        """
+        if has_more
+        else ""
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -3730,28 +3754,6 @@ def _render_admin_page(
       transform: translateY(-2px);
       box-shadow: 0 20px 36px var(--shadow);
     }}
-    .filters {{
-      display: grid;
-      grid-template-columns: minmax(200px, 1.2fr) minmax(140px, 0.6fr) auto;
-      gap: 14px;
-      align-items: end;
-      margin-bottom: 22px;
-    }}
-    label {{
-      display: grid;
-      gap: 8px;
-      font-size: 0.9rem;
-      color: var(--muted);
-    }}
-    select, input[type="number"] {{
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: #fffdf8;
-      font: inherit;
-      color: var(--ink);
-    }}
     .button, button {{
       display: inline-block;
       border: 1px solid var(--accent);
@@ -3774,6 +3776,23 @@ def _render_admin_page(
     .button-sm {{
       padding: 10px 14px;
       font-size: 0.92rem;
+    }}
+    .button.ghost {{
+      border-color: var(--line);
+      color: var(--muted);
+      background: transparent;
+    }}
+    .queue-toolbar {{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 22px;
+    }}
+    .queue-summary {{
+      color: var(--muted);
+      font-size: 0.98rem;
     }}
     .trips {{
       display: grid;
@@ -3835,35 +3854,12 @@ def _render_admin_page(
       gap: 14px;
       align-items: center;
     }}
-    .filter-toggle {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.55);
-      color: var(--muted);
-      font-weight: 600;
-      cursor: pointer;
-      user-select: none;
-    }}
-    .filter-toggle.is-active {{
-      background: rgba(184, 95, 53, 0.16);
-      border-color: rgba(184, 95, 53, 0.45);
-      color: var(--accent);
-    }}
     .filter-actions {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       justify-content: flex-end;
-    }}
-    .button.ghost {{
-      border-color: var(--line);
-      color: var(--muted);
-      background: transparent;
     }}
     .utility-link {{
       color: var(--accent);
@@ -3878,8 +3874,13 @@ def _render_admin_page(
       flex-wrap: wrap;
       margin-top: 10px;
     }}
+    .load-more {{
+      margin-top: 18px;
+      display: flex;
+      justify-content: center;
+    }}
     @media (max-width: 920px) {{
-      .stats, .filters, .trips {{
+      .stats, .trips {{
         grid-template-columns: 1fr;
       }}
       .topbar {{
@@ -3907,65 +3908,66 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-link" href="/admin?view=reviewed&limit={limit}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
-      <a class="panel stat stat-link" href="/admin?view=needs_review&limit={limit}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
-      <a class="panel stat stat-link" href="/admin?view=rejected&limit={limit}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
-      <a class="panel stat stat-link" href="/admin?view=private&limit={limit}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
-      <a class="panel stat stat-link" href="/admin?view=public&limit={limit}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query()}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='confirmed')}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review')}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='rejected')}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
     </section>
 
     <section class="panel">
-      <form method="get" action="/admin" class="filters" data-admin-filters>
-        <label>View
-          <select name="view" data-view-select>
-            <option value="all"{selected(current_view, "all")}>All trips</option>
-            <option value="needs_review"{selected(current_view, "needs_review")}>Needs review</option>
-            <option value="reviewed"{selected(current_view, "reviewed")}>Reviewed</option>
-            <option value="rejected"{selected(current_view, "rejected")}>Rejected</option>
-            <option value="published"{selected(current_view, "published")}>Published</option>
-            <option value="public"{selected(current_view, "public")}>Public only</option>
-            <option value="private"{selected(current_view, "private")}>Private only</option>
-          </select>
-        </label>
-        <label>Limit
-          <select name="limit">
-            <option value="10"{selected(str(limit), "10")}>10</option>
-            <option value="25"{selected(str(limit), "25")}>25</option>
-            <option value="50"{selected(str(limit), "50")}>50</option>
-            <option value="200"{selected(str(limit), "200")}>All</option>
-          </select>
-        </label>
+      <div class="queue-toolbar">
+        <div class="queue-summary">{escape(active_summary)}</div>
         <div class="filter-actions">
-          <button class="button ghost" type="button" data-reset-filters>Reset</button>
+          {f'<a class="button ghost" href="/admin?{admin_query()}">Reset</a>' if show_reset else ''}
         </div>
-      </form>
+      </div>
 
-      <div class="trips">
+      <div class="trips" data-admin-trip-list>
         {cards_html}
       </div>
+      {load_more_markup}
     </section>
   </main>
   <script>
     (() => {{
-      const form = document.querySelector("[data-admin-filters]");
-      if (!form) return;
-      const viewSelect = form.querySelector("[data-view-select]");
-      const reset = form.querySelector("[data-reset-filters]");
-      const limitSelect = form.querySelector("select[name='limit']");
-      let submitTimer = null;
+      const loadMore = document.querySelector("[data-admin-load-more] button");
+      const list = document.querySelector("[data-admin-trip-list]");
+      if (!loadMore || !list) return;
 
-      const scheduleSubmit = () => {{
-        if (submitTimer) window.clearTimeout(submitTimer);
-        submitTimer = window.setTimeout(() => form.submit(), 180);
-      }};
-
-      viewSelect?.addEventListener("change", scheduleSubmit);
-      limitSelect?.addEventListener("change", scheduleSubmit);
-
-      reset?.addEventListener("click", () => {{
-        if (viewSelect) viewSelect.value = "all";
-        if (limitSelect) limitSelect.value = "25";
-        form.submit();
+      loadMore.addEventListener("click", async () => {{
+        if (loadMore.dataset.loading === "true") return;
+        const nextPage = Number(loadMore.dataset.nextPage || "0");
+        if (!nextPage) return;
+        loadMore.dataset.loading = "true";
+        loadMore.disabled = true;
+        loadMore.textContent = "Loading…";
+        try {{
+          const params = new URLSearchParams(window.location.search);
+          params.set("page", String(nextPage));
+          params.set("per_page", "{per_page}");
+          params.set("partial", "1");
+          const response = await fetch(`/admin?${{params.toString()}}`, {{
+            credentials: "same-origin",
+          }});
+          if (!response.ok) throw new Error("Unable to load more trips");
+          const payload = await response.json();
+          list.insertAdjacentHTML("beforeend", payload.html);
+          if (payload.has_more) {{
+            loadMore.dataset.nextPage = String(payload.next_page);
+            loadMore.disabled = false;
+            loadMore.textContent = "Load more";
+            delete loadMore.dataset.loading;
+          }} else {{
+            loadMore.closest(".load-more")?.remove();
+          }}
+        }} catch (error) {{
+          console.error(error);
+          loadMore.disabled = false;
+          loadMore.textContent = "Load more";
+          delete loadMore.dataset.loading;
+        }}
       }});
     }})();
   </script>
@@ -6285,8 +6287,8 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
             <div class="action-group">
               <span class="action-group-label">Review</span>
               <div class="segmented-control" role="group" aria-label="Review decision">
-                <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm" aria-pressed="{'true' if review_state == 'yes' else 'false'}">Yes</button>
-                <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject" aria-pressed="{'true' if review_state == 'no' else 'false'}">No</button>
+                <button class="button{' is-current' if review_state == 'yes' else ''}" type="submit" name="action" value="confirm" aria-pressed="{'true' if review_state == 'yes' else 'false'}">Trip</button>
+                <button class="button{' is-current' if review_state == 'no' else ''}" type="submit" name="action" value="reject" aria-pressed="{'true' if review_state == 'no' else 'false'}">Reject</button>
               </div>
             </div>
             <div class="action-group">
@@ -6519,7 +6521,7 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
                 }} else if (payload.review_state === "no") {{
                   workflowHelp.textContent = "Marked as not a trip. Public visibility is disabled for rejected items. Text edits autosave when you leave a field.";
                 }} else {{
-                  workflowHelp.textContent = "Start by answering Yes or No. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
+                  workflowHelp.textContent = "Start by marking the item as Trip or Reject. Visibility becomes available only after the trip is reviewed. Text edits autosave when you leave a field.";
                 }}
               }}
               const existing = document.querySelector("[data-toast]");
@@ -6662,37 +6664,20 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_homepage(
-    view: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     review_decision: Optional[str] = Query(default=None),
     include_private: Optional[bool] = Query(default=None),
     private_only: Optional[bool] = Query(default=None),
-    limit: int = Query(default=25, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=25, ge=1, le=100),
+    partial: int = Query(default=0),
 ) -> HTMLResponse:
-    normalized_view = _query_text(view)
     normalized_include_private = _query_optional_bool(include_private)
     normalized_private_only = _query_optional_bool(private_only)
+    normalized_page = page if isinstance(page, int) else 1
+    normalized_per_page = per_page if isinstance(per_page, int) else 25
+    normalized_partial = partial if isinstance(partial, int) else 0
     only_private = bool(normalized_private_only)
-    if normalized_view:
-        view_key = normalized_view.lower()
-        status = None
-        review_decision = None
-        normalized_include_private = True
-        only_private = False
-        if view_key == "needs_review":
-            status = "needs_review"
-        elif view_key == "reviewed":
-            review_decision = "confirmed"
-        elif view_key == "published":
-            status = "published"
-        elif view_key == "rejected":
-            review_decision = "rejected"
-        elif view_key == "ignored":
-            review_decision = "rejected"
-        elif view_key == "private":
-            only_private = True
-        elif view_key == "public":
-            normalized_include_private = False
     if normalized_include_private is None:
         normalized_include_private = True
     counts = trip_admin.get_trip_status_counts()
@@ -6701,8 +6686,15 @@ def admin_homepage(
         review_decision=review_decision,
         include_private=normalized_include_private,
         only_private=only_private,
-        limit=limit,
+        limit=normalized_per_page + 1,
+        offset=(normalized_page - 1) * normalized_per_page,
     )
+    has_more = len(trips) > normalized_per_page
+    trips = trips[:normalized_per_page]
+    if normalized_partial:
+        return JSONResponse(
+            {"html": _render_admin_trip_cards(trips), "next_page": normalized_page + 1, "has_more": has_more}
+        )
     return _html_response(
         _render_admin_page(
             trips,
@@ -6710,9 +6702,10 @@ def admin_homepage(
             review_decision=review_decision,
             include_private=normalized_include_private,
             only_private=only_private,
-            limit=limit,
+            per_page=normalized_per_page,
+            page=normalized_page,
+            has_more=has_more,
             counts=counts,
-            current_view=normalized_view or None,
         )
     )
 

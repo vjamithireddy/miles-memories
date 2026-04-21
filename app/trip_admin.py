@@ -1608,6 +1608,7 @@ def list_trips(
     include_private: bool = True,
     only_private: bool = False,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     filters: list[str] = []
     params: list[Any] = []
@@ -1656,8 +1657,9 @@ def list_trips(
                 {where_sql}
                 ORDER BY start_time DESC, id DESC
                 LIMIT %s
+                OFFSET %s
                 """,
-                [*params, limit],
+                [*params, limit, offset],
             )
             return [_normalize_trip(row) for row in cur.fetchall()]
 
@@ -1668,6 +1670,7 @@ def get_trip_status_counts() -> dict[str, int]:
             cur.execute(
                 """
                 SELECT
+                    COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE review_decision = 'confirmed' OR status = 'published') AS reviewed,
                     COUNT(*) FILTER (WHERE status = 'needs_review') AS needs_review,
                     COUNT(*) FILTER (WHERE review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored') AS rejected,
@@ -1678,6 +1681,7 @@ def get_trip_status_counts() -> dict[str, int]:
             )
             row = cur.fetchone() or {}
             return {
+                "total": int(row.get("total") or 0),
                 "reviewed": int(row.get("reviewed") or 0),
                 "needs_review": int(row.get("needs_review") or 0),
                 "rejected": int(row.get("rejected") or 0),

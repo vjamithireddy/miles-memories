@@ -466,7 +466,7 @@ class AppApiTests(unittest.TestCase):
                 status="needs_review",
                 review_decision="pending",
                 include_private=True,
-                limit=24,
+                per_page=24,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -474,6 +474,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b"Raw JSON Feed", response.body)
         self.assertIn(b"Data uploads", response.body)
+        self.assertIn(b">All</span>", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b"Open detail page", response.body)
         self.assertIn(b'class="utility-link"', response.body)
@@ -482,8 +483,26 @@ class AppApiTests(unittest.TestCase):
             review_decision="pending",
             include_private=True,
             only_private=False,
-            limit=24,
+            limit=25,
+            offset=0,
         )
+
+    def test_admin_homepage_partial_returns_trip_cards(self) -> None:
+        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]), \
+             patch("app.main.trip_admin.get_trip_status_counts", return_value=_trip_status_counts()):
+            response = admin_homepage(
+                status="needs_review",
+                include_private=True,
+                page=2,
+                per_page=25,
+                partial=1,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'"html"', response.body)
+        self.assertIn(b"Colorado Weekend", response.body)
+        self.assertIn(b'"next_page":3', response.body)
+        self.assertIn(b'"has_more":false', response.body)
 
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()
@@ -509,8 +528,8 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Travel legs load on demand.", response.body)
         self.assertIn(b"data-leg-list", response.body)
         self.assertIn(b"Review saved.", response.body)
-        self.assertIn(b"Yes", response.body)
-        self.assertIn(b"No", response.body)
+        self.assertIn(b"Trip", response.body)
+        self.assertIn(b"Reject", response.body)
         self.assertIn(b"Public", response.body)
         self.assertIn(b"Private", response.body)
         self.assertNotIn(b"Save details", response.body)
@@ -561,7 +580,7 @@ class AppApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(
-            b"Start by answering Yes or No. Visibility becomes available only after the trip is reviewed.",
+            b"Start by marking the item as Trip or Reject. Visibility becomes available only after the trip is reviewed.",
             response.body,
         )
         self.assertIn(b'aria-label="Visibility"', response.body)
