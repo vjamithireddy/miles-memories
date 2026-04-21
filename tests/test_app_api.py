@@ -417,6 +417,22 @@ class AppApiTests(unittest.TestCase):
 
         self.assertEqual(rendered, "ascent 213 ft / descent 384 ft")
 
+    def test_build_trip_snapshot_preserves_elevation_loss_for_public_preview(self) -> None:
+        trip = _trip_detail()
+        with patch("app.trip_admin.get_trip", return_value=trip), \
+             patch("app.trip_admin.get_trip_route_points", return_value=[]), \
+             patch("app.trip_admin.get_trip_activity_summary", return_value=trip["activities_summary"]), \
+             patch("app.trip_admin.upsert_trip_snapshot") as mock_upsert:
+            from app.trip_admin import build_trip_snapshot
+
+            snapshot = build_trip_snapshot(trip["id"])
+
+        self.assertIsNotNone(snapshot)
+        public_items = snapshot["public"]["activities_summary"]["items"]
+        self.assertEqual(public_items[0]["elevation_loss_meters"], 1340)
+        args = mock_upsert.call_args.kwargs["public_payload"]["activities_summary"]["items"]
+        self.assertEqual(args[0]["elevation_loss_meters"], 1340)
+
     def test_health_returns_plain_text(self) -> None:
         response = health()
 

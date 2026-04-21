@@ -1098,6 +1098,7 @@ def build_trip_snapshot(trip_id: int) -> dict[str, Any] | None:
                 "duration_seconds": item.get("duration_seconds"),
                 "distance_meters": item.get("distance_meters"),
                 "elevation_gain_meters": item.get("elevation_gain_meters"),
+                "elevation_loss_meters": item.get("elevation_loss_meters"),
             }
         )
     public_payload = {
