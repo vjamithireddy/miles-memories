@@ -526,6 +526,18 @@ class AppApiTests(unittest.TestCase):
             b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25"><strong>1</strong><span>All</span>',
             response.body,
         )
+        self.assertIn(
+            b'href="/admin?status=&review_decision=confirmed&include_private=true&private_only=false&page=1&per_page=25"><strong>0</strong><span>Reviewed</span>',
+            response.body,
+        )
+        self.assertIn(
+            b'href="/admin?status=needs_review&review_decision=&include_private=true&private_only=false&page=1&per_page=25"><strong>1</strong><span>Needs review</span>',
+            response.body,
+        )
+        self.assertIn(
+            b'href="/admin?status=&review_decision=rejected&include_private=true&private_only=false&page=1&per_page=25"><strong>0</strong><span>Rejected</span>',
+            response.body,
+        )
 
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()

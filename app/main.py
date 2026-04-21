@@ -3908,12 +3908,12 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=True, private_only_value=False)}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='confirmed', include_private_value=True, private_only_value=False)}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review', include_private_value=True, private_only_value=False)}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='rejected', include_private_value=True, private_only_value=False)}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=True, private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=False, private_only_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=False)}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=True, private_only_value=False)}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=False)}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
     </section>
 
     <section class="panel">
