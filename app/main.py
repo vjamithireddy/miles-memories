@@ -3908,19 +3908,19 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-link" href="/admin?{admin_query()}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='confirmed')}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review')}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='rejected')}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=True, private_only_value=False)}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='confirmed', include_private_value=True, private_only_value=False)}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review', include_private_value=True, private_only_value=False)}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(review_value='rejected', include_private_value=True, private_only_value=False)}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=True, private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(include_private_value=False, private_only_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
     </section>
 
     <section class="panel">
       <div class="queue-toolbar">
         <div class="queue-summary">{escape(active_summary)}</div>
         <div class="filter-actions">
-          {f'<a class="button ghost" href="/admin?{admin_query()}">Reset</a>' if show_reset else ''}
+          {f'<a class="button ghost" href="/admin?{admin_query(include_private_value=True, private_only_value=False)}">Reset</a>' if show_reset else ''}
         </div>
       </div>
 
@@ -6672,6 +6672,8 @@ def admin_homepage(
     per_page: int = Query(default=25, ge=1, le=100),
     partial: int = Query(default=0),
 ) -> HTMLResponse:
+    normalized_status = _query_text(status)
+    normalized_review_decision = _query_text(review_decision)
     normalized_include_private = _query_optional_bool(include_private)
     normalized_private_only = _query_optional_bool(private_only)
     normalized_page = page if isinstance(page, int) else 1
@@ -6682,8 +6684,8 @@ def admin_homepage(
         normalized_include_private = True
     counts = trip_admin.get_trip_status_counts()
     trips = trip_admin.list_trips(
-        status=status,
-        review_decision=review_decision,
+        status=normalized_status or None,
+        review_decision=normalized_review_decision or None,
         include_private=normalized_include_private,
         only_private=only_private,
         limit=normalized_per_page + 1,
@@ -6698,8 +6700,8 @@ def admin_homepage(
     return _html_response(
         _render_admin_page(
             trips,
-            status=status,
-            review_decision=review_decision,
+            status=normalized_status or None,
+            review_decision=normalized_review_decision or None,
             include_private=normalized_include_private,
             only_private=only_private,
             per_page=normalized_per_page,

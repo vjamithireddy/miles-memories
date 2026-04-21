@@ -504,6 +504,29 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'"next_page":3', response.body)
         self.assertIn(b'"has_more":false', response.body)
 
+    def test_admin_homepage_stat_links_do_not_mix_public_and_private_filters(self) -> None:
+        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]), \
+             patch("app.main.trip_admin.get_trip_status_counts", return_value=_trip_status_counts()):
+            response = admin_homepage(
+                include_private=False,
+                private_only=True,
+                page=1,
+                per_page=25,
+            )
+
+        self.assertIn(
+            b'href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=25"><strong>0</strong><span>Public</span>',
+            response.body,
+        )
+        self.assertIn(
+            b'href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=25"><strong>1</strong><span>Private</span>',
+            response.body,
+        )
+        self.assertIn(
+            b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25"><strong>1</strong><span>All</span>',
+            response.body,
+        )
+
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()
         with patch("app.main.trip_admin.get_trip_light", return_value=trip) as mock_get, \
