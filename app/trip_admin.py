@@ -1234,7 +1234,7 @@ def list_garmin_activity_types() -> list[str]:
                 ORDER BY activity_type
                 """
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            return [row[0] for row in cur.fetchall() if row and row[0] and row[0] != "other"]
 
 
 def list_unattached_activity_types() -> list[str]:
@@ -1250,7 +1250,7 @@ def list_unattached_activity_types() -> list[str]:
                 ORDER BY activity_type
                 """
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            return [row[0] for row in cur.fetchall() if row and row[0] and row[0] != "other"]
 
 
 def get_trip_light(trip_id: int) -> dict[str, Any] | None:

@@ -18,6 +18,12 @@ class GarminParserTests(unittest.TestCase):
             "cycling",
         )
 
+    def test_canonical_activity_type_maps_floor_climbing(self) -> None:
+        self.assertEqual(
+            _canonical_activity_type("floor_climbing", activity_name="Floor Climb"),
+            "climbing",
+        )
+
     def test_canonical_activity_type_falls_back_to_activity_name(self) -> None:
         self.assertEqual(
             _canonical_activity_type(None, activity_name="Columbia Walking"),

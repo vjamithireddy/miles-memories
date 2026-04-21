@@ -264,7 +264,7 @@ class AppApiTests(unittest.TestCase):
 
     def test_admin_unattached_activities_page_uses_unattached_activity_types(self) -> None:
         with patch("app.main.trip_admin.list_unattached_activities", return_value=[]), \
-             patch("app.main.trip_admin.list_unattached_activity_types", return_value=["hiking", "running", "walking"]):
+             patch("app.main.trip_admin.list_unattached_activity_types", return_value=["climbing", "hiking", "running", "walking"]):
             response = admin_unattached_activities_page(
                 search="",
                 activity_type="",
@@ -276,6 +276,7 @@ class AppApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<option value="climbing">climbing</option>', response.body)
         self.assertIn(b'<option value="hiking">hiking</option>', response.body)
         self.assertIn(b'<option value="running">running</option>', response.body)
         self.assertIn(b'<option value="walking">walking</option>', response.body)

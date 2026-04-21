@@ -224,6 +224,8 @@ def _canonical_activity_type(raw_type: object, *, activity_name: str | None = No
         "walking": "walking",
         "hiking": "hiking",
         "mountaineering": "hiking",
+        "floor_climbing": "climbing",
+        "stair_climbing": "climbing",
         "cycling": "cycling",
         "road_biking": "cycling",
         "road_cycling": "cycling",
