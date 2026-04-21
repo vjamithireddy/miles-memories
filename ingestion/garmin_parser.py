@@ -201,6 +201,73 @@ def _normalize_elevation(
     return numeric
 
 
+def _canonical_activity_type(raw_type: object, *, activity_name: str | None = None) -> str:
+    value = ""
+    if isinstance(raw_type, dict):
+        candidate = (
+            raw_type.get("typeKey")
+            or raw_type.get("activityTypeKey")
+            or raw_type.get("key")
+            or raw_type.get("type")
+            or raw_type.get("name")
+        )
+        if candidate is not None:
+            value = str(candidate)
+    elif raw_type is not None:
+        value = str(raw_type)
+
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    direct_map = {
+        "running": "running",
+        "trail_running": "running",
+        "treadmill_running": "running",
+        "walking": "walking",
+        "hiking": "hiking",
+        "mountaineering": "hiking",
+        "cycling": "cycling",
+        "road_biking": "cycling",
+        "road_cycling": "cycling",
+        "gravel_cycling": "cycling",
+        "mountain_biking": "cycling",
+        "indoor_cycling": "cycling",
+        "e_biking": "cycling",
+        "biking": "cycling",
+        "swimming": "swimming",
+        "lap_swimming": "swimming",
+        "open_water_swimming": "swimming",
+        "kayaking": "paddling",
+        "rowing": "rowing",
+        "stand_up_paddleboarding": "paddling",
+        "paddling": "paddling",
+        "skiing": "skiing",
+        "cross_country_skiing": "skiing",
+        "snowboarding": "snowboarding",
+        "strength_training": "strength",
+        "strength": "strength",
+    }
+    if normalized in direct_map:
+        return direct_map[normalized]
+
+    haystack = f"{normalized} {(activity_name or '').strip().lower()}".strip()
+    if "run" in haystack:
+        return "running"
+    if "walk" in haystack:
+        return "walking"
+    if "hik" in haystack or "trail" in haystack:
+        return "hiking"
+    if "cycl" in haystack or "bike" in haystack or "ride" in haystack:
+        return "cycling"
+    if "swim" in haystack:
+        return "swimming"
+    if "kayak" in haystack or "paddle" in haystack:
+        return "paddling"
+    if "row" in haystack:
+        return "rowing"
+    if "ski" in haystack:
+        return "skiing"
+    return "other"
+
+
 def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -223,14 +290,11 @@ def _parse_garmin_summary(path: str) -> list[ActivityRecord]:
         source_activity_id = str(entry.get("activityId") or entry.get("activity_id") or "").strip()
         if not source_activity_id:
             continue
-        activity_type = "other"
-        activity_type_info = entry.get("activityType")
-        if isinstance(activity_type_info, dict):
-            activity_type = activity_type_info.get("typeKey") or activity_type
-        elif isinstance(activity_type_info, str):
-            activity_type = activity_type_info
-        activity_type = entry.get("activityTypeKey") or activity_type
-        activity_name = entry.get("name") or entry.get("activityName") or activity_type
+        activity_name = entry.get("name") or entry.get("activityName") or "Activity"
+        activity_type = _canonical_activity_type(
+            entry.get("activityTypeKey") or entry.get("activityType"),
+            activity_name=str(activity_name),
+        )
         start_time = _parse_datetime(entry.get("startTimeGmt") or entry.get("startTimeLocal"))
         duration_seconds = _normalize_duration(entry.get("duration"))
         end_time = _parse_datetime(entry.get("endTimeGmt") or entry.get("endTimeLocal"))

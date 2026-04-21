@@ -14,6 +14,7 @@ from app.main import (
     _format_activity_elevation_pair,
     admin_basic_auth,
     admin_homepage,
+    admin_unattached_activities_page,
     admin_overrides_page,
     admin_trip_destination_page,
     admin_trip_detail_page,
@@ -260,6 +261,25 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"make detect-trips", response.body)
         self.assertIn(b"make run-garmin-mcp", response.body)
         self.assertIn(b"Back to queue", response.body)
+
+    def test_admin_unattached_activities_page_uses_unattached_activity_types(self) -> None:
+        with patch("app.main.trip_admin.list_unattached_activities", return_value=[]), \
+             patch("app.main.trip_admin.list_unattached_activity_types", return_value=["hiking", "running", "walking"]):
+            response = admin_unattached_activities_page(
+                search="",
+                activity_type="",
+                start_date="",
+                end_date="",
+                page=1,
+                per_page=25,
+                partial=0,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<option value="hiking">hiking</option>', response.body)
+        self.assertIn(b'<option value="running">running</option>', response.body)
+        self.assertIn(b'<option value="walking">walking</option>', response.body)
+        self.assertNotIn(b'<option value="other">other</option>', response.body)
 
     def test_homepage_returns_html(self) -> None:
         published_trip = _trip_summary()

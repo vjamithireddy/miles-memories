@@ -945,7 +945,7 @@ def admin_unattached_activities_page(
     )
     has_more = len(activities) > per_page
     activities = activities[:per_page]
-    activity_types = trip_admin.list_garmin_activity_types()
+    activity_types = trip_admin.list_unattached_activity_types()
     if partial:
         return JSONResponse(
             {"html": _render_activity_rows(activities), "next_page": page + 1, "has_more": has_more}
