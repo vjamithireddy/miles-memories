@@ -3658,6 +3658,31 @@ def _render_admin_page(
 ) -> str:
     cards_html = _render_admin_trip_cards(trips)
 
+    def split_width(part: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return max(0.0, min(100.0, (part / total) * 100.0))
+
+    def stat_formula(items: list[tuple[str, int]]) -> str:
+        return " + ".join(f"{label} {value}" for label, value in items)
+
+    def split_bar(total: int, public_count: int, private_count: int, *, label: str) -> str:
+        public_width = split_width(public_count, total)
+        private_width = split_width(private_count, total)
+        return f"""
+          <div class="stat-split">
+            <div class="stat-split-label">{label}</div>
+            <div class="stat-bar" aria-hidden="true">
+              <span class="stat-bar-segment public" style="width: {public_width:.2f}%"></span>
+              <span class="stat-bar-segment private" style="width: {private_width:.2f}%"></span>
+            </div>
+            <div class="stat-legend">
+              <span class="stat-legend-item"><i class="swatch public"></i>Public {public_count}</span>
+              <span class="stat-legend-item"><i class="swatch private"></i>Private {private_count}</span>
+            </div>
+          </div>
+        """
+
     def admin_query(
         *,
         status_value: Optional[str] = status,
@@ -3778,13 +3803,91 @@ def _render_admin_page(
       gap: 16px;
       margin-bottom: 20px;
     }}
+    .stat {{
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-height: 154px;
+    }}
     .stat strong {{
       display: block;
       font-size: 2rem;
-      margin-bottom: 6px;
     }}
     .stat span {{
       color: var(--muted);
+    }}
+    .stat-kicker {{
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }}
+    .stat-label {{
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: var(--ink);
+    }}
+    .stat-note {{
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }}
+    .stat-formula {{
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }}
+    .stat-split {{
+      display: grid;
+      gap: 8px;
+      margin-top: auto;
+    }}
+    .stat-split-label {{
+      color: var(--muted);
+      font-size: 0.86rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }}
+    .stat-bar {{
+      display: flex;
+      width: 100%;
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(101, 114, 134, 0.12);
+    }}
+    .stat-bar-segment {{
+      height: 100%;
+      display: block;
+    }}
+    .stat-bar-segment.public {{
+      background: #2e6a4b;
+    }}
+    .stat-bar-segment.private {{
+      background: #7b5ea7;
+    }}
+    .stat-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .stat-legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .swatch {{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }}
+    .swatch.public {{
+      background: #2e6a4b;
+    }}
+    .swatch.private {{
+      background: #7b5ea7;
     }}
     .stat-link {{
       text-decoration: none;
@@ -3958,12 +4061,50 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}"><strong>{counts.get("total", 0)}</strong><span>All</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=False)}"><strong>{counts.get("reviewed", 0)}</strong><span>Reviewed</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=True, private_only_value=False)}"><strong>{counts.get("needs_review", 0)}</strong><span>Needs review</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=False)}"><strong>{counts.get("rejected", 0)}</strong><span>Rejected</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}"><strong>{counts.get("private", 0)}</strong><span>Private</span></a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}"><strong>{counts.get("public", 0)}</strong><span>Public</span></a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("total", 0)}</strong>
+          <span class="stat-label">All trips</span>
+        </div>
+        <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
+        {split_bar(counts.get("total", 0), counts.get("public", 0), counts.get("private", 0), label="All trips = public + private")}
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("reviewed", 0)}</strong>
+          <span class="stat-label">Reviewed</span>
+        </div>
+        <div class="stat-formula">{escape(stat_formula([("Public", counts.get("reviewed_public", 0)), ("Private", counts.get("reviewed_private", 0))]))}</div>
+        {split_bar(counts.get("reviewed", 0), counts.get("reviewed_public", 0), counts.get("reviewed_private", 0), label="Reviewed = public + private")}
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=True, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("needs_review", 0)}</strong>
+          <span class="stat-label">Needs review</span>
+        </div>
+        <div class="stat-note">Trips still waiting for a decision.</div>
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("rejected", 0)}</strong>
+          <span class="stat-label">Rejected</span>
+        </div>
+        <div class="stat-note">Trips intentionally rejected or ignored.</div>
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("private", 0)}</strong>
+          <span class="stat-label">Private</span>
+        </div>
+        <div class="stat-note">Hidden from the published archive.</div>
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("public", 0)}</strong>
+          <span class="stat-label">Public</span>
+        </div>
+        <div class="stat-note">Visible on the published trip pages.</div>
+      </a>
     </section>
 
     <section class="panel">

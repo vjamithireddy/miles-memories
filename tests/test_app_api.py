@@ -161,6 +161,8 @@ def _trip_status_counts() -> dict:
         "total": 1,
         "needs_review": 1,
         "reviewed": 0,
+        "reviewed_public": 0,
+        "reviewed_private": 0,
         "published": 0,
         "rejected": 0,
         "ignored": 0,
@@ -490,7 +492,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b"Raw JSON Feed", response.body)
         self.assertIn(b"Data uploads", response.body)
-        self.assertIn(b">All</span>", response.body)
+        self.assertIn(b">All trips</span>", response.body)
+        self.assertIn(b"Reviewed 0 + Needs review 1 + Rejected 0", response.body)
+        self.assertIn(b"Reviewed = public + private", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
         self.assertIn(b'data-admin-trip-search', response.body)
@@ -558,29 +562,35 @@ class AppApiTests(unittest.TestCase):
             )
 
         self.assertIn(
-            b'href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=25"><strong>0</strong><span>Public</span>',
+            b'href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=25"',
             response.body,
         )
         self.assertIn(
-            b'href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=25"><strong>1</strong><span>Private</span>',
+            b'href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=25"',
+            response.body,
+        )
+        self.assertIn(b'<span class="stat-label">Public</span>', response.body)
+        self.assertIn(b'<span class="stat-label">Private</span>', response.body)
+        self.assertIn(
+            b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
         )
         self.assertIn(
-            b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25"><strong>1</strong><span>All</span>',
+            b'href="/admin?status=&review_decision=confirmed&include_private=true&private_only=false&page=1&per_page=25"',
+            response.body,
+        )
+        self.assertIn(b'<span class="stat-label">All trips</span>', response.body)
+        self.assertIn(b'<span class="stat-label">Reviewed</span>', response.body)
+        self.assertIn(
+            b'href="/admin?status=needs_review&review_decision=&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
         )
         self.assertIn(
-            b'href="/admin?status=&review_decision=confirmed&include_private=true&private_only=false&page=1&per_page=25"><strong>0</strong><span>Reviewed</span>',
+            b'href="/admin?status=&review_decision=rejected&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
         )
-        self.assertIn(
-            b'href="/admin?status=needs_review&review_decision=&include_private=true&private_only=false&page=1&per_page=25"><strong>1</strong><span>Needs review</span>',
-            response.body,
-        )
-        self.assertIn(
-            b'href="/admin?status=&review_decision=rejected&include_private=true&private_only=false&page=1&per_page=25"><strong>0</strong><span>Rejected</span>',
-            response.body,
-        )
+        self.assertIn(b'<span class="stat-label">Needs review</span>', response.body)
+        self.assertIn(b'<span class="stat-label">Rejected</span>', response.body)
 
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()

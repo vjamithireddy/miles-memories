@@ -1685,6 +1685,14 @@ def get_trip_status_counts() -> dict[str, int]:
                 SELECT
                     COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE review_decision = 'confirmed' OR status = 'published') AS reviewed,
+                    COUNT(*) FILTER (
+                        WHERE (review_decision = 'confirmed' OR status = 'published')
+                          AND is_private = FALSE
+                    ) AS reviewed_public,
+                    COUNT(*) FILTER (
+                        WHERE (review_decision = 'confirmed' OR status = 'published')
+                          AND is_private = TRUE
+                    ) AS reviewed_private,
                     COUNT(*) FILTER (WHERE status = 'needs_review') AS needs_review,
                     COUNT(*) FILTER (WHERE review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored') AS rejected,
                     COUNT(*) FILTER (WHERE is_private = TRUE) AS private,
@@ -1696,6 +1704,8 @@ def get_trip_status_counts() -> dict[str, int]:
             return {
                 "total": int(row.get("total") or 0),
                 "reviewed": int(row.get("reviewed") or 0),
+                "reviewed_public": int(row.get("reviewed_public") or 0),
+                "reviewed_private": int(row.get("reviewed_private") or 0),
                 "needs_review": int(row.get("needs_review") or 0),
                 "rejected": int(row.get("rejected") or 0),
                 "private": int(row.get("private") or 0),
