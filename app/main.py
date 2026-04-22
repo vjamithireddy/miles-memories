@@ -4069,6 +4069,20 @@ def _render_admin_page(
         <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
         {split_bar(counts.get("total", 0), counts.get("public", 0), counts.get("private", 0), label="All trips = public + private")}
       </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("private", 0)}</strong>
+          <span class="stat-label">Private</span>
+        </div>
+        <div class="stat-note">Hidden from the published archive.</div>
+      </a>
+      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}">
+        <div class="stat-kicker">
+          <strong>{counts.get("public", 0)}</strong>
+          <span class="stat-label">Public</span>
+        </div>
+        <div class="stat-note">Visible on the published trip pages.</div>
+      </a>
       <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=False)}">
         <div class="stat-kicker">
           <strong>{counts.get("reviewed", 0)}</strong>
@@ -4090,20 +4104,6 @@ def _render_admin_page(
           <span class="stat-label">Rejected</span>
         </div>
         <div class="stat-note">Trips intentionally rejected or ignored.</div>
-      </a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}">
-        <div class="stat-kicker">
-          <strong>{counts.get("private", 0)}</strong>
-          <span class="stat-label">Private</span>
-        </div>
-        <div class="stat-note">Hidden from the published archive.</div>
-      </a>
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}">
-        <div class="stat-kicker">
-          <strong>{counts.get("public", 0)}</strong>
-          <span class="stat-label">Public</span>
-        </div>
-        <div class="stat-note">Visible on the published trip pages.</div>
       </a>
     </section>
 
