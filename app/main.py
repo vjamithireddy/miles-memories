@@ -738,7 +738,7 @@ def _render_public_homepage(
           <div class="published-search">
             <input type="search" placeholder="Search trips..." value="{escape(search_query)}" data-published-search>
           </div>
-          <p>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
+          <p data-published-count>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
         </div>
       </div>
       {f'<div class=\"archive-link\"><a class=\"button\" href=\"/trips?page=1\">View all trips</a></div>' if show_archive_link else ''}
@@ -836,9 +836,35 @@ def _render_public_homepage(
   <script>
     (() => {{
       const input = document.querySelector("[data-published-search]");
+      const grid = document.querySelector(".published-grid");
+      const count = document.querySelector("[data-published-count]");
+      const loadMoreContainer = document.querySelector("[data-load-more]");
       if (!input) return;
       let timer;
-      const submit = () => {{
+      const updateCount = (total) => {{
+        if (!count) return;
+        const tripLabel = total === 1 ? "trip" : "trips";
+        count.textContent = `${{total}} visible ${{tripLabel}}`;
+      }};
+      const syncLoadMore = (payload, term) => {{
+        if (!loadMoreContainer) return;
+        loadMoreContainer.dataset.page = String(payload.next_page ? payload.next_page - 1 : 1);
+        loadMoreContainer.dataset.search = term;
+        loadMoreContainer.dataset.total = String(payload.total ?? 0);
+        const button = loadMoreContainer.querySelector("[data-load-more-button]");
+        if (!button) return;
+        if (payload.has_more) {{
+          button.disabled = false;
+          button.textContent = "Load more trips";
+          loadMoreContainer.style.display = "";
+        }} else {{
+          button.disabled = true;
+          button.textContent = "No more trips";
+          loadMoreContainer.style.display = payload.total ? "" : "none";
+        }}
+      }};
+      const submit = async () => {{
+        if (!grid) return;
         const term = input.value.trim();
         const url = new URL(window.location.href);
         if (term) {{
@@ -847,7 +873,21 @@ def _render_public_homepage(
           url.searchParams.delete("q");
         }}
         url.searchParams.delete("page");
-        window.location.href = url.toString();
+        try {{
+          const response = await fetch(`/trips?partial=1&page=1&per_page={per_page}${{term ? `&q=${{encodeURIComponent(term)}}` : ""}}`, {{
+            credentials: "same-origin",
+          }});
+          if (!response.ok) throw new Error("Unable to search trips");
+          const payload = await response.json();
+          grid.innerHTML = payload.html || "";
+          updateCount(Number(payload.total || 0));
+          syncLoadMore(payload, term);
+          window.history.replaceState(null, "", url.toString());
+          input.focus({{ preventScroll: true }});
+          input.setSelectionRange(term.length, term.length);
+        }} catch (error) {{
+          console.error(error);
+        }}
       }};
       input.addEventListener("input", () => {{
         window.clearTimeout(timer);
@@ -877,7 +917,6 @@ def public_trips_page(
     total = trip_admin.count_published_trips(search=search_query)
     offset = (page - 1) * per_page
     trips = trip_admin.list_published_trips(limit=per_page, offset=offset, search=search_query)
-    intro = trip_admin.build_public_home_intro()
     if partial:
         html = _render_public_trip_cards(trips)
         has_more = total > page * per_page
@@ -888,8 +927,10 @@ def public_trips_page(
                 "html": html,
                 "next_page": next_page,
                 "has_more": has_more,
+                "total": total,
             }
         )
+    intro = trip_admin.build_public_home_intro()
     parks_list = parks.list_parks()
     parks_counts = parks.park_counts(parks_list)
     response = _html_response(

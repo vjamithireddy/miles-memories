@@ -26,6 +26,7 @@ from app.main import (
     homepage,
     list_admin_trips,
     public_trip_detail_page,
+    public_trips_page,
     review_trip_from_form,
     review_trip,
     update_trip_segment_from_form,
@@ -298,6 +299,21 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 308)
         self.assertEqual(response.headers["location"], "/trips")
         mock_list.assert_not_called()
+
+    def test_public_trips_partial_includes_total_for_search_updates(self) -> None:
+        published_trip = _trip_summary()
+        published_trip["is_private"] = False
+        published_trip["publish_ready"] = True
+        published_trip["status"] = "published"
+
+        with patch("app.main.trip_admin.count_published_trips", return_value=6), \
+             patch("app.main.trip_admin.list_published_trips", return_value=[published_trip]):
+            response = public_trips_page(page=1, per_page=12, partial=True, q="ar")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'"total":6', response.body)
+        self.assertIn(b'"has_more":false', response.body)
+        self.assertIn(b"Colorado Weekend", response.body)
 
     def test_public_trip_detail_renders_read_only_story(self) -> None:
         trip = _trip_detail()
