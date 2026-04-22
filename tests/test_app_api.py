@@ -498,6 +498,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Data uploads", response.body)
         self.assertIn(b">All trips</span>", response.body)
         self.assertIn(b"Reviewed 0 + Needs review 1 + Rejected 0", response.body)
+        self.assertIn(b"All trips 1 = Public 0 + Private 1", response.body)
         self.assertIn(b"Reviewed 0 = Public 0 + Private 0", response.body)
         self.assertIn(b"Needs review 1 = Public 0 + Private 1", response.body)
         self.assertIn(b"Rejected 0 = Public 0 + Private 0", response.body)

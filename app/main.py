@@ -4149,6 +4149,7 @@ def _render_admin_page(
         </div>
         <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
         <div class="status-breakdown-list">
+          {status_breakdown_row("All trips", counts.get("total", 0), counts.get("public", 0), counts.get("private", 0), tone_class="reviewed")}
           {status_breakdown_row("Reviewed", counts.get("reviewed", 0), counts.get("reviewed_public", 0), counts.get("reviewed_private", 0), tone_class="reviewed")}
           {status_breakdown_row("Needs review", counts.get("needs_review", 0), counts.get("needs_review_public", 0), counts.get("needs_review_private", 0), tone_class="needs-review")}
           {status_breakdown_row("Rejected", counts.get("rejected", 0), counts.get("rejected_public", 0), counts.get("rejected_private", 0), tone_class="rejected")}
