@@ -1694,7 +1694,23 @@ def get_trip_status_counts() -> dict[str, int]:
                           AND is_private = TRUE
                     ) AS reviewed_private,
                     COUNT(*) FILTER (WHERE status = 'needs_review') AS needs_review,
+                    COUNT(*) FILTER (
+                        WHERE status = 'needs_review'
+                          AND is_private = FALSE
+                    ) AS needs_review_public,
+                    COUNT(*) FILTER (
+                        WHERE status = 'needs_review'
+                          AND is_private = TRUE
+                    ) AS needs_review_private,
                     COUNT(*) FILTER (WHERE review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored') AS rejected,
+                    COUNT(*) FILTER (
+                        WHERE (review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored')
+                          AND is_private = FALSE
+                    ) AS rejected_public,
+                    COUNT(*) FILTER (
+                        WHERE (review_decision = 'rejected' OR review_decision = 'ignored' OR status = 'ignored')
+                          AND is_private = TRUE
+                    ) AS rejected_private,
                     COUNT(*) FILTER (WHERE is_private = TRUE) AS private,
                     COUNT(*) FILTER (WHERE is_private = FALSE) AS public
                 FROM trips
@@ -1707,7 +1723,11 @@ def get_trip_status_counts() -> dict[str, int]:
                 "reviewed_public": int(row.get("reviewed_public") or 0),
                 "reviewed_private": int(row.get("reviewed_private") or 0),
                 "needs_review": int(row.get("needs_review") or 0),
+                "needs_review_public": int(row.get("needs_review_public") or 0),
+                "needs_review_private": int(row.get("needs_review_private") or 0),
                 "rejected": int(row.get("rejected") or 0),
+                "rejected_public": int(row.get("rejected_public") or 0),
+                "rejected_private": int(row.get("rejected_private") or 0),
                 "private": int(row.get("private") or 0),
                 "public": int(row.get("public") or 0),
             }

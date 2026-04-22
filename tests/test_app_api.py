@@ -160,11 +160,15 @@ def _trip_status_counts() -> dict:
     return {
         "total": 1,
         "needs_review": 1,
+        "needs_review_public": 0,
+        "needs_review_private": 1,
         "reviewed": 0,
         "reviewed_public": 0,
         "reviewed_private": 0,
         "published": 0,
         "rejected": 0,
+        "rejected_public": 0,
+        "rejected_private": 0,
         "ignored": 0,
         "private": 1,
         "public": 0,
@@ -494,7 +498,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Data uploads", response.body)
         self.assertIn(b">All trips</span>", response.body)
         self.assertIn(b"Reviewed 0 + Needs review 1 + Rejected 0", response.body)
-        self.assertIn(b"Reviewed = public + private", response.body)
+        self.assertIn(b"Outer ring shows status. Inner ring splits each status into public and private.", response.body)
+        self.assertIn(b"Reviewed public 0", response.body)
+        self.assertIn(b"Needs review private 1", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
         self.assertIn(b'data-admin-trip-search', response.body)

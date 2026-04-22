@@ -3663,6 +3663,23 @@ def _render_admin_page(
             return 0.0
         return max(0.0, min(100.0, (part / total) * 100.0))
 
+    def conic_gradient(stops: list[tuple[int, str]], *, empty_color: str) -> str:
+        total_value = sum(max(0, value) for value, _ in stops)
+        if total_value <= 0:
+            return f"conic-gradient(from -90deg, {empty_color} 0deg 360deg)"
+        segments: list[str] = []
+        current = 0.0
+        for value, color in stops:
+            normalized = max(0, value)
+            if normalized <= 0:
+                continue
+            next_angle = current + (normalized / total_value) * 360.0
+            segments.append(f"{color} {current:.2f}deg {next_angle:.2f}deg")
+            current = next_angle
+        if current < 360.0:
+            segments.append(f"{empty_color} {current:.2f}deg 360deg")
+        return "conic-gradient(from -90deg, " + ", ".join(segments) + ")"
+
     def stat_formula(items: list[tuple[str, int]]) -> str:
         return " + ".join(f"{label} {value}" for label, value in items)
 
@@ -3682,6 +3699,26 @@ def _render_admin_page(
             </div>
           </div>
         """
+
+    chart_outer = conic_gradient(
+        [
+            (counts.get("reviewed", 0), "#2e6a4b"),
+            (counts.get("needs_review", 0), "#c7852a"),
+            (counts.get("rejected", 0), "#b85f35"),
+        ],
+        empty_color="rgba(101, 114, 134, 0.12)",
+    )
+    chart_inner = conic_gradient(
+        [
+            (counts.get("reviewed_public", 0), "#2e6a4b"),
+            (counts.get("reviewed_private", 0), "#7b5ea7"),
+            (counts.get("needs_review_public", 0), "#58a07a"),
+            (counts.get("needs_review_private", 0), "#9b83c6"),
+            (counts.get("rejected_public", 0), "#d68a60"),
+            (counts.get("rejected_private", 0), "#b092d8"),
+        ],
+        empty_color="rgba(101, 114, 134, 0.12)",
+    )
 
     def admin_query(
         *,
@@ -3836,6 +3873,88 @@ def _render_admin_page(
       font-size: 0.95rem;
       line-height: 1.45;
     }}
+    .stat-chart-wrap {{
+      display: grid;
+      grid-template-columns: 168px 1fr;
+      gap: 18px;
+      align-items: center;
+      margin-top: auto;
+    }}
+    .stat-chart {{
+      position: relative;
+      width: 168px;
+      height: 168px;
+      border-radius: 50%;
+      background: rgba(101, 114, 134, 0.08);
+      display: grid;
+      place-items: center;
+    }}
+    .stat-chart-outer,
+    .stat-chart-inner,
+    .stat-chart-core {{
+      position: absolute;
+      border-radius: 50%;
+    }}
+    .stat-chart-outer {{
+      inset: 0;
+    }}
+    .stat-chart-inner {{
+      inset: 20px;
+    }}
+    .stat-chart-core {{
+      inset: 52px;
+      background: rgba(255, 249, 240, 0.98);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 10px;
+      z-index: 1;
+    }}
+    .stat-chart-core strong {{
+      font-size: 2rem;
+      line-height: 1;
+      color: var(--ink);
+    }}
+    .stat-chart-core span {{
+      display: block;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }}
+    .stat-chart-meta {{
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }}
+    .chart-caption {{
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }}
+    .chart-legend-group {{
+      display: grid;
+      gap: 6px;
+    }}
+    .chart-legend-title {{
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .chart-legend-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
+    .chart-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
     .stat-split {{
       display: grid;
       gap: 8px;
@@ -3888,6 +4007,27 @@ def _render_admin_page(
     }}
     .swatch.private {{
       background: #7b5ea7;
+    }}
+    .swatch.needs-review {{
+      background: #c7852a;
+    }}
+    .swatch.rejected {{
+      background: #b85f35;
+    }}
+    .swatch.reviewed-private {{
+      background: #7b5ea7;
+    }}
+    .swatch.needs-review-public {{
+      background: #58a07a;
+    }}
+    .swatch.needs-review-private {{
+      background: #9b83c6;
+    }}
+    .swatch.rejected-public {{
+      background: #d68a60;
+    }}
+    .swatch.rejected-private {{
+      background: #b092d8;
     }}
     .stat-link {{
       text-decoration: none;
@@ -4036,6 +4176,10 @@ def _render_admin_page(
       .stats, .trips {{
         grid-template-columns: 1fr;
       }}
+      .stat-chart-wrap {{
+        grid-template-columns: 1fr;
+        justify-items: center;
+      }}
       .topbar {{
         display: grid;
       }}
@@ -4067,7 +4211,38 @@ def _render_admin_page(
           <span class="stat-label">All trips</span>
         </div>
         <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
-        {split_bar(counts.get("total", 0), counts.get("public", 0), counts.get("private", 0), label="All trips = public + private")}
+        <div class="stat-chart-wrap">
+          <div class="stat-chart" aria-hidden="true">
+            <div class="stat-chart-outer" style="background: {chart_outer};"></div>
+            <div class="stat-chart-inner" style="background: {chart_inner};"></div>
+            <div class="stat-chart-core">
+              <strong>{counts.get("total", 0)}</strong>
+              <span>Total</span>
+            </div>
+          </div>
+          <div class="stat-chart-meta">
+            <div class="chart-caption">Outer ring shows status. Inner ring splits each status into public and private.</div>
+            <div class="chart-legend-group">
+              <div class="chart-legend-title">Status</div>
+              <div class="chart-legend-row">
+                <span class="chart-chip"><i class="swatch public"></i>Reviewed {counts.get("reviewed", 0)}</span>
+                <span class="chart-chip"><i class="swatch needs-review"></i>Needs review {counts.get("needs_review", 0)}</span>
+                <span class="chart-chip"><i class="swatch rejected"></i>Rejected {counts.get("rejected", 0)}</span>
+              </div>
+            </div>
+            <div class="chart-legend-group">
+              <div class="chart-legend-title">Visibility Within Status</div>
+              <div class="chart-legend-row">
+                <span class="chart-chip"><i class="swatch public"></i>Reviewed public {counts.get("reviewed_public", 0)}</span>
+                <span class="chart-chip"><i class="swatch reviewed-private"></i>Reviewed private {counts.get("reviewed_private", 0)}</span>
+                <span class="chart-chip"><i class="swatch needs-review-public"></i>Needs review public {counts.get("needs_review_public", 0)}</span>
+                <span class="chart-chip"><i class="swatch needs-review-private"></i>Needs review private {counts.get("needs_review_private", 0)}</span>
+                <span class="chart-chip"><i class="swatch rejected-public"></i>Rejected public {counts.get("rejected_public", 0)}</span>
+                <span class="chart-chip"><i class="swatch rejected-private"></i>Rejected private {counts.get("rejected_private", 0)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </a>
       <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}">
         <div class="stat-kicker">
