@@ -3628,6 +3628,7 @@ def _render_admin_trip_cards(trips: List[dict]) -> str:
               </div>
               <div class="meta-row">
                 {badges_html}
+                <span class="badge muted">{'Private' if trip.get('is_private') else 'Public'}</span>
               </div>
               <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
               <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
@@ -3649,6 +3650,7 @@ def _render_admin_page(
     review_decision: Optional[str],
     include_private: bool,
     only_private: bool,
+    search_query: str,
     per_page: int,
     page: int,
     has_more: bool,
@@ -3662,18 +3664,20 @@ def _render_admin_page(
         review_value: Optional[str] = review_decision,
         include_private_value: bool = include_private,
         private_only_value: bool = only_private,
+        search_value: str = search_query,
         page_value: int = 1,
     ) -> str:
-        return urlencode(
-            {
-                "status": status_value or "",
-                "review_decision": review_value or "",
-                "include_private": str(include_private_value).lower(),
-                "private_only": str(private_only_value).lower(),
-                "page": str(page_value),
-                "per_page": str(per_page),
-            }
-        )
+        params = {
+            "status": status_value or "",
+            "review_decision": review_value or "",
+            "include_private": str(include_private_value).lower(),
+            "private_only": str(private_only_value).lower(),
+            "page": str(page_value),
+            "per_page": str(per_page),
+        }
+        if search_value:
+            params["q"] = search_value
+        return urlencode(params)
 
     def filter_label() -> str:
         if only_private:
@@ -3695,7 +3699,7 @@ def _render_admin_page(
     showing_end = ((page - 1) * per_page) + len(trips)
     current_filter_label = filter_label()
     active_summary = f"Showing {showing_start}-{showing_end} · {current_filter_label}" if trips else current_filter_label
-    show_reset = any([status, review_decision, only_private, not include_private])
+    show_reset = any([status, review_decision, only_private, not include_private, search_query])
     load_more_markup = (
         f"""
         <div class="load-more" data-admin-load-more>
@@ -3831,6 +3835,21 @@ def _render_admin_page(
       color: var(--muted);
       font-size: 0.98rem;
     }}
+    .queue-search {{
+      min-width: min(360px, 100%);
+      flex: 1 1 260px;
+      display: flex;
+      justify-content: flex-end;
+    }}
+    .queue-search input {{
+      width: min(360px, 100%);
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.78);
+      padding: 12px 18px;
+      font: inherit;
+      color: var(--ink);
+    }}
     .trips {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3950,15 +3969,18 @@ def _render_admin_page(
     <section class="panel">
       <div class="queue-toolbar">
         <div class="queue-summary" data-queue-summary data-range-start="{showing_start}" data-range-end="{showing_end}" data-filter-label="{escape(current_filter_label)}">{escape(active_summary)}</div>
+        <div class="queue-search">
+          <input type="search" placeholder="Search trips..." value="{escape(search_query)}" data-admin-trip-search>
+        </div>
         <div class="filter-actions">
-          {f'<a class="button ghost" href="/admin?{admin_query(include_private_value=True, private_only_value=False)}">Reset</a>' if show_reset else ''}
+          {f'<a class="button ghost" href="/admin?{admin_query(include_private_value=True, private_only_value=False, search_value="")}">Reset</a>' if show_reset else ''}
         </div>
       </div>
 
       <div class="trips" data-admin-trip-list>
         {cards_html}
       </div>
-      {load_more_markup}
+      <div data-admin-load-more-container>{load_more_markup}</div>
     </section>
   </main>
   <script>
@@ -3966,50 +3988,116 @@ def _render_admin_page(
       const loadMore = document.querySelector("[data-admin-load-more] button");
       const list = document.querySelector("[data-admin-trip-list]");
       const summary = document.querySelector("[data-queue-summary]");
-      if (!loadMore || !list) return;
-
-      loadMore.addEventListener("click", async () => {{
-        if (loadMore.dataset.loading === "true") return;
-        const nextPage = Number(loadMore.dataset.nextPage || "0");
-        if (!nextPage) return;
-        loadMore.dataset.loading = "true";
-        loadMore.disabled = true;
-        loadMore.textContent = "Loading…";
+      const searchInput = document.querySelector("[data-admin-trip-search]");
+      const loadMoreContainer = document.querySelector("[data-admin-load-more-container]");
+      const baseParams = new URLSearchParams(window.location.search);
+      const filterLabel = summary?.dataset.filterLabel || "All trips";
+      const updateSummary = (count) => {{
+        if (!summary) return;
+        if (count > 0) {{
+          summary.dataset.rangeStart = "1";
+          summary.dataset.rangeEnd = String(count);
+          summary.textContent = `Showing 1-${{count}} · ${{filterLabel}}`;
+          return;
+        }}
+        summary.dataset.rangeStart = "0";
+        summary.dataset.rangeEnd = "0";
+        summary.textContent = filterLabel;
+      }};
+      const syncLoadMore = (payload, term) => {{
+        if (!loadMoreContainer) return;
+        const hasMore = Boolean(payload.has_more);
+        if (!hasMore) {{
+          loadMoreContainer.innerHTML = "";
+          return;
+        }}
+        loadMoreContainer.innerHTML = `
+          <div class="load-more" data-admin-load-more>
+            <button class="button" type="button" data-next-page="${{payload.next_page}}">Load more</button>
+          </div>
+        `;
+        bindLoadMoreButton(term);
+      }};
+      const buildParams = (page, term) => {{
+        const params = new URLSearchParams(baseParams.toString());
+        params.set("page", String(page));
+        params.set("per_page", "{per_page}");
+        if (term) {{
+          params.set("q", term);
+        }} else {{
+          params.delete("q");
+        }}
+        return params;
+      }};
+      const submitSearch = async () => {{
+        if (!searchInput || !list) return;
+        const term = searchInput.value.trim();
+        const params = buildParams(1, term);
+        const historyParams = new URLSearchParams(params.toString());
+        historyParams.delete("partial");
         try {{
-          const params = new URLSearchParams(window.location.search);
-          params.set("page", String(nextPage));
-          params.set("per_page", "{per_page}");
-          params.set("partial", "1");
-          const response = await fetch(`/admin?${{params.toString()}}`, {{
+          const requestParams = new URLSearchParams(params.toString());
+          requestParams.set("partial", "1");
+          const response = await fetch(`/admin?${{requestParams.toString()}}`, {{
             credentials: "same-origin",
           }});
-          if (!response.ok) throw new Error("Unable to load more trips");
+          if (!response.ok) throw new Error("Unable to search trips");
           const payload = await response.json();
-          list.insertAdjacentHTML("beforeend", payload.html);
-          if (summary && Number(payload.count || 0) > 0) {{
-            const rangeStart = Number(summary.dataset.rangeStart || "0");
-            const currentEnd = Number(summary.dataset.rangeEnd || "0");
-            const nextEnd = currentEnd + Number(payload.count || 0);
-            const label = summary.dataset.filterLabel || "All trips";
-            summary.dataset.rangeEnd = String(nextEnd);
-            summary.textContent = rangeStart > 0
-              ? `Showing ${{rangeStart}}-${{nextEnd}} · ${{label}}`
-              : label;
-          }}
-          if (payload.has_more) {{
-            loadMore.dataset.nextPage = String(payload.next_page);
-            loadMore.disabled = false;
-            loadMore.textContent = "Load more";
-            delete loadMore.dataset.loading;
-          }} else {{
-            loadMore.closest(".load-more")?.remove();
-          }}
+          list.innerHTML = payload.html || "";
+          updateSummary(Number(payload.count || 0));
+          syncLoadMore(payload, term);
+          window.history.replaceState(null, "", `/admin?${{historyParams.toString()}}`);
+          searchInput.focus({{ preventScroll: true }});
+          searchInput.setSelectionRange(term.length, term.length);
         }} catch (error) {{
           console.error(error);
-          loadMore.disabled = false;
-          loadMore.textContent = "Load more";
-          delete loadMore.dataset.loading;
         }}
+      }};
+      let searchTimer;
+
+      const bindLoadMoreButton = (termOverride = null) => {{
+        const button = document.querySelector("[data-admin-load-more] button");
+        if (!button || !list) return;
+        button.addEventListener("click", async () => {{
+          if (button.dataset.loading === "true") return;
+          const nextPage = Number(button.dataset.nextPage || "0");
+          if (!nextPage) return;
+          button.dataset.loading = "true";
+          button.disabled = true;
+          button.textContent = "Loading…";
+          const currentTerm = termOverride ?? searchInput?.value.trim() ?? "";
+          try {{
+            const params = buildParams(nextPage, currentTerm);
+            params.set("partial", "1");
+            const response = await fetch(`/admin?${{params.toString()}}`, {{
+              credentials: "same-origin",
+            }});
+            if (!response.ok) throw new Error("Unable to load more trips");
+            const payload = await response.json();
+            list.insertAdjacentHTML("beforeend", payload.html);
+            if (summary && Number(payload.count || 0) > 0) {{
+              const rangeStart = Number(summary.dataset.rangeStart || "0");
+              const currentEnd = Number(summary.dataset.rangeEnd || "0");
+              const nextEnd = currentEnd + Number(payload.count || 0);
+              summary.dataset.rangeEnd = String(nextEnd);
+              summary.textContent = rangeStart > 0
+                ? `Showing ${{rangeStart}}-${{nextEnd}} · ${{filterLabel}}`
+                : filterLabel;
+            }}
+            syncLoadMore(payload, currentTerm);
+          }} catch (error) {{
+            console.error(error);
+            button.disabled = false;
+            button.textContent = "Load more";
+            delete button.dataset.loading;
+          }}
+        }}, {{ once: true }});
+      }};
+
+      bindLoadMoreButton();
+      searchInput?.addEventListener("input", () => {{
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(submitSearch, 400);
       }});
     }})();
   </script>
@@ -6710,6 +6798,7 @@ def admin_homepage(
     review_decision: Optional[str] = Query(default=None),
     include_private: Optional[bool] = Query(default=None),
     private_only: Optional[bool] = Query(default=None),
+    q: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=25, ge=1, le=100),
     partial: int = Query(default=0),
@@ -6718,6 +6807,7 @@ def admin_homepage(
     normalized_review_decision = _query_text(review_decision)
     normalized_include_private = _query_optional_bool(include_private)
     normalized_private_only = _query_optional_bool(private_only)
+    normalized_search_query = _query_text(q).strip()
     normalized_page = page if isinstance(page, int) else 1
     normalized_per_page = per_page if isinstance(per_page, int) else 25
     normalized_partial = partial if isinstance(partial, int) else 0
@@ -6730,6 +6820,7 @@ def admin_homepage(
         review_decision=normalized_review_decision or None,
         include_private=normalized_include_private,
         only_private=only_private,
+        search=normalized_search_query or None,
         limit=normalized_per_page + 1,
         offset=(normalized_page - 1) * normalized_per_page,
     )
@@ -6751,6 +6842,7 @@ def admin_homepage(
             review_decision=normalized_review_decision or None,
             include_private=normalized_include_private,
             only_private=only_private,
+            search_query=normalized_search_query,
             per_page=normalized_per_page,
             page=normalized_page,
             has_more=has_more,

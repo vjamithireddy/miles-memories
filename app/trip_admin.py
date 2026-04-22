@@ -1607,6 +1607,7 @@ def list_trips(
     review_decision: str | None = None,
     include_private: bool = True,
     only_private: bool = False,
+    search: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -1627,6 +1628,18 @@ def list_trips(
         filters.append("is_private = TRUE")
     if not include_private:
         filters.append("is_private = FALSE")
+    cleaned_search = (search or "").strip()
+    if cleaned_search:
+        filters.append(
+            """(
+                trip_name ILIKE %s
+                OR primary_destination_name ILIKE %s
+                OR origin_place_name ILIKE %s
+                OR summary_text ILIKE %s
+            )"""
+        )
+        like_value = f"%{cleaned_search}%"
+        params.extend([like_value, like_value, like_value, like_value])
 
     where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
 

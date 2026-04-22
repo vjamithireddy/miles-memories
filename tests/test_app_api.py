@@ -493,6 +493,8 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b">All</span>", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
+        self.assertIn(b'data-admin-trip-search', response.body)
+        self.assertIn(b">Private</span>", response.body)
         self.assertNotIn(b"Open detail page", response.body)
         self.assertNotIn(b'class="utility-link"', response.body)
         mock_list.assert_called_once_with(
@@ -500,6 +502,7 @@ class AppApiTests(unittest.TestCase):
             review_decision="pending",
             include_private=True,
             only_private=False,
+            search=None,
             limit=25,
             offset=0,
         )
@@ -521,6 +524,28 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'"next_page":3', response.body)
         self.assertIn(b'"has_more":false', response.body)
         self.assertIn(b'"count":1', response.body)
+
+    def test_admin_homepage_search_passes_query_to_trip_listing(self) -> None:
+        with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]) as mock_list, \
+             patch("app.main.trip_admin.get_trip_status_counts", return_value=_trip_status_counts()):
+            response = admin_homepage(
+                q="colo",
+                include_private=True,
+                per_page=25,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'value="colo" data-admin-trip-search', response.body)
+        self.assertIn(b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25">Reset</a>', response.body)
+        mock_list.assert_called_once_with(
+            status=None,
+            review_decision=None,
+            include_private=True,
+            only_private=False,
+            search="colo",
+            limit=26,
+            offset=0,
+        )
 
     def test_admin_homepage_stat_links_do_not_mix_public_and_private_filters(self) -> None:
         with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]), \
