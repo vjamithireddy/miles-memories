@@ -492,8 +492,9 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Data uploads", response.body)
         self.assertIn(b">All</span>", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
-        self.assertIn(b"Open detail page", response.body)
-        self.assertIn(b'class="utility-link"', response.body)
+        self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
+        self.assertNotIn(b"Open detail page", response.body)
+        self.assertNotIn(b'class="utility-link"', response.body)
         mock_list.assert_called_once_with(
             status="needs_review",
             review_decision="pending",
@@ -519,6 +520,7 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Colorado Weekend", response.body)
         self.assertIn(b'"next_page":3', response.body)
         self.assertIn(b'"has_more":false', response.body)
+        self.assertIn(b'"count":1', response.body)
 
     def test_admin_homepage_stat_links_do_not_mix_public_and_private_filters(self) -> None:
         with patch("app.main.trip_admin.list_trips", return_value=[_trip_summary()]), \

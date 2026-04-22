@@ -3614,7 +3614,6 @@ def _render_admin_trip_cards(trips: List[dict]) -> str:
         trip_type = escape(trip["trip_type"] or "untyped")
         score_value = "n/a" if trip["confidence_score"] is None else str(trip["confidence_score"])
         detail_href = f"/admin/trip/{trip['id']}"
-        json_href = f"/admin/trips/{trip['id']}"
         badges_html = _render_trip_badges(trip)
 
         cards.append(
@@ -3622,7 +3621,7 @@ def _render_admin_trip_cards(trips: List[dict]) -> str:
             <article class="trip-card">
               <div class="trip-head">
                 <div>
-                  <h3>{title}</h3>
+                  <h3><a class="trip-title-link" href="{detail_href}">{title}</a></h3>
                   <p class="trip-sub">{destination} · {trip_type}</p>
                 </div>
                 <div class="score">{score_value}</div>
@@ -3632,10 +3631,6 @@ def _render_admin_trip_cards(trips: List[dict]) -> str:
               </div>
               <p class="trip-range">{escape(str(trip['start_date']))} to {escape(str(trip['end_date']))}</p>
               <p class="trip-summary">{escape(trip['summary_text'] or 'No summary yet. Use review actions or future UI tools to enrich this trip.')}</p>
-              <div class="card-actions">
-                <a class="{_button_class('primary', 'button-sm')}" href="{detail_href}">Open detail page</a>
-                <a class="utility-link" href="{json_href}">JSON</a>
-              </div>
             </article>
             """
         )
@@ -3698,7 +3693,8 @@ def _render_admin_page(
     filter_query = admin_query(page_value=1)
     showing_start = ((page - 1) * per_page) + 1 if trips else 0
     showing_end = ((page - 1) * per_page) + len(trips)
-    active_summary = f"Showing {showing_start}-{showing_end} · {filter_label()}" if trips else filter_label()
+    current_filter_label = filter_label()
+    active_summary = f"Showing {showing_start}-{showing_end} · {current_filter_label}" if trips else current_filter_label
     show_reset = any([status, review_decision, only_private, not include_private])
     load_more_markup = (
         f"""
@@ -3858,6 +3854,13 @@ def _render_admin_page(
       margin: 0;
       font-size: 1.55rem;
     }}
+    .trip-title-link {{
+      color: inherit;
+      text-decoration: none;
+    }}
+    .trip-title-link:hover {{
+      color: var(--accent);
+    }}
     .trip-sub, .trip-range, .trip-summary {{
       margin: 0;
       color: var(--muted);
@@ -3889,25 +3892,12 @@ def _render_admin_page(
     .badge.good {{ background: rgba(46, 106, 75, 0.14); color: var(--good); }}
     .badge.warn {{ background: rgba(155, 100, 29, 0.14); color: var(--warn); }}
     .badge.muted {{ background: rgba(101, 114, 134, 0.14); color: var(--muted); }}
-    .card-actions {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px;
-      align-items: center;
-    }}
     .filter-actions {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       justify-content: flex-end;
-    }}
-    .utility-link {{
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 0.92rem;
-      opacity: 0.86;
     }}
     .links {{
       display: flex;
@@ -3959,7 +3949,7 @@ def _render_admin_page(
 
     <section class="panel">
       <div class="queue-toolbar">
-        <div class="queue-summary">{escape(active_summary)}</div>
+        <div class="queue-summary" data-queue-summary data-range-start="{showing_start}" data-range-end="{showing_end}" data-filter-label="{escape(current_filter_label)}">{escape(active_summary)}</div>
         <div class="filter-actions">
           {f'<a class="button ghost" href="/admin?{admin_query(include_private_value=True, private_only_value=False)}">Reset</a>' if show_reset else ''}
         </div>
@@ -3975,6 +3965,7 @@ def _render_admin_page(
     (() => {{
       const loadMore = document.querySelector("[data-admin-load-more] button");
       const list = document.querySelector("[data-admin-trip-list]");
+      const summary = document.querySelector("[data-queue-summary]");
       if (!loadMore || !list) return;
 
       loadMore.addEventListener("click", async () => {{
@@ -3995,6 +3986,16 @@ def _render_admin_page(
           if (!response.ok) throw new Error("Unable to load more trips");
           const payload = await response.json();
           list.insertAdjacentHTML("beforeend", payload.html);
+          if (summary && Number(payload.count || 0) > 0) {{
+            const rangeStart = Number(summary.dataset.rangeStart || "0");
+            const currentEnd = Number(summary.dataset.rangeEnd || "0");
+            const nextEnd = currentEnd + Number(payload.count || 0);
+            const label = summary.dataset.filterLabel || "All trips";
+            summary.dataset.rangeEnd = String(nextEnd);
+            summary.textContent = rangeStart > 0
+              ? `Showing ${{rangeStart}}-${{nextEnd}} · ${{label}}`
+              : label;
+          }}
           if (payload.has_more) {{
             loadMore.dataset.nextPage = String(payload.next_page);
             loadMore.disabled = false;
@@ -6736,7 +6737,12 @@ def admin_homepage(
     trips = trips[:normalized_per_page]
     if normalized_partial:
         return JSONResponse(
-            {"html": _render_admin_trip_cards(trips), "next_page": normalized_page + 1, "has_more": has_more}
+            {
+                "html": _render_admin_trip_cards(trips),
+                "next_page": normalized_page + 1,
+                "has_more": has_more,
+                "count": len(trips),
+            }
         )
     return _html_response(
         _render_admin_page(
