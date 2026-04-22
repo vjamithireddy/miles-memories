@@ -3663,23 +3663,6 @@ def _render_admin_page(
             return 0.0
         return max(0.0, min(100.0, (part / total) * 100.0))
 
-    def conic_gradient(stops: list[tuple[int, str]], *, empty_color: str) -> str:
-        total_value = sum(max(0, value) for value, _ in stops)
-        if total_value <= 0:
-            return f"conic-gradient(from -90deg, {empty_color} 0deg 360deg)"
-        segments: list[str] = []
-        current = 0.0
-        for value, color in stops:
-            normalized = max(0, value)
-            if normalized <= 0:
-                continue
-            next_angle = current + (normalized / total_value) * 360.0
-            segments.append(f"{color} {current:.2f}deg {next_angle:.2f}deg")
-            current = next_angle
-        if current < 360.0:
-            segments.append(f"{empty_color} {current:.2f}deg 360deg")
-        return "conic-gradient(from -90deg, " + ", ".join(segments) + ")"
-
     def stat_formula(items: list[tuple[str, int]]) -> str:
         return " + ".join(f"{label} {value}" for label, value in items)
 
@@ -3700,25 +3683,26 @@ def _render_admin_page(
           </div>
         """
 
-    chart_outer = conic_gradient(
-        [
-            (counts.get("reviewed", 0), "#2e6a4b"),
-            (counts.get("needs_review", 0), "#c7852a"),
-            (counts.get("rejected", 0), "#b85f35"),
-        ],
-        empty_color="rgba(101, 114, 134, 0.12)",
-    )
-    chart_inner = conic_gradient(
-        [
-            (counts.get("reviewed_public", 0), "#2e6a4b"),
-            (counts.get("reviewed_private", 0), "#7b5ea7"),
-            (counts.get("needs_review_public", 0), "#58a07a"),
-            (counts.get("needs_review_private", 0), "#9b83c6"),
-            (counts.get("rejected_public", 0), "#d68a60"),
-            (counts.get("rejected_private", 0), "#b092d8"),
-        ],
-        empty_color="rgba(101, 114, 134, 0.12)",
-    )
+    def status_breakdown_row(
+        label: str,
+        total: int,
+        public_count: int,
+        private_count: int,
+        *,
+        tone_class: str,
+    ) -> str:
+        return f"""
+          <div class="status-breakdown-row">
+            <div class="status-breakdown-copy">
+              <div class="status-breakdown-head">
+                <span class="status-pill {tone_class}">{label}</span>
+                <strong>{total}</strong>
+              </div>
+              <div class="status-breakdown-formula">{label} {total} = Public {public_count} + Private {private_count}</div>
+            </div>
+            {split_bar(total, public_count, private_count, label=f"{label} visibility")}
+          </div>
+        """
 
     def admin_query(
         *,
@@ -3873,87 +3857,62 @@ def _render_admin_page(
       font-size: 0.95rem;
       line-height: 1.45;
     }}
-    .stat-chart-wrap {{
+    .stat.stat-wide {{
+      grid-column: span 2;
+    }}
+    .status-breakdown-list {{
       display: grid;
-      grid-template-columns: 168px 1fr;
-      gap: 18px;
-      align-items: center;
+      gap: 14px;
       margin-top: auto;
     }}
-    .stat-chart {{
-      position: relative;
-      width: 168px;
-      height: 168px;
-      border-radius: 50%;
-      background: rgba(101, 114, 134, 0.08);
+    .status-breakdown-row {{
       display: grid;
-      place-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border: 1px solid rgba(220, 204, 180, 0.9);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.48);
     }}
-    .stat-chart-outer,
-    .stat-chart-inner,
-    .stat-chart-core {{
-      position: absolute;
-      border-radius: 50%;
-    }}
-    .stat-chart-outer {{
-      inset: 0;
-    }}
-    .stat-chart-inner {{
-      inset: 20px;
-    }}
-    .stat-chart-core {{
-      inset: 52px;
-      background: rgba(255, 249, 240, 0.98);
-      border: 1px solid var(--line);
+    .status-breakdown-copy {{
       display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 10px;
-      z-index: 1;
+      gap: 4px;
     }}
-    .stat-chart-core strong {{
-      font-size: 2rem;
-      line-height: 1;
-      color: var(--ink);
-    }}
-    .stat-chart-core span {{
-      display: block;
-      font-size: 0.8rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }}
-    .stat-chart-meta {{
-      display: grid;
-      gap: 12px;
-      min-width: 0;
-    }}
-    .chart-caption {{
-      color: var(--muted);
-      font-size: 0.9rem;
-      line-height: 1.4;
-    }}
-    .chart-legend-group {{
-      display: grid;
-      gap: 6px;
-    }}
-    .chart-legend-title {{
-      color: var(--muted);
-      font-size: 0.8rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }}
-    .chart-legend-row {{
+    .status-breakdown-head {{
       display: flex;
       flex-wrap: wrap;
-      gap: 10px 14px;
-      color: var(--muted);
-      font-size: 0.92rem;
+      align-items: center;
+      gap: 10px;
     }}
-    .chart-chip {{
+    .status-breakdown-head strong {{
+      font-size: 1.15rem;
+      color: var(--ink);
+    }}
+    .status-breakdown-formula {{
+      color: var(--muted);
+      font-size: 0.94rem;
+      line-height: 1.45;
+    }}
+    .status-pill {{
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
+    .status-pill.reviewed {{
+      background: rgba(46, 106, 75, 0.14);
+      color: var(--good);
+    }}
+    .status-pill.needs-review {{
+      background: rgba(199, 133, 42, 0.14);
+      color: var(--warn);
+    }}
+    .status-pill.rejected {{
+      background: rgba(184, 95, 53, 0.14);
+      color: var(--accent);
     }}
     .stat-split {{
       display: grid;
@@ -4007,27 +3966,6 @@ def _render_admin_page(
     }}
     .swatch.private {{
       background: #7b5ea7;
-    }}
-    .swatch.needs-review {{
-      background: #c7852a;
-    }}
-    .swatch.rejected {{
-      background: #b85f35;
-    }}
-    .swatch.reviewed-private {{
-      background: #7b5ea7;
-    }}
-    .swatch.needs-review-public {{
-      background: #58a07a;
-    }}
-    .swatch.needs-review-private {{
-      background: #9b83c6;
-    }}
-    .swatch.rejected-public {{
-      background: #d68a60;
-    }}
-    .swatch.rejected-private {{
-      background: #b092d8;
     }}
     .stat-link {{
       text-decoration: none;
@@ -4176,9 +4114,8 @@ def _render_admin_page(
       .stats, .trips {{
         grid-template-columns: 1fr;
       }}
-      .stat-chart-wrap {{
-        grid-template-columns: 1fr;
-        justify-items: center;
+      .stat.stat-wide {{
+        grid-column: auto;
       }}
       .topbar {{
         display: grid;
@@ -4205,43 +4142,16 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}">
+      <a class="panel stat stat-wide stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}">
         <div class="stat-kicker">
           <strong>{counts.get("total", 0)}</strong>
           <span class="stat-label">All trips</span>
         </div>
         <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
-        <div class="stat-chart-wrap">
-          <div class="stat-chart" aria-hidden="true">
-            <div class="stat-chart-outer" style="background: {chart_outer};"></div>
-            <div class="stat-chart-inner" style="background: {chart_inner};"></div>
-            <div class="stat-chart-core">
-              <strong>{counts.get("total", 0)}</strong>
-              <span>Total</span>
-            </div>
-          </div>
-          <div class="stat-chart-meta">
-            <div class="chart-caption">Outer ring shows status. Inner ring splits each status into public and private.</div>
-            <div class="chart-legend-group">
-              <div class="chart-legend-title">Status</div>
-              <div class="chart-legend-row">
-                <span class="chart-chip"><i class="swatch public"></i>Reviewed {counts.get("reviewed", 0)}</span>
-                <span class="chart-chip"><i class="swatch needs-review"></i>Needs review {counts.get("needs_review", 0)}</span>
-                <span class="chart-chip"><i class="swatch rejected"></i>Rejected {counts.get("rejected", 0)}</span>
-              </div>
-            </div>
-            <div class="chart-legend-group">
-              <div class="chart-legend-title">Visibility Within Status</div>
-              <div class="chart-legend-row">
-                <span class="chart-chip"><i class="swatch public"></i>Reviewed public {counts.get("reviewed_public", 0)}</span>
-                <span class="chart-chip"><i class="swatch reviewed-private"></i>Reviewed private {counts.get("reviewed_private", 0)}</span>
-                <span class="chart-chip"><i class="swatch needs-review-public"></i>Needs review public {counts.get("needs_review_public", 0)}</span>
-                <span class="chart-chip"><i class="swatch needs-review-private"></i>Needs review private {counts.get("needs_review_private", 0)}</span>
-                <span class="chart-chip"><i class="swatch rejected-public"></i>Rejected public {counts.get("rejected_public", 0)}</span>
-                <span class="chart-chip"><i class="swatch rejected-private"></i>Rejected private {counts.get("rejected_private", 0)}</span>
-              </div>
-            </div>
-          </div>
+        <div class="status-breakdown-list">
+          {status_breakdown_row("Reviewed", counts.get("reviewed", 0), counts.get("reviewed_public", 0), counts.get("reviewed_private", 0), tone_class="reviewed")}
+          {status_breakdown_row("Needs review", counts.get("needs_review", 0), counts.get("needs_review_public", 0), counts.get("needs_review_private", 0), tone_class="needs-review")}
+          {status_breakdown_row("Rejected", counts.get("rejected", 0), counts.get("rejected_public", 0), counts.get("rejected_private", 0), tone_class="rejected")}
         </div>
       </a>
       <a class="panel stat stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}">
