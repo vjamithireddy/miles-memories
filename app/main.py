@@ -3823,7 +3823,7 @@ def _render_admin_page(
     }}
     .stats {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 16px;
       margin-bottom: 20px;
     }}
@@ -3859,9 +3859,6 @@ def _render_admin_page(
       color: var(--muted);
       font-size: 0.95rem;
       line-height: 1.45;
-    }}
-    .stat.stat-wide {{
-      grid-column: span 2;
     }}
     .status-breakdown-list {{
       display: grid;
@@ -4131,9 +4128,6 @@ def _render_admin_page(
     @media (max-width: 920px) {{
       .stats, .trips {{
         grid-template-columns: 1fr;
-      }}
-      .stat.stat-wide {{
-        grid-column: auto;
       }}
       .status-breakdown-list {{
         grid-template-columns: 1fr 1fr;
