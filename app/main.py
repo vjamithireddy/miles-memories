@@ -3663,31 +3663,14 @@ def _render_admin_page(
             return 0.0
         return max(0.0, min(100.0, (part / total) * 100.0))
 
-    def stat_formula(items: list[tuple[str, int]]) -> str:
-        return " + ".join(f"{label} {value}" for label, value in items)
-
-    def split_bar(total: int, public_count: int, private_count: int, *, label: str) -> str:
+    def split_bar(total: int, public_count: int, private_count: int) -> str:
         public_width = split_width(public_count, total)
         private_width = split_width(private_count, total)
-        if total <= 0:
-            summary = "No trips"
-        elif public_count == 0:
-            summary = "All private"
-        elif private_count == 0:
-            summary = "All public"
-        else:
-            summary = f"Public {public_count} · Private {private_count}"
         return f"""
           <div class="stat-split">
-            <div class="stat-split-label">{label}</div>
             <div class="stat-bar" aria-hidden="true">
               <span class="stat-bar-segment public" style="width: {public_width:.2f}%"></span>
               <span class="stat-bar-segment private" style="width: {private_width:.2f}%"></span>
-            </div>
-            <div class="stat-split-summary">{summary}</div>
-            <div class="stat-legend">
-              <span class="stat-legend-item"><i class="swatch public"></i>Public {public_count}</span>
-              <span class="stat-legend-item"><i class="swatch private"></i>Private {private_count}</span>
             </div>
           </div>
         """
@@ -3715,7 +3698,7 @@ def _render_admin_page(
                 <a class="status-filter-chip private" href="{private_href}">Private <strong>{private_count}</strong></a>
               </div>
             </div>
-            {split_bar(total, public_count, private_count, label="Visibility split")}
+            {split_bar(total, public_count, private_count)}
           </div>
         """
 
@@ -3839,71 +3822,51 @@ def _render_admin_page(
       gap: 16px;
       margin-bottom: 20px;
     }}
-    .stat {{
+    .stats-panel {{
       display: grid;
-      gap: 10px;
-      align-content: start;
-      min-height: 154px;
+      gap: 16px;
     }}
-    .stat strong {{
-      display: block;
-      font-size: 2rem;
-    }}
-    .stat span {{
-      color: var(--muted);
-    }}
-    .stat-kicker {{
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }}
-    .stat-label {{
-      font-size: 1.55rem;
+    .stats-title {{
+      font-size: 1.15rem;
       font-weight: 700;
-      color: var(--ink);
-    }}
-    .stat-note {{
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
       color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.4;
-    }}
-    .stat-formula {{
-      color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.45;
     }}
     .status-breakdown-list {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 14px;
-      margin-top: auto;
       align-items: stretch;
     }}
     .status-breakdown-row {{
       display: grid;
-      gap: 12px;
-      padding: 16px;
+      gap: 14px;
+      padding: 14px;
       border: 1px solid rgba(220, 204, 180, 0.9);
-      border-radius: 18px;
-      background: rgba(255,255,255,0.48);
+      border-radius: 20px;
+      background: rgba(255,255,255,0.72);
       align-content: start;
+      min-height: 164px;
     }}
     .status-breakdown-copy {{
       display: grid;
-      gap: 4px;
+      gap: 10px;
     }}
     .status-breakdown-head {{
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
+      gap: 12px;
     }}
     .status-total-link {{
-      font-size: 2rem;
+      font-size: 2.2rem;
       line-height: 1;
       color: var(--ink);
       font-weight: 700;
       text-decoration: none;
+      flex-shrink: 0;
     }}
     .status-filter-row {{
       display: flex;
@@ -3914,17 +3877,17 @@ def _render_admin_page(
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 12px;
+      padding: 6px 10px;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: rgba(255,255,255,0.84);
       color: var(--ink);
       text-decoration: none;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
     }}
     .status-filter-chip strong {{
-      font-size: 1rem;
+      font-size: 0.96rem;
     }}
     .status-filter-chip.public {{
       color: #2e6a4b;
@@ -3944,12 +3907,13 @@ def _render_admin_page(
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
-      padding: 6px 10px;
-      font-size: 0.82rem;
+      padding: 6px 12px;
+      font-size: 0.84rem;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       text-decoration: none;
+      max-width: 100%;
     }}
     .status-pill.reviewed {{
       background: rgba(46, 106, 75, 0.14);
@@ -3964,25 +3928,12 @@ def _render_admin_page(
       color: var(--accent);
     }}
     .stat-split {{
-      display: grid;
-      gap: 8px;
       margin-top: auto;
-    }}
-    .stat-split-label {{
-      color: var(--muted);
-      font-size: 0.86rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }}
-    .stat-split-summary {{
-      color: var(--muted);
-      font-size: 0.9rem;
-      font-weight: 600;
     }}
     .stat-bar {{
       display: flex;
       width: 100%;
-      height: 10px;
+      height: 12px;
       overflow: hidden;
       border-radius: 999px;
       background: rgba(101, 114, 134, 0.12);
@@ -3996,39 +3947,6 @@ def _render_admin_page(
     }}
     .stat-bar-segment.private {{
       background: #7b5ea7;
-    }}
-    .stat-legend {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 0.86rem;
-    }}
-    .stat-legend-item {{
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }}
-    .swatch {{
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      display: inline-block;
-    }}
-    .swatch.public {{
-      background: #2e6a4b;
-    }}
-    .swatch.private {{
-      background: #7b5ea7;
-    }}
-    .stat-link {{
-      text-decoration: none;
-      color: inherit;
-      transition: transform 160ms ease, box-shadow 160ms ease;
-    }}
-    .stat-link:hover {{
-      transform: translateY(-2px);
-      box-shadow: 0 20px 36px var(--shadow);
     }}
     .button, button {{
       display: inline-block;
@@ -4168,16 +4086,21 @@ def _render_admin_page(
       .stats, .trips {{
         grid-template-columns: 1fr;
       }}
-      .status-breakdown-list {{
-        grid-template-columns: 1fr 1fr;
-      }}
       .topbar {{
         display: grid;
+      }}
+    }}
+    @media (max-width: 1040px) {{
+      .status-breakdown-list {{
+        grid-template-columns: 1fr 1fr;
       }}
     }}
     @media (max-width: 640px) {{
       .status-breakdown-list {{
         grid-template-columns: 1fr;
+      }}
+      .status-breakdown-head {{
+        flex-wrap: wrap;
       }}
     }}
   </style>
@@ -4201,12 +4124,8 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <div class="panel stat stat-wide">
-        <div class="stat-kicker">
-          <strong>{counts.get("total", 0)}</strong>
-          <span class="stat-label">All trips</span>
-        </div>
-        <div class="stat-formula">{escape(stat_formula([("Reviewed", counts.get("reviewed", 0)), ("Needs review", counts.get("needs_review", 0)), ("Rejected", counts.get("rejected", 0))]))}</div>
+      <div class="panel stats-panel">
+        <div class="stats-title">Trips</div>
         <div class="status-breakdown-list">
           {status_breakdown_row(
             "All trips",
