@@ -498,14 +498,13 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Data uploads", response.body)
         self.assertIn(b">All trips</span>", response.body)
         self.assertIn(b"Reviewed 0 + Needs review 1 + Rejected 0", response.body)
-        self.assertIn(b"All trips 1 = Public 0 + Private 1", response.body)
-        self.assertIn(b"Reviewed 0 = Public 0 + Private 0", response.body)
-        self.assertIn(b"Needs review 1 = Public 0 + Private 1", response.body)
-        self.assertIn(b"Rejected 0 = Public 0 + Private 0", response.body)
+        self.assertIn(b'All trips 1 = <a class="status-inline-link" href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private 1</a>', response.body)
+        self.assertIn(b'Reviewed 0 = <a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=24">Private 0</a>', response.body)
+        self.assertIn(b'Needs review 1 = <a class="status-inline-link" href="/admin?status=needs_review&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=needs_review&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private 1</a>', response.body)
+        self.assertIn(b'Rejected 0 = <a class="status-inline-link" href="/admin?status=&review_decision=rejected&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=rejected&include_private=true&private_only=true&page=1&per_page=24">Private 0</a>', response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
         self.assertIn(b'data-admin-trip-search', response.body)
-        self.assertIn(b">Private</span>", response.body)
         self.assertNotIn(b"Open detail page", response.body)
         self.assertNotIn(b'class="utility-link"', response.body)
         mock_list.assert_called_once_with(
@@ -573,12 +572,6 @@ class AppApiTests(unittest.TestCase):
             response.body,
         )
         self.assertIn(
-            b'href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=25"',
-            response.body,
-        )
-        self.assertIn(b'<span class="stat-label">Public</span>', response.body)
-        self.assertIn(b'<span class="stat-label">Private</span>', response.body)
-        self.assertIn(
             b'href="/admin?status=&review_decision=&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
         )
@@ -587,7 +580,6 @@ class AppApiTests(unittest.TestCase):
             response.body,
         )
         self.assertIn(b'<span class="stat-label">All trips</span>', response.body)
-        self.assertIn(b'<span class="stat-label">Reviewed</span>', response.body)
         self.assertIn(
             b'href="/admin?status=needs_review&review_decision=&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
@@ -596,8 +588,10 @@ class AppApiTests(unittest.TestCase):
             b'href="/admin?status=&review_decision=rejected&include_private=true&private_only=false&page=1&per_page=25"',
             response.body,
         )
-        self.assertIn(b'<span class="stat-label">Needs review</span>', response.body)
-        self.assertIn(b'<span class="stat-label">Rejected</span>', response.body)
+        self.assertIn(
+            b'href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=25">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=25">Private 0</a>',
+            response.body,
+        )
 
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()
