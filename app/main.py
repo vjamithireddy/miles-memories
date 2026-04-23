@@ -3685,17 +3685,24 @@ def _render_admin_page(
         row_href: str,
         public_href: str,
         private_href: str,
+        row_active: bool,
+        public_active: bool,
+        private_active: bool,
     ) -> str:
+        row_active_class = " is-active" if row_active else ""
+        total_active_class = " is-active" if row_active else ""
+        public_active_class = " is-active" if public_active else ""
+        private_active_class = " is-active" if private_active else ""
         return f"""
-          <div class="status-breakdown-row">
+          <div class="status-breakdown-row{row_active_class}">
             <div class="status-breakdown-copy">
               <div class="status-breakdown-head">
-                <a class="status-pill {tone_class}" href="{row_href}">{label}</a>
-                <a class="status-total-link" href="{row_href}">{total}</a>
+                <a class="status-pill {tone_class}{row_active_class}" href="{row_href}">{label}</a>
+                <a class="status-total-link{total_active_class}" href="{row_href}">{total}</a>
               </div>
               <div class="status-filter-row">
-                <a class="status-filter-chip public" href="{public_href}">Public <strong>{public_count}</strong></a>
-                <a class="status-filter-chip private" href="{private_href}">Private <strong>{private_count}</strong></a>
+                <a class="status-filter-chip public{public_active_class}" href="{public_href}">Public <strong>{public_count}</strong></a>
+                <a class="status-filter-chip private{private_active_class}" href="{private_href}">Private <strong>{private_count}</strong></a>
               </div>
             </div>
             {split_bar(total, public_count, private_count)}
@@ -3724,19 +3731,21 @@ def _render_admin_page(
         return urlencode(params)
 
     def filter_label() -> str:
-        if only_private:
-            return "Private trips"
-        if not include_private:
-            return "Public trips"
         if status == "published":
-            return "Published trips"
-        if status == "needs_review":
-            return "Needs review"
-        if review_decision == "confirmed":
-            return "Reviewed trips"
-        if review_decision in {"rejected", "ignored"} or status == "ignored":
-            return "Rejected trips"
-        return "All trips"
+            base = "Published"
+        elif status == "needs_review":
+            base = "Needs review"
+        elif review_decision == "confirmed":
+            base = "Reviewed"
+        elif review_decision in {"rejected", "ignored"} or status == "ignored":
+            base = "Rejected"
+        else:
+            base = "All trips"
+        if only_private:
+            return f"{base} · Private"
+        if not include_private:
+            return f"{base} · Public"
+        return base
 
     filter_query = admin_query(page_value=1)
     showing_start = ((page - 1) * per_page) + 1 if trips else 0
@@ -3841,13 +3850,18 @@ def _render_admin_page(
     }}
     .status-breakdown-row {{
       display: grid;
-      gap: 14px;
-      padding: 14px;
+      gap: 12px;
+      padding: 13px;
       border: 1px solid rgba(220, 204, 180, 0.9);
       border-radius: 20px;
       background: rgba(255,255,255,0.72);
       align-content: start;
-      min-height: 164px;
+      min-height: 152px;
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }}
+    .status-breakdown-row.is-active {{
+      border-color: rgba(184, 95, 53, 0.55);
+      box-shadow: 0 16px 30px rgba(37, 28, 14, 0.08);
     }}
     .status-breakdown-copy {{
       display: grid;
@@ -3867,6 +3881,9 @@ def _render_admin_page(
       font-weight: 700;
       text-decoration: none;
       flex-shrink: 0;
+    }}
+    .status-total-link.is-active {{
+      color: var(--accent);
     }}
     .status-filter-row {{
       display: flex;
@@ -3903,6 +3920,10 @@ def _render_admin_page(
     .status-total-link:hover {{
       color: var(--accent);
     }}
+    .status-filter-chip.is-active {{
+      border-color: currentColor;
+      box-shadow: inset 0 0 0 1px currentColor;
+    }}
     .status-pill {{
       display: inline-flex;
       align-items: center;
@@ -3914,6 +3935,9 @@ def _render_admin_page(
       text-transform: uppercase;
       text-decoration: none;
       max-width: 100%;
+    }}
+    .status-pill.is-active {{
+      box-shadow: inset 0 0 0 1px currentColor;
     }}
     .status-pill.reviewed {{
       background: rgba(46, 106, 75, 0.14);
@@ -3933,7 +3957,7 @@ def _render_admin_page(
     .stat-bar {{
       display: flex;
       width: 100%;
-      height: 12px;
+      height: 10px;
       overflow: hidden;
       border-radius: 999px;
       background: rgba(101, 114, 134, 0.12);
@@ -3987,6 +4011,7 @@ def _render_admin_page(
     .queue-summary {{
       color: var(--muted);
       font-size: 0.98rem;
+      font-weight: 600;
     }}
     .queue-search {{
       min-width: min(360px, 100%);
@@ -4136,6 +4161,9 @@ def _render_admin_page(
             row_href=f"/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}",
             public_href=f"/admin?{admin_query(status_value=None, review_value=None, include_private_value=False, private_only_value=False)}",
             private_href=f"/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=True)}",
+            row_active=not status and not review_decision and not only_private and include_private,
+            public_active=not status and not review_decision and not include_private and not only_private,
+            private_active=not status and not review_decision and only_private,
           )}
           {status_breakdown_row(
             "Reviewed",
@@ -4146,6 +4174,9 @@ def _render_admin_page(
             row_href=f"/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=False)}",
             public_href=f"/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=False, private_only_value=False)}",
             private_href=f"/admin?{admin_query(status_value=None, review_value='confirmed', include_private_value=True, private_only_value=True)}",
+            row_active=review_decision == "confirmed" and not only_private and include_private,
+            public_active=review_decision == "confirmed" and not include_private and not only_private,
+            private_active=review_decision == "confirmed" and only_private,
           )}
           {status_breakdown_row(
             "Needs review",
@@ -4156,6 +4187,9 @@ def _render_admin_page(
             row_href=f"/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=True, private_only_value=False)}",
             public_href=f"/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=False, private_only_value=False)}",
             private_href=f"/admin?{admin_query(status_value='needs_review', review_value=None, include_private_value=True, private_only_value=True)}",
+            row_active=status == "needs_review" and not only_private and include_private,
+            public_active=status == "needs_review" and not include_private and not only_private,
+            private_active=status == "needs_review" and only_private,
           )}
           {status_breakdown_row(
             "Rejected",
@@ -4166,6 +4200,9 @@ def _render_admin_page(
             row_href=f"/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=False)}",
             public_href=f"/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=False, private_only_value=False)}",
             private_href=f"/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=True)}",
+            row_active=review_decision == "rejected" and not only_private and include_private,
+            public_active=review_decision == "rejected" and not include_private and not only_private,
+            private_active=review_decision == "rejected" and only_private,
           )}
         </div>
       </div>

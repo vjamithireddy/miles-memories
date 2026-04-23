@@ -506,6 +506,8 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=needs_review&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private <strong>1</strong></a>', response.body)
         self.assertIn(b'<a class="status-filter-chip public" href="/admin?status=&review_decision=rejected&include_private=false&private_only=false&page=1&per_page=24">Public <strong>0</strong></a>', response.body)
         self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=&review_decision=rejected&include_private=true&private_only=true&page=1&per_page=24">Private <strong>0</strong></a>', response.body)
+        self.assertIn(b'class="status-pill needs-review is-active"', response.body)
+        self.assertIn(b'Showing 1-1 \xc2\xb7 Needs review', response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
         self.assertIn(b'data-admin-trip-search', response.body)
@@ -600,6 +602,8 @@ class AppApiTests(unittest.TestCase):
             b'<a class="status-filter-chip private" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=25">Private <strong>0</strong></a>',
             response.body,
         )
+        self.assertIn(b'<a class="status-filter-chip private is-active" href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=25">Private <strong>1</strong></a>', response.body)
+        self.assertIn(b'Showing 1-1 \xc2\xb7 All trips \xc2\xb7 Private', response.body)
 
     def test_admin_trip_detail_renders_map(self) -> None:
         trip, snapshot = _trip_light_with_snapshot()
