@@ -341,6 +341,8 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"grid-template-columns: repeat(4, minmax(0, 1fr));", response.body)
         self.assertIn(b"grid-template-columns: repeat(3, minmax(0, 1fr));", response.body)
         self.assertIn(b"grid-template-columns: repeat(2, minmax(0, 1fr));", response.body)
+        self.assertIn(b'data-home-section-tabs', response.body)
+        self.assertIn(b'class="folder-tab is-active"', response.body)
 
     def test_public_trip_detail_renders_read_only_story(self) -> None:
         trip = _trip_detail()

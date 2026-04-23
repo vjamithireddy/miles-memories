@@ -352,6 +352,46 @@ def _render_public_homepage(
       color: var(--ink);
     }}
 
+    .folder-tabs {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-end;
+    }}
+
+    .folder-tab {{
+      border: 1px solid rgba(216, 201, 179, 0.9);
+      border-bottom-width: 0;
+      border-radius: 16px 16px 0 0;
+      min-height: 42px;
+      padding: 10px 16px 12px;
+      background: rgba(248, 240, 228, 0.78);
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
+      transition: transform 140ms ease, background 140ms ease, color 140ms ease, border-color 140ms ease;
+    }}
+
+    .folder-tab:hover {{
+      transform: translateY(-1px);
+      color: var(--accent-dark);
+    }}
+
+    .folder-tab.is-active {{
+      background: var(--panel);
+      color: var(--accent-dark);
+      border-color: rgba(200, 100, 59, 0.45);
+      box-shadow: 0 12px 24px rgba(50, 33, 15, 0.08);
+      position: relative;
+      z-index: 1;
+    }}
+
     .parks-tabs {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -361,26 +401,28 @@ def _render_public_homepage(
     }}
 
     .parks-tab {{
-      border: 1px solid var(--line);
-      border-radius: 999px;
+      border: 1px solid rgba(216, 201, 179, 0.9);
+      border-bottom-width: 0;
+      border-radius: 16px 16px 0 0;
       height: 42px;
       width: 100%;
-      padding: 0 16px;
-      background: rgba(255, 255, 255, 0.65);
+      padding: 0 16px 2px;
+      background: rgba(248, 240, 228, 0.78);
       color: var(--muted);
       font-size: 0.9rem;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
     }}
 
     .parks-tab.is-active {{
-      background: rgba(200, 100, 59, 0.16);
+      background: var(--panel);
       color: var(--accent-dark);
-      border-color: rgba(200, 100, 59, 0.4);
+      border-color: rgba(200, 100, 59, 0.45);
     }}
 
     .parks-scroll {{
@@ -657,6 +699,15 @@ def _render_public_homepage(
       min-height: 0;
     }}
 
+    .home-section-tabs {{
+      display: none;
+      margin: -2px 0 4px;
+    }}
+
+    .home-section-panel {{
+      display: block;
+    }}
+
     @media (max-width: 1280px) {{
       .published-grid {{
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -671,6 +722,63 @@ def _render_public_homepage(
       }}
       .parks-grid {{
         grid-template-columns: 1fr;
+      }}
+    }}
+
+    @media (max-width: 760px) {{
+      main {{
+        padding: 24px 14px 40px;
+        gap: 16px;
+      }}
+      .panel {{
+        padding: 18px;
+        border-radius: 22px;
+      }}
+      .hero {{
+        gap: 14px;
+      }}
+      h1 {{
+        font-size: clamp(2rem, 8vw, 3.1rem);
+      }}
+      h2 {{
+        font-size: 1.95rem;
+        margin-bottom: 6px;
+      }}
+      .hero-note,
+      p {{
+        font-size: 0.95rem;
+        line-height: 1.55;
+      }}
+      .section-head {{
+        display: block;
+        margin-bottom: 10px;
+      }}
+      .section-head > div {{
+        display: block;
+      }}
+      .section-head .eyebrow {{
+        display: none;
+      }}
+      .section-head p {{
+        margin-top: 4px;
+        font-size: 0.88rem;
+      }}
+      .section-head .section-actions {{
+        margin-top: 12px;
+        justify-content: stretch;
+      }}
+      .published-search input {{
+        min-width: 0;
+        max-width: none;
+      }}
+      .parks-tabs {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
+      .home-section-tabs {{
+        display: flex;
+      }}
+      .home-section-panel[hidden] {{
+        display: none !important;
       }}
     }}
 
@@ -702,7 +810,12 @@ def _render_public_homepage(
       </aside>
     </section>
 
-    <section class="panel parks">
+    <div class="home-section-tabs folder-tabs" data-home-section-tabs data-initial-section="{escape('trips' if search_query else 'parks')}">
+      <button class="folder-tab is-active" type="button" data-home-section-tab="parks">National parks</button>
+      <button class="folder-tab" type="button" data-home-section-tab="trips">Trips</button>
+    </div>
+
+    <section class="panel parks home-section-panel" data-home-section-panel="parks">
       <div class="section-head">
         <div>
           <span class="eyebrow">National Parks</span>
@@ -723,10 +836,10 @@ def _render_public_homepage(
         </div>
         <div class="parks-list">
           <div class="parks-tabs" data-parks-tabs>
-            <button class="parks-tab is-active" type="button" data-parks-tab="visited">Visited</button>
+            <button class="parks-tab" type="button" data-parks-tab="visited">Visited</button>
             <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
             <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
-            <button class="parks-tab" type="button" data-parks-tab="all">All</button>
+            <button class="parks-tab is-active" type="button" data-parks-tab="all">All</button>
           </div>
           <div class="parks-search">
             <input type="search" placeholder="Search parks..." data-parks-filter>
@@ -740,7 +853,7 @@ def _render_public_homepage(
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel home-section-panel" data-home-section-panel="trips">
       <div class="section-head">
         <div>
           <span class="eyebrow">Published Archive</span>
@@ -764,10 +877,35 @@ def _render_public_homepage(
   {_render_public_maplibre_script()}
   <script>
     (() => {{
+      const sectionTabs = document.querySelector("[data-home-section-tabs]");
+      const sectionPanels = document.querySelectorAll("[data-home-section-panel]");
+      const sectionMedia = window.matchMedia("(max-width: 760px)");
+      let activeSection = sectionTabs?.dataset.initialSection || "parks";
+      const syncSections = () => {{
+        if (!sectionTabs || !sectionPanels.length) return;
+        const mobileMode = sectionMedia.matches;
+        sectionTabs.hidden = !mobileMode;
+        sectionTabs.querySelectorAll(".folder-tab").forEach((tab) => {{
+          tab.classList.toggle("is-active", tab.dataset.homeSectionTab === activeSection);
+        }});
+        sectionPanels.forEach((panel) => {{
+          const matches = panel.dataset.homeSectionPanel === activeSection;
+          panel.hidden = mobileMode ? !matches : false;
+        }});
+      }};
+      sectionTabs?.addEventListener("click", (event) => {{
+        const button = event.target.closest("[data-home-section-tab]");
+        if (!button) return;
+        activeSection = button.dataset.homeSectionTab || "parks";
+        syncSections();
+      }});
+      sectionMedia.addEventListener("change", syncSections);
+      syncSections();
+
       const filterInput = document.querySelector("[data-parks-filter]");
       const list = document.querySelector("[data-parks-list]");
       const tabs = document.querySelector("[data-parks-tabs]");
-      let activeStatus = "visited";
+      let activeStatus = "all";
       const activeTab = tabs?.querySelector(".parks-tab.is-active");
       if (activeTab?.dataset.parksTab) {{
         activeStatus = activeTab.dataset.parksTab;
@@ -4720,25 +4858,27 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       gap: 10px;
     }}
     .parks-tab {{
-      border: 1px solid var(--line);
-      border-radius: 999px;
+      border: 1px solid rgba(220, 204, 180, 0.9);
+      border-bottom-width: 0;
+      border-radius: 16px 16px 0 0;
       height: 42px;
       width: 100%;
-      padding: 0 16px;
-      background: rgba(255, 255, 255, 0.65);
+      padding: 0 16px 2px;
+      background: rgba(248, 240, 228, 0.78);
       color: var(--muted);
       font-size: 0.9rem;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
     }}
     .parks-tab.is-active {{
-      background: rgba(200, 100, 59, 0.16);
+      background: rgba(255, 248, 239, 0.96);
       color: var(--accent);
-      border-color: rgba(200, 100, 59, 0.4);
+      border-color: rgba(200, 100, 59, 0.45);
     }}
     .parks-list {{
       list-style: none;
@@ -6037,37 +6177,40 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .segmented-control {{
       display: inline-flex;
-      align-items: stretch;
-      border: 1px solid var(--accent);
-      border-radius: 999px;
-      overflow: hidden;
-      background: rgba(255,255,255,0.82);
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+      align-items: flex-end;
+      gap: 8px;
+      border: 0;
+      border-radius: 0;
+      overflow: visible;
+      background: transparent;
+      box-shadow: none;
+      flex-wrap: wrap;
     }}
     .segmented-control button {{
-      min-width: 132px;
-      border: 0;
-      border-right: 1px solid rgba(184,95,53,0.22);
-      border-radius: 0;
+      min-width: 124px;
+      border: 1px solid rgba(184,95,53,0.24);
+      border-bottom-width: 0;
+      border-radius: 16px 16px 0 0;
       margin: 0;
-      background: transparent;
-      color: var(--accent);
-      box-shadow: none;
-    }}
-    .segmented-control button:last-child {{
-      border-right: 0;
+      padding-top: 10px;
+      padding-bottom: 12px;
+      background: rgba(247, 239, 228, 0.84);
+      color: var(--muted);
+      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.06);
     }}
     .quick-actions button.is-current {{
-      color: white;
-      background: var(--accent);
-      box-shadow: inset 0 0 0 1px rgba(184,95,53,0.2);
+      color: var(--accent);
+      background: rgba(255,248,239,0.98);
+      border-color: rgba(184,95,53,0.45);
+      box-shadow: 0 12px 22px rgba(37, 28, 14, 0.08);
     }}
     .segmented-control button:not(.is-current):hover {{
+      color: var(--accent);
       background: rgba(184,95,53,0.08);
     }}
     .segmented-control button:disabled {{
       cursor: not-allowed;
-      color: rgba(184,95,53,0.45);
+      color: rgba(100,112,132,0.55);
       background: rgba(255,255,255,0.55);
       border-color: rgba(184,95,53,0.14);
       opacity: 0.8;
