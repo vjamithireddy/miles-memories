@@ -321,6 +321,27 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b'"has_more":false', response.body)
         self.assertIn(b"Colorado Weekend", response.body)
 
+    def test_public_trips_page_uses_wider_four_column_archive_layout(self) -> None:
+        published_trip = _trip_summary()
+        published_trip["is_private"] = False
+        published_trip["publish_ready"] = True
+        published_trip["status"] = "published"
+
+        with patch("app.main.trip_admin.count_published_trips", return_value=6), \
+             patch("app.main.trip_admin.list_published_trips", return_value=[published_trip]), \
+             patch("app.main.trip_admin.build_public_home_intro", return_value={"hero_note": "Trips", "highlight_line": ""}), \
+             patch("app.main.get_user_timezone", return_value="America/Chicago"), \
+             patch("app.main.parks.list_parks", return_value=[]), \
+             patch("app.main.parks.park_counts", return_value={"visited": 1, "planned": 1, "total": 2}):
+            response = public_trips_page(page=1, per_page=12, partial=False, q="")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Published trips", response.body)
+        self.assertIn(b"max-width: 1500px;", response.body)
+        self.assertIn(b"grid-template-columns: repeat(4, minmax(0, 1fr));", response.body)
+        self.assertIn(b"grid-template-columns: repeat(3, minmax(0, 1fr));", response.body)
+        self.assertIn(b"grid-template-columns: repeat(2, minmax(0, 1fr));", response.body)
+
     def test_public_trip_detail_renders_read_only_story(self) -> None:
         trip = _trip_detail()
         trip["is_private"] = False

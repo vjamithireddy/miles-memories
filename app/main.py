@@ -262,7 +262,7 @@ def _render_public_homepage(
     }}
 
     main {{
-      max-width: 1200px;
+      max-width: 1500px;
       margin: 0 auto;
       padding: 48px 20px 80px;
       display: grid;
@@ -536,7 +536,7 @@ def _render_public_homepage(
 
     .published-grid {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 18px;
     }}
     .archive-link {{
@@ -657,13 +657,25 @@ def _render_public_homepage(
       min-height: 0;
     }}
 
+    @media (max-width: 1280px) {{
+      .published-grid {{
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }}
+    }}
+
     @media (max-width: 960px) {{
       .hero,
       .feature-grid,
       .published-grid {{
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
       .parks-grid {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+
+    @media (max-width: 640px) {{
+      .published-grid {{
         grid-template-columns: 1fr;
       }}
     }}
