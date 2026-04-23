@@ -3701,7 +3701,7 @@ def _render_admin_page(
                 <a class="status-pill {tone_class}" href="{row_href}">{label}</a>
                 <a class="status-total-link" href="{row_href}">{total}</a>
               </div>
-              <div class="status-breakdown-formula">{label} {total} = <a class="status-inline-link" href="{public_href}">Public {public_count}</a> + <a class="status-inline-link" href="{private_href}">Private {private_count}</a></div>
+              <div class="status-breakdown-formula"><a class="status-inline-link" href="{public_href}">Public {public_count}</a> + <a class="status-inline-link" href="{private_href}">Private {private_count}</a></div>
             </div>
             {split_bar(total, public_count, private_count, label=f"{label} visibility")}
           </div>
