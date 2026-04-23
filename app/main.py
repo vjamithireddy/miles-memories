@@ -4157,7 +4157,7 @@ def _render_admin_page(
     </section>
 
     <section class="stats">
-      <a class="panel stat stat-wide stat-link" href="/admin?{admin_query(status_value=None, review_value=None, include_private_value=True, private_only_value=False)}">
+      <div class="panel stat stat-wide">
         <div class="stat-kicker">
           <strong>{counts.get("total", 0)}</strong>
           <span class="stat-label">All trips</span>
@@ -4205,7 +4205,7 @@ def _render_admin_page(
             private_href=f"/admin?{admin_query(status_value=None, review_value='rejected', include_private_value=True, private_only_value=True)}",
           )}
         </div>
-      </a>
+      </div>
     </section>
 
     <section class="panel">
