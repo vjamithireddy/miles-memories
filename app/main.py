@@ -3865,8 +3865,10 @@ def _render_admin_page(
     }}
     .status-breakdown-list {{
       display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 14px;
       margin-top: auto;
+      align-items: stretch;
     }}
     .status-breakdown-row {{
       display: grid;
@@ -3875,6 +3877,7 @@ def _render_admin_page(
       border: 1px solid rgba(220, 204, 180, 0.9);
       border-radius: 18px;
       background: rgba(255,255,255,0.48);
+      align-content: start;
     }}
     .status-breakdown-copy {{
       display: grid;
@@ -4132,8 +4135,16 @@ def _render_admin_page(
       .stat.stat-wide {{
         grid-column: auto;
       }}
+      .status-breakdown-list {{
+        grid-template-columns: 1fr 1fr;
+      }}
       .topbar {{
         display: grid;
+      }}
+    }}
+    @media (max-width: 640px) {{
+      .status-breakdown-list {{
+        grid-template-columns: 1fr;
       }}
     }}
   </style>
