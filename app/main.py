@@ -3669,6 +3669,14 @@ def _render_admin_page(
     def split_bar(total: int, public_count: int, private_count: int, *, label: str) -> str:
         public_width = split_width(public_count, total)
         private_width = split_width(private_count, total)
+        if total <= 0:
+            summary = "No trips"
+        elif public_count == 0:
+            summary = "All private"
+        elif private_count == 0:
+            summary = "All public"
+        else:
+            summary = f"Public {public_count} · Private {private_count}"
         return f"""
           <div class="stat-split">
             <div class="stat-split-label">{label}</div>
@@ -3676,6 +3684,7 @@ def _render_admin_page(
               <span class="stat-bar-segment public" style="width: {public_width:.2f}%"></span>
               <span class="stat-bar-segment private" style="width: {private_width:.2f}%"></span>
             </div>
+            <div class="stat-split-summary">{summary}</div>
             <div class="stat-legend">
               <span class="stat-legend-item"><i class="swatch public"></i>Public {public_count}</span>
               <span class="stat-legend-item"><i class="swatch private"></i>Private {private_count}</span>
@@ -3701,9 +3710,12 @@ def _render_admin_page(
                 <a class="status-pill {tone_class}" href="{row_href}">{label}</a>
                 <a class="status-total-link" href="{row_href}">{total}</a>
               </div>
-              <div class="status-breakdown-formula"><a class="status-inline-link" href="{public_href}">Public {public_count}</a> + <a class="status-inline-link" href="{private_href}">Private {private_count}</a></div>
+              <div class="status-filter-row">
+                <a class="status-filter-chip public" href="{public_href}">Public <strong>{public_count}</strong></a>
+                <a class="status-filter-chip private" href="{private_href}">Private <strong>{private_count}</strong></a>
+              </div>
             </div>
-            {split_bar(total, public_count, private_count, label=f"{label} visibility")}
+            {split_bar(total, public_count, private_count, label="Visibility split")}
           </div>
         """
 
@@ -3869,8 +3881,8 @@ def _render_admin_page(
     }}
     .status-breakdown-row {{
       display: grid;
-      gap: 8px;
-      padding: 14px 16px;
+      gap: 12px;
+      padding: 16px;
       border: 1px solid rgba(220, 204, 180, 0.9);
       border-radius: 18px;
       background: rgba(255,255,255,0.48);
@@ -3887,22 +3899,44 @@ def _render_admin_page(
       gap: 10px;
     }}
     .status-total-link {{
-      font-size: 1.15rem;
+      font-size: 2rem;
+      line-height: 1;
       color: var(--ink);
       font-weight: 700;
       text-decoration: none;
     }}
-    .status-breakdown-formula {{
-      color: var(--muted);
-      font-size: 0.94rem;
-      line-height: 1.45;
+    .status-filter-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
     }}
-    .status-inline-link {{
-      color: var(--accent);
+    .status-filter-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.84);
+      color: var(--ink);
       text-decoration: none;
       font-weight: 700;
+      font-size: 0.95rem;
     }}
-    .status-inline-link:hover,
+    .status-filter-chip strong {{
+      font-size: 1rem;
+    }}
+    .status-filter-chip.public {{
+      color: #2e6a4b;
+      border-color: rgba(46, 106, 75, 0.18);
+      background: rgba(46, 106, 75, 0.08);
+    }}
+    .status-filter-chip.private {{
+      color: #6b4d98;
+      border-color: rgba(123, 94, 167, 0.18);
+      background: rgba(123, 94, 167, 0.08);
+    }}
+    .status-filter-chip:hover,
     .status-total-link:hover {{
       color: var(--accent);
     }}
@@ -3940,10 +3974,15 @@ def _render_admin_page(
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }}
+    .stat-split-summary {{
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }}
     .stat-bar {{
       display: flex;
       width: 100%;
-      height: 12px;
+      height: 10px;
       overflow: hidden;
       border-radius: 999px;
       background: rgba(101, 114, 134, 0.12);
@@ -3963,7 +4002,7 @@ def _render_admin_page(
       flex-wrap: wrap;
       gap: 12px;
       color: var(--muted);
-      font-size: 0.9rem;
+      font-size: 0.86rem;
     }}
     .stat-legend-item {{
       display: inline-flex;

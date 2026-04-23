@@ -498,10 +498,15 @@ class AppApiTests(unittest.TestCase):
         self.assertIn(b"Data uploads", response.body)
         self.assertIn(b">All trips</span>", response.body)
         self.assertIn(b"Reviewed 0 + Needs review 1 + Rejected 0", response.body)
-        self.assertIn(b'<div class="status-breakdown-formula"><a class="status-inline-link" href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private 1</a></div>', response.body)
-        self.assertIn(b'<div class="status-breakdown-formula"><a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=24">Private 0</a></div>', response.body)
-        self.assertIn(b'<div class="status-breakdown-formula"><a class="status-inline-link" href="/admin?status=needs_review&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=needs_review&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private 1</a></div>', response.body)
-        self.assertIn(b'<div class="status-breakdown-formula"><a class="status-inline-link" href="/admin?status=&review_decision=rejected&include_private=false&private_only=false&page=1&per_page=24">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=rejected&include_private=true&private_only=true&page=1&per_page=24">Private 0</a></div>', response.body)
+        self.assertIn(b'<a class="status-filter-chip public" href="/admin?status=&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public <strong>0</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private <strong>1</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip public" href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=24">Public <strong>0</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=24">Private <strong>0</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip public" href="/admin?status=needs_review&review_decision=&include_private=false&private_only=false&page=1&per_page=24">Public <strong>0</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=needs_review&review_decision=&include_private=true&private_only=true&page=1&per_page=24">Private <strong>1</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip public" href="/admin?status=&review_decision=rejected&include_private=false&private_only=false&page=1&per_page=24">Public <strong>0</strong></a>', response.body)
+        self.assertIn(b'<a class="status-filter-chip private" href="/admin?status=&review_decision=rejected&include_private=true&private_only=true&page=1&per_page=24">Private <strong>0</strong></a>', response.body)
+        self.assertIn(b"All private", response.body)
         self.assertIn(b'class="button" href="/admin/trips?', response.body)
         self.assertIn(b'class="trip-title-link" href="/admin/trip/7">Colorado Weekend</a>', response.body)
         self.assertIn(b'data-admin-trip-search', response.body)
@@ -589,7 +594,11 @@ class AppApiTests(unittest.TestCase):
             response.body,
         )
         self.assertIn(
-            b'href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=25">Public 0</a> + <a class="status-inline-link" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=25">Private 0</a>',
+            b'<a class="status-filter-chip public" href="/admin?status=&review_decision=confirmed&include_private=false&private_only=false&page=1&per_page=25">Public <strong>0</strong></a>',
+            response.body,
+        )
+        self.assertIn(
+            b'<a class="status-filter-chip private" href="/admin?status=&review_decision=confirmed&include_private=true&private_only=true&page=1&per_page=25">Private <strong>0</strong></a>',
             response.body,
         )
 
