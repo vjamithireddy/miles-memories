@@ -264,6 +264,84 @@ def _site_shell_css(*, max_width: str, main_padding: str, main_gap: str = "18px"
     """
 
 
+def _tab_strip_flex_css(
+    container_selector: str,
+    *,
+    gap: str = "8px",
+    align_items: str = "flex-end",
+) -> str:
+    return f"""
+    {container_selector} {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: {gap};
+      align-items: {align_items};
+    }}
+    """
+
+
+def _tab_strip_grid_css(
+    container_selector: str,
+    *,
+    columns: int = 4,
+    gap: str = "10px",
+) -> str:
+    return f"""
+    {container_selector} {{
+      display: grid;
+      grid-template-columns: repeat({columns}, minmax(0, 1fr));
+      gap: {gap};
+    }}
+    """
+
+
+def _folder_tab_button_css(
+    tab_selector: str,
+    *,
+    active_selector: str | None = None,
+    width: str | None = None,
+    min_width: str | None = None,
+    min_height: str = "42px",
+    padding: str = "10px 16px 12px",
+    font_size: str = "0.92rem",
+    active_background: str = "var(--panel)",
+    active_color: str = "var(--accent-dark)",
+    active_border: str = "rgba(200, 100, 59, 0.45)",
+) -> str:
+    active_selector = active_selector or f"{tab_selector}.is-active"
+    width_rule = f"\n      width: {width};" if width else ""
+    min_width_rule = f"\n      min-width: {min_width};" if min_width else ""
+    return f"""
+    {tab_selector} {{
+      border: 1px solid rgba(216, 201, 179, 0.9);
+      border-bottom-width: 0;
+      border-radius: 16px 16px 0 0;
+      min-height: {min_height};
+      padding: {padding};
+      background: rgba(248, 240, 228, 0.78);
+      color: var(--muted);
+      font-size: {font_size};
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);{width_rule}{min_width_rule}
+    }}
+
+    {active_selector} {{
+      background: {active_background};
+      color: {active_color};
+      border-color: {active_border};
+      box-shadow: 0 12px 24px rgba(50, 33, 15, 0.08);
+      position: relative;
+      z-index: 1;
+    }}
+    """
+
+
 def _render_public_homepage(
     trips: List[dict],
     *,
@@ -429,29 +507,9 @@ def _render_public_homepage(
       color: var(--ink);
     }}
 
-    .folder-tabs {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: flex-end;
-    }}
-
+    {_tab_strip_flex_css(".folder-tabs")}
+    {_folder_tab_button_css(".folder-tab")}
     .folder-tab {{
-      border: 1px solid rgba(216, 201, 179, 0.9);
-      border-bottom-width: 0;
-      border-radius: 16px 16px 0 0;
-      min-height: 42px;
-      padding: 10px 16px 12px;
-      background: rgba(248, 240, 228, 0.78);
-      color: var(--muted);
-      font-size: 0.92rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
       transition: transform 140ms ease, background 140ms ease, color 140ms ease, border-color 140ms ease;
     }}
 
@@ -461,45 +519,14 @@ def _render_public_homepage(
     }}
 
     .folder-tab.is-active {{
-      background: var(--panel);
-      color: var(--accent-dark);
-      border-color: rgba(200, 100, 59, 0.45);
-      box-shadow: 0 12px 24px rgba(50, 33, 15, 0.08);
-      position: relative;
-      z-index: 1;
+      transform: translateY(0);
     }}
 
+    {_tab_strip_grid_css(".parks-tabs")}
+    {_folder_tab_button_css(".parks-tab", width="100%", padding="0 16px 2px", font_size="0.9rem")}
     .parks-tabs {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
       margin-bottom: 10px;
       order: 0;
-    }}
-
-    .parks-tab {{
-      border: 1px solid rgba(216, 201, 179, 0.9);
-      border-bottom-width: 0;
-      border-radius: 16px 16px 0 0;
-      height: 42px;
-      width: 100%;
-      padding: 0 16px 2px;
-      background: rgba(248, 240, 228, 0.78);
-      color: var(--muted);
-      font-size: 0.9rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      white-space: nowrap;
-      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
-    }}
-
-    .parks-tab.is-active {{
-      background: var(--panel);
-      color: var(--accent-dark);
-      border-color: rgba(200, 100, 59, 0.45);
     }}
 
     .parks-scroll {{
@@ -4714,34 +4741,8 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
     .parks-controls .search {{
       width: 100%;
     }}
-    .parks-tabs {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }}
-    .parks-tab {{
-      border: 1px solid rgba(220, 204, 180, 0.9);
-      border-bottom-width: 0;
-      border-radius: 16px 16px 0 0;
-      height: 42px;
-      width: 100%;
-      padding: 0 16px 2px;
-      background: rgba(248, 240, 228, 0.78);
-      color: var(--muted);
-      font-size: 0.9rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      white-space: nowrap;
-      box-shadow: 0 8px 18px rgba(50, 33, 15, 0.06);
-    }}
-    .parks-tab.is-active {{
-      background: rgba(255, 248, 239, 0.96);
-      color: var(--accent);
-      border-color: rgba(200, 100, 59, 0.45);
-    }}
+    {_tab_strip_grid_css(".parks-tabs")}
+    {_folder_tab_button_css(".parks-tab", width="100%", padding="0 16px 2px", font_size="0.9rem", active_background="rgba(255, 248, 239, 0.96)", active_color="var(--accent)")}
     .parks-list {{
       list-style: none;
       margin: 0;
@@ -5895,34 +5896,17 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .quick-actions button {{
       min-width: 138px;
     }}
+    {_tab_strip_flex_css(".segmented-control")}
+    {_folder_tab_button_css(".segmented-control button", active_selector=".segmented-control button.is-current", min_width="124px", active_background="rgba(255,248,239,0.98)", active_color="var(--accent)", active_border="rgba(184,95,53,0.45)")}
     .segmented-control {{
-      display: inline-flex;
-      align-items: flex-end;
-      gap: 8px;
       border: 0;
       border-radius: 0;
       overflow: visible;
       background: transparent;
       box-shadow: none;
-      flex-wrap: wrap;
     }}
     .segmented-control button {{
-      min-width: 124px;
-      border: 1px solid rgba(184,95,53,0.24);
-      border-bottom-width: 0;
-      border-radius: 16px 16px 0 0;
       margin: 0;
-      padding-top: 10px;
-      padding-bottom: 12px;
-      background: rgba(247, 239, 228, 0.84);
-      color: var(--muted);
-      box-shadow: 0 8px 18px rgba(37, 28, 14, 0.06);
-    }}
-    .quick-actions button.is-current {{
-      color: var(--accent);
-      background: rgba(255,248,239,0.98);
-      border-color: rgba(184,95,53,0.45);
-      box-shadow: 0 12px 22px rgba(37, 28, 14, 0.08);
     }}
     .segmented-control button:not(.is-current):hover {{
       color: var(--accent);
