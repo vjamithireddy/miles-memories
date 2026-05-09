@@ -167,6 +167,7 @@ def parse_location_history(path: str) -> list[LocationEvent]:
 def save_location_events(import_id: int, events: list[LocationEvent]) -> int:
     if not events:
         return 0
+    inserted = 0
     with get_conn() as conn:
         with conn.cursor() as cur:
             for event in events:
@@ -176,7 +177,16 @@ def save_location_events(import_id: int, events: list[LocationEvent]) -> int:
                         import_id, source_event_id, event_timestamp, latitude, longitude,
                         accuracy_meters, source, raw_payload_json
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'google_timeline', %s)
+                    SELECT %s, %s, %s, %s, %s, %s, 'google_timeline', %s
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM location_events
+                        WHERE source = 'google_timeline'
+                          AND event_timestamp = %s
+                          AND latitude = %s
+                          AND longitude = %s
+                          AND COALESCE(source_event_id, '') = COALESCE(%s, '')
+                    )
                     """,
                     (
                         import_id,
@@ -186,6 +196,11 @@ def save_location_events(import_id: int, events: list[LocationEvent]) -> int:
                         event.longitude,
                         event.accuracy_meters,
                         json.dumps(event.raw_payload),
+                        event.timestamp,
+                        event.latitude,
+                        event.longitude,
+                        event.source_event_id,
                     ),
                 )
-    return len(events)
+                inserted += cur.rowcount
+    return inserted

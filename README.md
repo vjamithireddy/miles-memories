@@ -31,6 +31,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 - `make db-init-docker` initialize DB schema using containerized `psql` (no local `psql` needed)
 - `make run-api` start local API service
 - `make ingest-location FILE=/path/to/location.json`
+- `make build-latest-trips-from-timeline FILE=/path/to/Timeline.json`
 - `make ingest-photos FILE=/path/to/takeout.zip`
 - `make ingest-garmin FILE=/path/to/activity.gpx`
 - `make ingest-garmin FILE=/path/to/garmin-export-directory`
@@ -51,6 +52,8 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
    - `make ingest-garmin FILE=/absolute/path/garmin-export-directory`
 5. Detect trips:
    - `make detect-trips`
+   - or for a non-destructive incremental Timeline refresh:
+     `make build-latest-trips-from-timeline FILE=/absolute/path/Timeline.json`
 
 ## When You Need To Intervene
 - VPS provisioning and DNS changes
