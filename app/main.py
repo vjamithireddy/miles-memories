@@ -157,6 +157,113 @@ def _render_public_trip_cards(trips: List[dict]) -> str:
     return "".join(cards)
 
 
+def _public_theme_css() -> str:
+    return """
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.94);
+      --ink: #1d2430;
+      --muted: #5f6b7a;
+      --line: #d8c9b3;
+      --accent: #c8643b;
+      --accent-dark: #8e3f22;
+      --good: #275d4f;
+      --warn: #9b641d;
+      --danger: #962f24;
+      --shadow: rgba(50, 33, 15, 0.12);
+    }
+    """
+
+
+def _admin_theme_css() -> str:
+    return """
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.94);
+      --line: #d8c9b3;
+      --ink: #1d2430;
+      --muted: #5f6b7a;
+      --accent: #c8643b;
+      --accent-dark: #8e3f22;
+      --good: #275d4f;
+      --warn: #9b641d;
+      --danger: #962f24;
+      --shadow: rgba(50, 33, 15, 0.12);
+    }
+    """
+
+
+def _site_shell_css(*, max_width: str, main_padding: str, main_gap: str = "18px", panel_padding: str = "24px", panel_radius: str = "24px") -> str:
+    return f"""
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+    }}
+    main {{
+      max-width: {max_width};
+      margin: 0 auto;
+      padding: {main_padding};
+      display: grid;
+      gap: {main_gap};
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: {panel_radius};
+      box-shadow: 0 18px 40px var(--shadow);
+      padding: {panel_padding};
+    }}
+    .eyebrow {{
+      display: inline-block;
+      font-size: 0.8rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent-dark, var(--accent));
+    }}
+    h1, h2, h3 {{
+      margin: 0;
+      line-height: 1.05;
+      font-weight: 700;
+    }}
+    p {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .button, button {{
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
+    }}
+    .button.primary, button.primary {{
+      background: var(--accent);
+      color: white;
+    }}
+    .button.utility, button.utility,
+    .button.ghost, button.ghost {{
+      border-color: var(--line);
+      color: var(--muted);
+      background: transparent;
+    }}
+    button:hover, .button:hover {{
+      filter: brightness(0.98);
+    }}
+    button:focus-visible, .button:focus-visible, details > summary:focus-visible {{
+      outline: 2px solid rgba(200, 100, 59, 0.26);
+      outline-offset: 3px;
+    }}
+    """
+
+
 def _render_public_homepage(
     trips: List[dict],
     *,
@@ -238,43 +345,13 @@ def _render_public_homepage(
   <title>MilesMemories</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
-    :root {{
-      --bg: #f4efe6;
-      --panel: rgba(255, 250, 242, 0.92);
-      --ink: #1d2430;
-      --muted: #5f6b7a;
-      --line: #d8c9b3;
-      --accent: #c8643b;
-      --accent-dark: #8e3f22;
-      --good: #275d4f;
-      --shadow: rgba(50, 33, 15, 0.12);
-    }}
-
-    * {{ box-sizing: border-box; }}
+    {_public_theme_css()}
+    {_site_shell_css(max_width="1500px", main_padding="48px 20px 80px", main_gap="22px", panel_padding="30px", panel_radius="28px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
         radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
         linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
-    }}
-
-    main {{
-      max-width: 1500px;
-      margin: 0 auto;
-      padding: 48px 20px 80px;
-      display: grid;
-      gap: 22px;
-    }}
-
-    .panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 30px;
     }}
 
     .hero {{
@@ -475,18 +552,8 @@ def _render_public_homepage(
       gap: 18px;
     }}
 
-    .eyebrow {{
-      display: inline-block;
-      font-size: 0.8rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--accent-dark);
-    }}
-
     h1, h2, h3 {{
-      margin: 0;
       line-height: 1.04;
-      font-weight: 700;
     }}
 
     h1 {{
@@ -504,12 +571,7 @@ def _render_public_homepage(
       margin-bottom: 10px;
     }}
 
-    p {{
-      margin: 0;
-      line-height: 1.65;
-      color: var(--muted);
-      font-size: 1rem;
-    }}
+    p {{ line-height: 1.65; font-size: 1rem; }}
 
     .hero-note {{
       font-size: 1.08rem;
@@ -1384,40 +1446,13 @@ def _render_public_trip_detail_page(trip: dict) -> str:
   <title>{title} · MilesMemories</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
-    :root {{
-      --bg: #f4efe6;
-      --panel: rgba(255, 250, 242, 0.94);
-      --ink: #1d2430;
-      --muted: #5f6b7a;
-      --line: #d8c9b3;
-      --accent: #c8643b;
-      --accent-dark: #8e3f22;
-      --shadow: rgba(50, 33, 15, 0.12);
-      --good: #275d4f;
-    }}
-    * {{ box-sizing: border-box; }}
+    {_public_theme_css()}
+    {_site_shell_css(max_width="1180px", main_padding="38px 20px 80px", main_gap="22px", panel_padding="28px", panel_radius="28px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
         radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
         linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
-    }}
-    main {{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 38px 20px 80px;
-      display: grid;
-      gap: 22px;
-    }}
-    .panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 28px;
     }}
     .hero {{
       display: grid;
@@ -1448,17 +1483,8 @@ def _render_public_trip_detail_page(trip: dict) -> str:
       width: 100%;
       text-align: center;
     }}
-    .eyebrow {{
-      display: inline-block;
-      font-size: 0.8rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--accent-dark);
-    }}
     h1, h2, h3 {{
-      margin: 0;
       line-height: 1.04;
-      font-weight: 700;
     }}
     h1 {{
       font-size: clamp(2rem, 4vw, 3.4rem);
@@ -2170,20 +2196,8 @@ def _render_not_found_page() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Not found · MilesMemories</title>
   <style>
-    :root {
-      --bg: #f4efe6;
-      --panel: rgba(255, 250, 242, 0.92);
-      --ink: #1d2430;
-      --muted: #5f6b7a;
-      --line: #d8c9b3;
-      --accent: #c8643b;
-      --shadow: rgba(50, 33, 15, 0.12);
-    }
-    * { box-sizing: border-box; }
+    """ + _public_theme_css() + """
     body {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       min-height: 100vh;
       background:
         radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
@@ -2196,7 +2210,7 @@ def _render_not_found_page() -> str:
     .panel {
       max-width: 640px;
       width: 100%;
-      background: var(--panel);
+      background: rgba(255, 250, 242, 0.94);
       border: 1px solid var(--line);
       border-radius: 28px;
       box-shadow: 0 18px 40px var(--shadow);
@@ -2218,7 +2232,7 @@ def _render_not_found_page() -> str:
       gap: 12px;
       justify-content: center;
     }
-    .button {
+    .button, button {
       display: inline-block;
       border: 1px solid var(--accent);
       background: transparent;
@@ -2227,6 +2241,8 @@ def _render_not_found_page() -> str:
       font-weight: 700;
       border-radius: 999px;
       padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -3920,30 +3936,12 @@ def _render_admin_page(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MilesMemories Admin</title>
   <style>
-    :root {{
-      --bg: #f3efe7;
-      --panel: #fff9f0;
-      --line: #dcccb4;
-      --ink: #182233;
-      --muted: #657286;
-      --accent: #b85f35;
-      --good: #2e6a4b;
-      --warn: #9b641d;
-      --shadow: rgba(37, 28, 14, 0.12);
-    }}
-    * {{ box-sizing: border-box; }}
+    {_admin_theme_css()}
+    {_site_shell_css(max_width="1180px", main_padding="34px 18px 64px", main_gap="18px", panel_padding="22px", panel_radius="24px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         linear-gradient(180deg, rgba(233, 206, 177, 0.8), rgba(243, 239, 231, 0.98) 28%),
         linear-gradient(90deg, rgba(184, 95, 53, 0.08), transparent 22%, transparent 78%, rgba(42, 89, 81, 0.08));
-    }}
-    main {{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 34px 18px 64px;
     }}
     .topbar {{
       display: flex;
@@ -3952,12 +3950,6 @@ def _render_admin_page(
       align-items: center;
       margin-bottom: 20px;
     }}
-    .eyebrow {{
-      font-size: 0.82rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--accent);
-    }}
     h1 {{
       margin: 8px 0 0;
       font-size: clamp(2.1rem, 5vw, 4rem);
@@ -3965,15 +3957,6 @@ def _render_admin_page(
     }}
     .sub {{
       max-width: 56ch;
-      color: var(--muted);
-      line-height: 1.6;
-    }}
-    .panel {{
-      background: rgba(255, 249, 240, 0.92);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 22px;
     }}
     .stats {{
       display: grid;
@@ -4122,33 +4105,9 @@ def _render_admin_page(
     .stat-bar-segment.private {{
       background: #7b5ea7;
     }}
-    .button, button {{
-      display: inline-block;
-      border: 1px solid var(--accent);
-      background: transparent;
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      border-radius: 999px;
-      padding: 12px 18px;
-      font: inherit;
-      cursor: pointer;
-    }}
-    .button.primary, button.primary {{
-      background: var(--accent);
-      color: white;
-    }}
-    .button.utility {{
-      border-color: var(--line);
-    }}
     .button-sm {{
       padding: 10px 14px;
       font-size: 0.92rem;
-    }}
-    .button.ghost {{
-      border-color: var(--line);
-      color: var(--muted);
-      background: transparent;
     }}
     .queue-toolbar {{
       display: flex;
@@ -4505,50 +4464,17 @@ def _render_admin_uploads_page() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Data Uploads · MilesMemories Admin</title>
   <style>
-    :root {
-      --bg: #f3efe7;
-      --panel: rgba(255, 249, 240, 0.94);
-      --line: #dcccb4;
-      --ink: #182233;
-      --muted: #657286;
-      --accent: #b85f35;
-      --shadow: rgba(37, 28, 14, 0.12);
-      --good: #2e6a4b;
-    }
-    * { box-sizing: border-box; }
+    """ + _admin_theme_css() + _site_shell_css(max_width="1120px", main_padding="34px 18px 64px", main_gap="18px", panel_padding="24px", panel_radius="24px") + """
     body {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         linear-gradient(180deg, rgba(233, 206, 177, 0.82), rgba(243, 239, 231, 0.98) 30%),
         radial-gradient(circle at right top, rgba(46, 106, 75, 0.08), transparent 28%);
-    }
-    main {
-      max-width: 1120px;
-      margin: 0 auto;
-      padding: 34px 18px 64px;
-      display: grid;
-      gap: 18px;
-    }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 24px;
     }
     .hero {
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
       gap: 18px;
       align-items: start;
-    }
-    .eyebrow {
-      font-size: 0.8rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--accent);
     }
     h1, h2, h3 {
       margin: 0;
@@ -4562,29 +4488,12 @@ def _render_admin_uploads_page() -> str:
       font-size: 1.5rem;
       margin-bottom: 12px;
     }
-    p, li {
-      color: var(--muted);
-      line-height: 1.6;
-    }
+    p, li { color: var(--muted); line-height: 1.6; }
     .actions, .meta-row {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       margin-top: 16px;
-    }
-    .button {
-      display: inline-block;
-      border: 1px solid var(--accent);
-      border-radius: 999px;
-      padding: 12px 18px;
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      background: transparent;
-    }
-    .button.utility {
-      border-color: var(--line);
-      color: var(--muted);
     }
     .badge {
       display: inline-block;
@@ -4764,36 +4673,12 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>National Parks · MilesMemories Admin</title>
   <style>
-    :root {{
-      --bg: #f3efe7;
-      --panel: #fff9f0;
-      --line: #dcccb4;
-      --ink: #182233;
-      --muted: #657286;
-      --accent: #b85f35;
-      --good: #2e6a4b;
-      --shadow: rgba(37, 28, 14, 0.12);
-    }}
-    * {{ box-sizing: border-box; }}
+    {_admin_theme_css()}
+    {_site_shell_css(max_width="1180px", main_padding="34px 18px 64px", main_gap="18px", panel_padding="22px", panel_radius="24px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         linear-gradient(180deg, rgba(233, 206, 177, 0.8), rgba(243, 239, 231, 0.98) 28%),
         linear-gradient(90deg, rgba(184, 95, 53, 0.08), transparent 22%, transparent 78%, rgba(42, 89, 81, 0.08));
-    }}
-    main {{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 34px 18px 64px;
-    }}
-    .panel {{
-      background: rgba(255, 249, 240, 0.92);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 22px;
     }}
     .topbar {{
       display: flex;
@@ -4802,40 +4687,17 @@ def _render_admin_parks_page(parks_list: list[dict[str, Any]]) -> str:
       gap: 16px;
       margin-bottom: 20px;
     }}
-    .eyebrow {{
-      font-size: 0.82rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--accent);
-    }}
     h1 {{
       margin: 6px 0 0;
       font-size: clamp(2rem, 5vw, 3.6rem);
     }}
     .sub {{
-      color: var(--muted);
       margin-top: 6px;
     }}
     .links {{
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-    }}
-    .button, button {{
-      display: inline-block;
-      border: 1px solid var(--accent);
-      background: transparent;
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      border-radius: 999px;
-      padding: 12px 18px;
-      font: inherit;
-      cursor: pointer;
-    }}
-    .button.primary {{
-      background: var(--accent);
-      color: #fff;
     }}
     .parks-controls {{
       display: grid;
@@ -5113,39 +4975,14 @@ def _render_admin_activities_page(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Unattached activities · MilesMemories</title>
   <style>
-    :root {{
-      --bg: #f4efe6;
-      --panel: rgba(255, 250, 242, 0.94);
-      --ink: #1d2430;
-      --muted: #5f6b7a;
-      --line: #d8c9b3;
-      --accent: #c8643b;
-      --shadow: rgba(50, 33, 15, 0.12);
-    }}
-    * {{ box-sizing: border-box; }}
+    {_admin_theme_css()}
+    {_site_shell_css(max_width="1100px", main_padding="36px 20px 60px", main_gap="24px", panel_padding="26px", panel_radius="28px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       min-height: 100vh;
       background:
         radial-gradient(circle at top left, rgba(200,100,59,0.18), transparent 28%),
         radial-gradient(circle at right 20%, rgba(39,93,79,0.12), transparent 24%),
         linear-gradient(180deg, #eed6bd 0%, var(--bg) 34%, #f8f4ed 100%);
-    }}
-    main {{
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 36px 20px 60px;
-      display: grid;
-      gap: 24px;
-    }}
-    .panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 26px;
     }}
     h1 {{
       margin: 0;
@@ -5156,16 +4993,6 @@ def _render_admin_activities_page(
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
-    }}
-    .button {{
-      display: inline-block;
-      border: 1px solid var(--accent);
-      background: transparent;
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 700;
-      border-radius: 999px;
-      padding: 10px 16px;
     }}
     .filters {{
       display: grid;
@@ -5407,49 +5234,16 @@ def _render_overrides_page(overrides: List[dict], *, return_to: str = "") -> str
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Destination Overrides · MilesMemories</title>
   <style>
-    :root {{
-      --bg: #f3efe7;
-      --panel: #fff9f0;
-      --line: #dcccb4;
-      --ink: #182233;
-      --muted: #657286;
-      --accent: #b85f35;
-      --danger: #962f24;
-      --shadow: rgba(37, 28, 14, 0.12);
-    }}
-    * {{ box-sizing: border-box; }}
+    {_admin_theme_css()}
+    {_site_shell_css(max_width="1180px", main_padding="34px 18px 64px", main_gap="18px", panel_padding="24px", panel_radius="24px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background: linear-gradient(180deg, #e8d6c0, #f3efe7 28%, #faf7f1 100%);
-    }}
-    main {{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 34px 18px 64px;
-      display: grid;
-      gap: 18px;
-    }}
-    .panel {{
-      background: rgba(255, 249, 240, 0.94);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 24px;
     }}
     .topbar {{
       display: flex;
       justify-content: space-between;
       gap: 16px;
       align-items: start;
-    }}
-    .eyebrow {{
-      color: var(--accent);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      font-size: 0.8rem;
-      margin-bottom: 10px;
     }}
     .hero-head {{
       display: flex;
@@ -5465,25 +5259,10 @@ def _render_overrides_page(overrides: List[dict], *, return_to: str = "") -> str
       justify-content: flex-end;
     }}
     h1, h2 {{ margin: 0 0 12px; }}
-    p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
     .links {{
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-    }}
-    .button, button {{
-      border-radius: 999px;
-      padding: 12px 16px;
-      border: 1px solid var(--accent);
-      background: transparent;
-      color: var(--accent);
-      font-weight: 700;
-      text-decoration: none;
-      cursor: pointer;
-    }}
-    .button.primary, button.primary {{
-      background: var(--accent);
-      color: white;
     }}
     .danger {{
       background: transparent;
@@ -5927,30 +5706,12 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
   <title>{title} · MilesMemories</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
-    :root {{
-      --bg: #f2eee6;
-      --panel: #fff8ef;
-      --line: #dbcab1;
-      --ink: #1b2433;
-      --muted: #647084;
-      --accent: #b85f35;
-      --shadow: rgba(37, 28, 14, 0.12);
-      --good: #2e6a4b;
-      --warn: #9b641d;
-    }}
-    * {{ box-sizing: border-box; }}
+    {_admin_theme_css()}
+    {_site_shell_css(max_width="1180px", main_padding="34px 18px 64px", main_gap="18px", panel_padding="24px", panel_radius="24px")}
     body {{
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--ink);
       background:
         radial-gradient(circle at top left, rgba(184,95,53,0.14), transparent 26%),
         linear-gradient(180deg, #e7d3bc, var(--bg) 30%, #faf7f1 100%);
-    }}
-    main {{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 34px 18px 64px;
     }}
     .stack {{
       display: grid;
@@ -5963,20 +5724,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     .hero.single-panel {{
       grid-template-columns: 1fr;
-    }}
-    .panel {{
-      background: rgba(255, 248, 239, 0.94);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      box-shadow: 0 18px 40px var(--shadow);
-      padding: 24px;
-    }}
-    .eyebrow {{
-      color: var(--accent);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      font-size: 0.8rem;
-      margin-bottom: 10px;
     }}
     .sr-only {{
       position: absolute;
@@ -5991,7 +5738,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     }}
     h1, h2, h3 {{ margin: 0 0 12px; }}
     h1 {{ font-size: clamp(2.2rem, 5vw, 4.4rem); line-height: 0.98; }}
-    p {{ margin: 0; color: var(--muted); line-height: 1.6; }}
     .meta-row, .actions {{
       display: flex;
       flex-wrap: wrap;
@@ -6009,32 +5755,6 @@ def _render_trip_detail_page(trip: dict, *, saved: Union[bool, str] = False) -> 
     .badge.good {{ background: rgba(46,106,75,0.14); color: var(--good); }}
     .badge.warn {{ background: rgba(155,100,29,0.14); color: var(--warn); }}
     .badge.muted {{ background: rgba(100,112,132,0.14); color: var(--muted); }}
-    .button, button {{
-      display: inline-block;
-      text-decoration: none;
-      border-radius: 999px;
-      padding: 12px 16px;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-      background: transparent;
-      font-weight: 700;
-      font: inherit;
-      cursor: pointer;
-    }}
-    .button.primary, button.primary {{
-      color: white;
-      background: var(--accent);
-    }}
-    .button.utility {{
-      border-color: var(--line);
-    }}
-    button:hover, .button:hover {{
-      filter: brightness(0.98);
-    }}
-    button:focus-visible, .button:focus-visible, details > summary:focus-visible {{
-      outline: 2px solid rgba(184, 95, 53, 0.35);
-      outline-offset: 3px;
-    }}
     .grid {{
       display: grid;
       grid-template-columns: 0.85fr 1.15fr;
