@@ -6,11 +6,13 @@ from unittest.mock import patch
 
 from trip_engine.detector import (
     _apply_destination_override,
+    _cluster_nonlocal_garmin_activities,
     _generate_trip_name,
     _haversine_km,
     _is_stale_cached_place,
     _resolve_destination_profile,
     _select_locality,
+    detect_garmin_trips,
     detect_trips,
 )
 
@@ -400,6 +402,84 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(created, 1)
         self.assertEqual(linked, 1)
         self.assertEqual(cursor.inserted_trip_params[0][8], "Busch Stadium")
+
+    def test_cluster_nonlocal_garmin_activities_skips_local_and_groups_remote(self) -> None:
+        activities = [
+            {
+                "id": 1,
+                "activity_name": "Local Run",
+                "start_time": datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 1, 1, 13, 0, tzinfo=timezone.utc),
+                "start_latitude": 38.7505,
+                "start_longitude": -90.6877,
+                "end_latitude": 38.7505,
+                "end_longitude": -90.6877,
+            },
+            {
+                "id": 2,
+                "activity_name": "Remote Hike 1",
+                "start_time": datetime(2026, 1, 10, 14, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 1, 10, 18, 0, tzinfo=timezone.utc),
+                "start_latitude": 36.107,
+                "start_longitude": -112.113,
+                "end_latitude": 36.107,
+                "end_longitude": -112.113,
+            },
+            {
+                "id": 3,
+                "activity_name": "Remote Hike 2",
+                "start_time": datetime(2026, 1, 11, 15, 0, tzinfo=timezone.utc),
+                "end_time": datetime(2026, 1, 11, 17, 0, tzinfo=timezone.utc),
+                "start_latitude": 36.12,
+                "start_longitude": -112.10,
+                "end_latitude": 36.12,
+                "end_longitude": -112.10,
+            },
+        ]
+
+        clusters = _cluster_nonlocal_garmin_activities(
+            activities,
+            home_lat=38.7504884,
+            home_lon=-90.6877536,
+            local_cutoff_km=80.0,
+            cluster_gap_hours=36,
+        )
+
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].activity_ids, [2, 3])
+
+    def test_detect_garmin_trips_creates_trip_for_remote_unattached_activities(self) -> None:
+        cursor = FakeCursor()
+        cursor.fetchone_results = [None, (1,)]
+
+        with patch("trip_engine.detector.ensure_default_user", return_value=1), \
+             patch("trip_engine.detector.get_home_profile", return_value=(38.7504884, -90.6877536, 16093)), \
+             patch("trip_engine.detector.get_user_timezone", return_value="America/Chicago"), \
+             patch(
+                 "trip_engine.detector._fetch_unattached_garmin_activities",
+                 return_value=[
+                     {
+                         "id": 21,
+                         "activity_name": "Grand Canyon Hike",
+                         "activity_type": "hiking",
+                         "start_time": datetime(2026, 3, 1, 13, 0, tzinfo=timezone.utc),
+                         "end_time": datetime(2026, 3, 1, 23, 0, tzinfo=timezone.utc),
+                         "start_latitude": 36.057,
+                         "start_longitude": -112.143,
+                         "end_latitude": 36.057,
+                         "end_longitude": -112.143,
+                     }
+                 ],
+             ), \
+             patch(
+                 "trip_engine.detector._resolve_destination_profile",
+                 return_value={"name": "Grand Canyon", "locality": "Tusayan", "classification": None},
+             ), \
+             patch("trip_engine.detector.get_conn", return_value=FakeConn(cursor)):
+            created, linked = detect_garmin_trips()
+
+        self.assertEqual((created, linked), (1, 1))
+        self.assertEqual(cursor.inserted_trip_params[0][2], "garmin-detected-2026-03-01-1")
 
 
 if __name__ == "__main__":

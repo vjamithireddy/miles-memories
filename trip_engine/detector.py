@@ -95,6 +95,17 @@ class SimpleTrip:
     touched_work: bool = False
 
 
+@dataclass
+class GarminTripCandidate:
+    start_time: datetime
+    end_time: datetime
+    destination_lat: float
+    destination_lon: float
+    activity_ids: list[int]
+    activity_names: list[str]
+    max_distance_km: float
+
+
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
     dlat = radians(lat2 - lat1)
@@ -453,6 +464,60 @@ def _fetch_location_events(since_ts: datetime | None = None) -> list[tuple[int, 
             return [(int(r[0]), r[1], float(r[2]), float(r[3])) for r in cur.fetchall()]
 
 
+def _fetch_unattached_garmin_activities() -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    activity_name,
+                    activity_type,
+                    start_time,
+                    end_time,
+                    duration_seconds,
+                    start_latitude,
+                    start_longitude,
+                    end_latitude,
+                    end_longitude
+                FROM activities
+                WHERE source = 'garmin'
+                  AND trip_id IS NULL
+                  AND start_time IS NOT NULL
+                  AND (
+                    (start_latitude IS NOT NULL AND start_longitude IS NOT NULL)
+                    OR (end_latitude IS NOT NULL AND end_longitude IS NOT NULL)
+                  )
+                ORDER BY start_time ASC, id ASC
+                """
+            )
+            rows = cur.fetchall()
+    activities: list[dict[str, Any]] = []
+    for row in rows:
+        start_lat = float(row[6]) if row[6] is not None else None
+        start_lon = float(row[7]) if row[7] is not None else None
+        end_lat = float(row[8]) if row[8] is not None else None
+        end_lon = float(row[9]) if row[9] is not None else None
+        activities.append(
+            {
+                "id": int(row[0]),
+                "activity_name": str(row[1] or "Garmin activity"),
+                "activity_type": str(row[2] or "other"),
+                "start_time": row[3],
+                "end_time": row[4] or (
+                    row[3] + timedelta(seconds=int(row[5]))
+                    if row[5] and row[3]
+                    else row[3]
+                ),
+                "start_latitude": start_lat,
+                "start_longitude": start_lon,
+                "end_latitude": end_lat,
+                "end_longitude": end_lon,
+            }
+        )
+    return activities
+
+
 def get_detection_since_ts(*, overlap_hours: int = 6) -> datetime | None:
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -475,6 +540,59 @@ def _trip_overlaps_existing(cur, start_time: datetime, end_time: datetime) -> bo
         (end_time, start_time),
     )
     return cur.fetchone() is not None
+
+
+def _cluster_nonlocal_garmin_activities(
+    activities: list[dict[str, Any]],
+    *,
+    home_lat: float,
+    home_lon: float,
+    local_cutoff_km: float,
+    cluster_gap_hours: int,
+) -> list[GarminTripCandidate]:
+    clusters: list[GarminTripCandidate] = []
+    current: GarminTripCandidate | None = None
+    cluster_gap = timedelta(hours=cluster_gap_hours)
+
+    for activity in activities:
+        candidate_points = [
+            (activity["start_latitude"], activity["start_longitude"]),
+            (activity["end_latitude"], activity["end_longitude"]),
+        ]
+        non_local_points: list[tuple[float, float, float]] = []
+        for lat, lon in candidate_points:
+            if lat is None or lon is None:
+                continue
+            dist = _haversine_km(home_lat, home_lon, lat, lon)
+            if dist >= local_cutoff_km:
+                non_local_points.append((lat, lon, dist))
+        if not non_local_points:
+            continue
+
+        destination_lat, destination_lon, max_dist = max(non_local_points, key=lambda item: item[2])
+        start_time = activity["start_time"]
+        end_time = activity["end_time"] or activity["start_time"]
+        if current and start_time - current.end_time <= cluster_gap:
+            current.end_time = max(current.end_time, end_time)
+            current.activity_ids.append(activity["id"])
+            current.activity_names.append(activity["activity_name"])
+            if max_dist >= current.max_distance_km:
+                current.max_distance_km = max_dist
+                current.destination_lat = destination_lat
+                current.destination_lon = destination_lon
+        else:
+            current = GarminTripCandidate(
+                start_time=start_time,
+                end_time=end_time,
+                destination_lat=destination_lat,
+                destination_lon=destination_lon,
+                activity_ids=[activity["id"]],
+                activity_names=[activity["activity_name"]],
+                max_distance_km=max_dist,
+            )
+            clusters.append(current)
+
+    return clusters
 
 
 def detect_trips(*, since_ts: datetime | None = None, overlap_hours: int = 6) -> tuple[int, int]:
@@ -657,3 +775,126 @@ def detect_trips(*, since_ts: datetime | None = None, overlap_hours: int = 6) ->
                     linked_events += 1
 
     return (created, linked_events)
+
+
+def detect_garmin_trips(
+    *,
+    local_cutoff_km: float = 80.0,
+    cluster_gap_hours: int = 36,
+) -> tuple[int, int]:
+    user_id = ensure_default_user()
+    home_lat, home_lon, _ = get_home_profile()
+    local_zone = _get_local_zone()
+    if home_lat is None or home_lon is None:
+        return (0, 0)
+
+    activities = _fetch_unattached_garmin_activities()
+    if not activities:
+        return (0, 0)
+
+    candidates = _cluster_nonlocal_garmin_activities(
+        activities,
+        home_lat=home_lat,
+        home_lon=home_lon,
+        local_cutoff_km=local_cutoff_km,
+        cluster_gap_hours=cluster_gap_hours,
+    )
+    if not candidates:
+        return (0, 0)
+
+    created = 0
+    linked_activities = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for idx, trip in enumerate(candidates, start=1):
+                if _trip_overlaps_existing(cur, trip.start_time, trip.end_time):
+                    continue
+
+                destination_profile = _resolve_destination_profile(
+                    trip.destination_lat,
+                    trip.destination_lon,
+                )
+                destination_profile = _apply_destination_override(
+                    trip.destination_lat,
+                    trip.destination_lon,
+                    destination_profile,
+                )
+                if destination_profile.get("ignore_trip"):
+                    continue
+
+                duration = trip.end_time - trip.start_time
+                local_start = _to_local_time(trip.start_time, local_zone)
+                local_end = _to_local_time(trip.end_time, local_zone)
+                if local_start.date() != local_end.date():
+                    if duration < timedelta(days=2):
+                        trip_type = "overnight_trip"
+                    else:
+                        trip_type = "multi_day_trip"
+                else:
+                    trip_type = "day_trip"
+
+                title = _generate_trip_name(
+                    destination_profile,
+                    trip_type,
+                    local_start,
+                    local_end,
+                )
+                score = min(100, int(45 + min(trip.max_distance_km, 800) / 8))
+                slug = f"garmin-detected-{trip.start_time.date()}-{idx}"
+                summary = ", ".join(dict.fromkeys(name.strip() for name in trip.activity_names if name.strip()))
+                if summary:
+                    summary = f"Built from Garmin activities: {summary[:220]}"
+                else:
+                    summary = "Built from Garmin activities outside the local St. Louis area."
+
+                cur.execute(
+                    """
+                    INSERT INTO trips (
+                        user_id, trip_name, trip_slug, trip_type, status, review_decision,
+                        start_time, end_time, start_date, end_date,
+                        primary_destination_name, confidence_score, summary_text,
+                        is_private, publish_ready, created_by, detection_version
+                    )
+                    VALUES (%s, %s, %s, %s, 'needs_review', 'pending', %s, %s, %s, %s, %s, %s, %s, TRUE, FALSE, 'system', 'garmin_v1')
+                    ON CONFLICT (trip_slug) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        user_id,
+                        title,
+                        slug,
+                        trip_type,
+                        trip.start_time,
+                        trip.end_time,
+                        local_start.date(),
+                        local_end.date(),
+                        _destination_title(destination_profile),
+                        score,
+                        summary,
+                    ),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                trip_id = int(row[0])
+                created += 1
+
+                for sort_order, activity_id in enumerate(trip.activity_ids, start=1):
+                    cur.execute(
+                        "UPDATE activities SET trip_id = %s WHERE id = %s",
+                        (trip_id, activity_id),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO trip_events (
+                            trip_id, event_type, event_ref_id, event_time, sort_order, day_index, timeline_label
+                        )
+                        SELECT %s, 'garmin_activity', a.id, a.start_time, %s, 0, a.activity_name
+                        FROM activities a
+                        WHERE a.id = %s
+                        """,
+                        (trip_id, sort_order, activity_id),
+                    )
+                    linked_activities += 1
+
+    return (created, linked_activities)

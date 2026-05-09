@@ -32,6 +32,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 - `make run-api` start local API service
 - `make ingest-location FILE=/path/to/location.json`
 - `make build-latest-trips-from-timeline FILE=/path/to/Timeline.json`
+- `make build-garmin-trips`
 - `make ingest-photos FILE=/path/to/takeout.zip`
 - `make ingest-garmin FILE=/path/to/activity.gpx`
 - `make ingest-garmin FILE=/path/to/garmin-export-directory`
@@ -54,6 +55,8 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
    - `make detect-trips`
    - or for a non-destructive incremental Timeline refresh:
      `make build-latest-trips-from-timeline FILE=/absolute/path/Timeline.json`
+   - or to build trips from unattached Garmin activities outside the local St. Louis area:
+     `make build-garmin-trips`
 
 ## When You Need To Intervene
 - VPS provisioning and DNS changes
