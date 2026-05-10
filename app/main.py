@@ -994,6 +994,7 @@ def _render_public_homepage(
       const filterInput = document.querySelector("[data-parks-filter]");
       const list = document.querySelector("[data-parks-list]");
       const tabs = document.querySelector("[data-parks-tabs]");
+      let parksMapController = null;
       let activeStatus = "all";
       const activeTab = tabs?.querySelector(".parks-tab.is-active");
       if (activeTab?.dataset.parksTab) {{
@@ -1011,6 +1012,7 @@ def _render_public_homepage(
           const matchesStatus = activeStatus === "all" || status === activeStatus;
           item.style.display = matchesTerm && matchesStatus ? "" : "none";
         }});
+        parksMapController?.applyFilter?.({{ term, status: activeStatus }});
       }};
       applyFilter();
       filterInput?.addEventListener("input", applyFilter);
@@ -3469,6 +3471,24 @@ def _render_public_maplibre_script() -> str:
         }),
       });
 
+      const parkStatusOf = (park) => {
+        if (park.visited) return "visited";
+        if (park.planned) return "planned";
+        return "unvisited";
+      };
+
+      const computeParkBounds = (parks = []) => {
+        if (!parks.length) return lower48Bounds;
+        const bounds = new maplibregl.LngLatBounds();
+        parks.forEach((park) => {
+          if (typeof park.lon === "number" && typeof park.lat === "number") {
+            bounds.extend([park.lon, park.lat]);
+          }
+        });
+        if (bounds.isEmpty()) return lower48Bounds;
+        return clampBoundsToLower48(bounds.toArray());
+      };
+
       const initParksMap = async (node) => {
         const url = node.dataset.parksUrl || "/api/parks";
         const response = await fetch(url);
@@ -3476,11 +3496,29 @@ def _render_public_maplibre_script() -> str:
         const payload = await response.json();
         const parks = Array.isArray(payload.parks) ? payload.parks : [];
         const stopData = buildParkGeoJson(parks);
-        initMap(
+        const map = initMap(
           node,
-          { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds: lower48Bounds },
+          { route: { type: "FeatureCollection", features: [] }, stops: stopData, bounds: computeParkBounds(parks) },
           { clusterStops: true, fitMaxZoom: 3.1, maxZoom: 7 }
         );
+        const stopSourceId = map.__stopSourceId;
+        return {
+          applyFilter({ term = "", status = "all" } = {}) {
+            const normalizedTerm = term.trim().toLowerCase();
+            const filteredParks = parks.filter((park) => {
+              const name = String(park.name || "").toLowerCase();
+              const parkStatus = parkStatusOf(park);
+              const matchesTerm = !normalizedTerm || name.includes(normalizedTerm);
+              const matchesStatus = status === "all" || parkStatus === status;
+              return matchesTerm && matchesStatus;
+            });
+            const source = stopSourceId ? map.getSource(stopSourceId) : null;
+            if (source && typeof source.setData === "function") {
+              source.setData(buildParkGeoJson(filteredParks));
+            }
+            map.fitBounds(computeParkBounds(filteredParks), { padding: 36, duration: 250, maxZoom: 3.1 });
+          }
+        };
       };
 
       document.querySelectorAll("[data-public-trip-map]").forEach((node) => {
@@ -3505,7 +3543,10 @@ def _render_public_maplibre_script() -> str:
 
       document.querySelectorAll("[data-parks-map]").forEach((node) => {
         initWhenVisible(node, () => {
-          initParksMap(node).catch((error) => {
+          initParksMap(node).then((controller) => {
+            parksMapController = controller;
+            applyFilter();
+          }).catch((error) => {
             console.error("Failed to initialize parks map", error);
           });
         });
