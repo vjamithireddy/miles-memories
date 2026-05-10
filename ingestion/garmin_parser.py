@@ -382,28 +382,26 @@ def parse_activities(path: str) -> list[ActivityRecord]:
     return [parse_activity(path)]
 
 
-def _link_activity_to_trip(activity_id: int, start_time: datetime, end_time: datetime) -> int | None:
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id,
-                       LEAST(end_time, %s) - GREATEST(start_time, %s) AS overlap
-                FROM trips
-                WHERE start_time <= %s
-                  AND end_time >= %s
-                ORDER BY overlap DESC NULLS LAST
-                LIMIT 1
-                """,
-                (end_time, start_time, end_time, start_time),
-            )
-            row = cur.fetchone()
-            if not row:
-                cur.execute("UPDATE activities SET trip_id = NULL WHERE id = %s", (activity_id,))
-                return None
-            trip_id = int(row[0])
-            cur.execute("UPDATE activities SET trip_id = %s WHERE id = %s", (trip_id, activity_id))
-            return trip_id
+def _link_activity_to_trip(cur, activity_id: int, start_time: datetime, end_time: datetime) -> int | None:
+    cur.execute(
+        """
+        SELECT id,
+               LEAST(end_time, %s) - GREATEST(start_time, %s) AS overlap
+        FROM trips
+        WHERE start_time <= %s
+          AND end_time >= %s
+        ORDER BY overlap DESC NULLS LAST
+        LIMIT 1
+        """,
+        (end_time, start_time, end_time, start_time),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.execute("UPDATE activities SET trip_id = NULL WHERE id = %s", (activity_id,))
+        return None
+    trip_id = int(row[0])
+    cur.execute("UPDATE activities SET trip_id = %s WHERE id = %s", (trip_id, activity_id))
+    return trip_id
 
 
 def save_activity(import_id: int, record: ActivityRecord) -> tuple[int, bool, int | None]:
@@ -488,5 +486,5 @@ def save_activity(import_id: int, record: ActivityRecord) -> tuple[int, bool, in
                 if record.duration_seconds
                 else record.start_time
             )
-            trip_id = _link_activity_to_trip(int(activity_id), start_time, end_time)
+            trip_id = _link_activity_to_trip(cur, int(activity_id), start_time, end_time)
             return int(activity_id), bool(inserted), trip_id
