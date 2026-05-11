@@ -994,7 +994,6 @@ def _render_public_homepage(
       const filterInput = document.querySelector("[data-parks-filter]");
       const list = document.querySelector("[data-parks-list]");
       const tabs = document.querySelector("[data-parks-tabs]");
-      let parksMapController = null;
       let activeStatus = "all";
       const activeTab = tabs?.querySelector(".parks-tab.is-active");
       if (activeTab?.dataset.parksTab) {{
@@ -1005,6 +1004,8 @@ def _render_public_homepage(
       }}
       const applyFilter = () => {{
         const term = (filterInput?.value || "").trim().toLowerCase();
+        window.__parksMapFilterTerm = term;
+        window.__parksMapFilterStatus = activeStatus;
         list.querySelectorAll(".park-item").forEach((item) => {{
           const name = item.dataset.parkName || "";
           const status = item.dataset.parkStatus || "unvisited";
@@ -1012,7 +1013,7 @@ def _render_public_homepage(
           const matchesStatus = activeStatus === "all" || status === activeStatus;
           item.style.display = matchesTerm && matchesStatus ? "" : "none";
         }});
-        parksMapController?.applyFilter?.({{ term, status: activeStatus }});
+        window.__parksMapController?.applyFilter?.({{ term, status: activeStatus }});
       }};
       applyFilter();
       filterInput?.addEventListener("input", applyFilter);
@@ -3557,8 +3558,11 @@ def _render_public_maplibre_script() -> str:
       document.querySelectorAll("[data-parks-map]").forEach((node) => {
         initWhenVisible(node, () => {
           initParksMap(node).then((controller) => {
-            parksMapController = controller;
-            applyFilter();
+            window.__parksMapController = controller;
+            window.__parksMapController?.applyFilter?.({
+              term: window.__parksMapFilterTerm || "",
+              status: window.__parksMapFilterStatus || "all",
+            });
           }).catch((error) => {
             console.error("Failed to initialize parks map", error);
           });
