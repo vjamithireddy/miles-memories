@@ -3239,6 +3239,7 @@ def _render_public_maplibre_script() -> str:
           maxBounds: lower48Bounds,
           maxZoom,
         });
+        map.__stopSourceId = stopSourceId;
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
         if (window.ResizeObserver) {
           const resizeObserver = new ResizeObserver(() => map.resize());
@@ -3502,6 +3503,22 @@ def _render_public_maplibre_script() -> str:
           { clusterStops: true, fitMaxZoom: 3.1, maxZoom: 7 }
         );
         const stopSourceId = map.__stopSourceId;
+        let pendingFilter = null;
+        const applyFilteredParks = (filteredParks) => {
+          const source = stopSourceId ? map.getSource(stopSourceId) : null;
+          if (!source || typeof source.setData !== "function") {
+            pendingFilter = filteredParks;
+            return;
+          }
+          pendingFilter = null;
+          source.setData(buildParkGeoJson(filteredParks));
+          map.fitBounds(computeParkBounds(filteredParks), { padding: 36, duration: 250, maxZoom: 3.1 });
+        };
+        map.on("load", () => {
+          if (pendingFilter) {
+            applyFilteredParks(pendingFilter);
+          }
+        });
         return {
           applyFilter({ term = "", status = "all" } = {}) {
             const normalizedTerm = term.trim().toLowerCase();
@@ -3512,11 +3529,7 @@ def _render_public_maplibre_script() -> str:
               const matchesStatus = status === "all" || parkStatus === status;
               return matchesTerm && matchesStatus;
             });
-            const source = stopSourceId ? map.getSource(stopSourceId) : null;
-            if (source && typeof source.setData === "function") {
-              source.setData(buildParkGeoJson(filteredParks));
-            }
-            map.fitBounds(computeParkBounds(filteredParks), { padding: 36, duration: 250, maxZoom: 3.1 });
+            applyFilteredParks(filteredParks);
           }
         };
       };
