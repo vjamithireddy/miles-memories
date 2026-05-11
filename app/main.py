@@ -443,6 +443,19 @@ def _render_public_homepage(
       gap: 18px;
     }}
 
+    .parks-controls {{
+      display: grid;
+      gap: 14px;
+      margin-bottom: 6px;
+    }}
+
+    .parks-controls-top {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+      gap: 14px;
+      align-items: end;
+    }}
+
     .parks-grid {{
       display: grid;
       grid-template-columns: 1.1fr 0.9fr;
@@ -494,9 +507,6 @@ def _render_public_homepage(
       gap: 12px;
     }}
 
-    .parks-search {{
-      order: 1;
-    }}
     .parks-search input {{
       width: 100%;
       border: 1px solid var(--line);
@@ -525,8 +535,7 @@ def _render_public_homepage(
     {_tab_strip_grid_css(".parks-tabs")}
     {_folder_tab_button_css(".parks-tab", width="100%", padding="0 16px 2px", font_size="0.9rem")}
     .parks-tabs {{
-      margin-bottom: 10px;
-      order: 0;
+      margin-bottom: 0;
     }}
 
     .parks-scroll {{
@@ -809,6 +818,7 @@ def _render_public_homepage(
       .published-grid {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
+      .parks-controls-top,
       .parks-grid {{
         grid-template-columns: 1fr;
       }}
@@ -863,6 +873,9 @@ def _render_public_homepage(
       .parks-tabs {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
+      .parks-controls {{
+        gap: 12px;
+      }}
       .home-section-tabs {{
         display: flex;
       }}
@@ -912,6 +925,19 @@ def _render_public_homepage(
         </div>
         <p>{parks_counts.get("visited", 0)} visited · {parks_counts.get("planned", 0)} planned · {parks_counts.get("total", 0)} total</p>
       </div>
+      <div class="parks-controls">
+        <div class="parks-controls-top">
+          <div class="parks-tabs" data-parks-tabs>
+            <button class="parks-tab" type="button" data-parks-tab="visited">Visited</button>
+            <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
+            <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
+            <button class="parks-tab is-active" type="button" data-parks-tab="all">All</button>
+          </div>
+          <div class="parks-search">
+            <input type="search" placeholder="Search parks..." data-parks-filter>
+          </div>
+        </div>
+      </div>
       <div class="parks-grid">
         <div class="parks-map">
           <div class="maplibre-shell">
@@ -924,15 +950,6 @@ def _render_public_homepage(
           </div>
         </div>
         <div class="parks-list">
-          <div class="parks-tabs" data-parks-tabs>
-            <button class="parks-tab" type="button" data-parks-tab="visited">Visited</button>
-            <button class="parks-tab" type="button" data-parks-tab="planned">Planned</button>
-            <button class="parks-tab" type="button" data-parks-tab="unvisited">Not visited</button>
-            <button class="parks-tab is-active" type="button" data-parks-tab="all">All</button>
-          </div>
-          <div class="parks-search">
-            <input type="search" placeholder="Search parks..." data-parks-filter>
-          </div>
           <div class="parks-scroll" data-parks-list>
             <ul>
               {parks_list_markup}
