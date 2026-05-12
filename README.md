@@ -33,6 +33,7 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
 - `make ingest-location FILE=/path/to/location.json`
 - `make build-latest-trips-from-timeline FILE=/path/to/Timeline.json`
 - `make build-garmin-trips`
+- `make refresh-recent-auto-trips MIN_TRIP_ID=<trip_id>`
 - `make ingest-photos FILE=/path/to/takeout.zip`
 - `make ingest-garmin FILE=/path/to/activity.gpx`
 - `make ingest-garmin FILE=/path/to/garmin-export-directory`
@@ -57,6 +58,8 @@ MilesMemories builds a personal travel site from Google Takeout (Photos + Androi
      `make build-latest-trips-from-timeline FILE=/absolute/path/Timeline.json`
    - or to build trips from unattached Garmin activities outside the local St. Louis area:
      `make build-garmin-trips`
+   - or to refresh names, destinations, and summaries for recent auto-built trips:
+     `make refresh-recent-auto-trips MIN_TRIP_ID=925`
 
 ## When You Need To Intervene
 - VPS provisioning and DNS changes

@@ -59,6 +59,50 @@ DOWNRANKED_DESTINATION_KEYWORDS = (
     "route",
     "lot",
 )
+GENERIC_ACTIVITY_DESTINATION_KEYWORDS = (
+    "county",
+    "state",
+    "region",
+    "freeway",
+    "highway",
+    "interstate",
+    "route",
+    "shelter",
+    "parking",
+    "parking lot",
+    "lot",
+)
+SPECIFIC_ACTIVITY_KEYWORDS = (
+    "national park",
+    "nps",
+    "trail",
+    "trailhead",
+    "falls",
+    "dune",
+    "canyon",
+    "mesa",
+    "mount",
+    "mt ",
+    "mountain",
+    "peak",
+    "ridge",
+    "arch",
+    "grove",
+    "meadow",
+    "beach",
+    "lake",
+    "river",
+    "cave",
+    "viewpoint",
+    "overlook",
+    "visitor center",
+    "state park",
+    "monument",
+    "preserve",
+    "forest",
+    "waterfall",
+    "dunes",
+)
 NOMINATIM_MIN_INTERVAL_SECONDS = 1.1
 NOMINATIM_BACKOFF_SECONDS = 5.0
 
@@ -150,6 +194,27 @@ def _meaningful_locality(value: Optional[str]) -> Optional[str]:
     return text
 
 
+def _title_case_phrase(value: str) -> str:
+    words = []
+    for raw_word in re.split(r"(\s+)", value.strip()):
+        if not raw_word or raw_word.isspace():
+            words.append(raw_word)
+            continue
+        upper = raw_word.upper()
+        lower = raw_word.lower()
+        if upper in {"NPS", "USA", "US"}:
+            words.append(upper)
+            continue
+        if lower in {"and", "of", "the", "in", "at", "to", "for"}:
+            words.append(lower)
+            continue
+        if lower == "mt":
+            words.append("Mt")
+            continue
+        words.append(raw_word[:1].upper() + raw_word[1:].lower())
+    return "".join(words)
+
+
 def _select_locality(address: Dict[str, Any]) -> Optional[str]:
     for field in LOCALITY_ADDRESS_FIELDS:
         locality = _meaningful_locality(address.get(field))
@@ -169,6 +234,168 @@ def _is_downranked_destination_name(value: Optional[str]) -> bool:
     if not text:
         return False
     return any(re.search(rf"\b{re.escape(keyword)}\b", text) for keyword in DOWNRANKED_DESTINATION_KEYWORDS)
+
+
+def _is_generic_activity_destination(value: Optional[str]) -> bool:
+    if not value:
+        return True
+    text = value.strip().lower()
+    if not text:
+        return True
+    return any(re.search(rf"\b{re.escape(keyword)}\b", text) for keyword in GENERIC_ACTIVITY_DESTINATION_KEYWORDS)
+
+
+def _clean_activity_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"\s+", " ", value).strip(" ,.-")
+    if not cleaned:
+        return None
+    return cleaned
+
+
+def _strip_activity_suffix(value: str) -> str:
+    stripped = re.sub(
+        r"\s+(?:walking|running|hiking|cycling|biking|strength|workout|activity)\b$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
+    return stripped or value
+
+
+def _activity_candidate_score(value: str) -> tuple[int, int, int, int]:
+    text = value.strip().lower()
+    specific_hits = sum(1 for keyword in SPECIFIC_ACTIVITY_KEYWORDS if keyword in text)
+    generic_penalty = sum(1 for keyword in GENERIC_ACTIVITY_DESTINATION_KEYWORDS if keyword in text)
+    token_count = min(len(text.split()), 8)
+    return (
+        specific_hits,
+        -generic_penalty,
+        token_count,
+        len(text),
+    )
+
+
+def _extract_park_names(activity_name: str) -> list[str]:
+    matches: list[str] = []
+    lowered = activity_name.lower()
+    for match in re.finditer(r"([a-z0-9'&.\- /]+?)\s*(?:national park(?:s)?|[,-]\s*nps)\b", lowered):
+        prefix = match.group(1).strip(" ,.-/")
+        tail = re.split(r"\s[-,/]\s", prefix)
+        park = tail[-1].strip(" ,.-/")
+        if not park:
+            continue
+        if _is_generic_activity_destination(park):
+            continue
+        matches.append(_title_case_phrase(park))
+    return matches
+
+
+def _dedupe_preserving_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        key = value.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(value.strip())
+    return deduped
+
+
+def _best_activity_destination(
+    activity_names: list[str],
+    fallback_destination: Optional[str],
+) -> tuple[Optional[str], Optional[str], list[str]]:
+    cleaned_names = _dedupe_preserving_order(
+        [name for name in (_clean_activity_name(item) for item in activity_names) if name]
+    )
+    park_names = _dedupe_preserving_order(
+        [park for name in cleaned_names for park in _extract_park_names(name)]
+    )
+    if park_names:
+        title_destination = ", ".join(f"{name} - NPS" for name in park_names[:3])
+        primary_destination = f"{park_names[0]} - NPS"
+        return primary_destination, title_destination, cleaned_names
+
+    candidate_names: list[str] = []
+    for name in cleaned_names:
+        stripped = _strip_activity_suffix(name)
+        if _is_generic_activity_destination(stripped):
+            continue
+        candidate_names.append(stripped)
+    candidate_names = _dedupe_preserving_order(candidate_names)
+
+    best_candidate = None
+    if candidate_names:
+        best_candidate = max(candidate_names, key=_activity_candidate_score)
+
+    destination = fallback_destination
+    if best_candidate:
+        best_score = _activity_candidate_score(best_candidate)
+        fallback_score = _activity_candidate_score(destination) if destination else (-1, -99, 0, 0)
+        if not destination or _is_generic_activity_destination(destination) or best_score > fallback_score:
+            destination = best_candidate
+
+    title_destination = destination or fallback_destination
+    return destination, title_destination, cleaned_names
+
+
+def _format_trip_name_from_destination(
+    destination: Optional[str],
+    trip_type: str,
+    start_time: datetime,
+    end_time: datetime,
+    *,
+    classification: Optional[str] = None,
+) -> str:
+    if not destination:
+        return f"Trip on {start_time.date()}"
+
+    if classification == "pro_sports_venue":
+        if trip_type == "day_trip":
+            return f"{destination} Day Trip"
+        return f"{destination} Trip"
+
+    if trip_type == "day_trip":
+        return f"{destination} Day Trip"
+    if trip_type == "overnight_trip":
+        if start_time.weekday() in {4, 5} and (end_time.date() - start_time.date()).days <= 2:
+            return f"{destination} Weekend"
+        return f"{destination} Overnight"
+    return destination
+
+
+def _generate_trip_summary(
+    *,
+    source: str,
+    destination: Optional[str],
+    trip_type: str,
+    activity_names: list[str] | None = None,
+) -> Optional[str]:
+    cleaned_destination = destination.strip() if destination else None
+    if source == "garmin":
+        lead = (
+            f"Detected from non-local Garmin activities around {cleaned_destination}."
+            if cleaned_destination
+            else "Detected from non-local Garmin activities outside the St. Louis area."
+        )
+        cleaned_names = _dedupe_preserving_order(
+            [name for name in (_clean_activity_name(item) for item in (activity_names or [])) if name]
+        )
+        if not cleaned_names:
+            return lead
+        highlights = ", ".join(cleaned_names[:3])
+        if len(cleaned_names) > 3:
+            highlights = f"{highlights}, and more"
+        return f"{lead} Highlights: {highlights}."
+
+    if cleaned_destination:
+        if trip_type == "day_trip":
+            return f"Detected from Google Timeline activity around {cleaned_destination}."
+        return f"Detected from Google Timeline travel around {cleaned_destination}."
+    return "Detected from Google Timeline activity data."
 
 
 def _is_stale_cached_place(
@@ -407,25 +634,18 @@ def _generate_trip_name(
     trip_type: str,
     start_time: datetime,
     end_time: datetime,
+    *,
+    preferred_destination: Optional[str] = None,
 ) -> str:
-    destination = _destination_title(profile)
+    destination = preferred_destination or _destination_title(profile)
     classification = profile.get("classification")
-
-    if not destination:
-        return f"Trip on {start_time.date()}"
-
-    if classification == "pro_sports_venue":
-        if trip_type == "day_trip":
-            return f"{destination} Day Trip"
-        return f"{destination} Trip"
-
-    if trip_type == "day_trip":
-        return f"{destination} Day Trip"
-    if trip_type == "overnight_trip":
-        if start_time.weekday() in {4, 5} and (end_time.date() - start_time.date()).days <= 2:
-            return f"{destination} Weekend"
-        return f"{destination} Overnight"
-    return destination
+    return _format_trip_name_from_destination(
+        destination,
+        trip_type,
+        start_time,
+        end_time,
+        classification=classification,
+    )
 
 
 def _get_local_zone() -> ZoneInfo:
@@ -720,16 +940,21 @@ def detect_trips(*, since_ts: datetime | None = None, overlap_hours: int = 6) ->
                     local_start,
                     local_end,
                 )
+                summary = _generate_trip_summary(
+                    source="timeline",
+                    destination=_destination_title(destination_profile),
+                    trip_type=trip_type,
+                )
 
                 cur.execute(
                     """
                     INSERT INTO trips (
                         user_id, trip_name, trip_slug, trip_type, status, review_decision,
                         start_time, end_time, start_date, end_date,
-                        primary_destination_name,
+                        primary_destination_name, summary_text,
                         confidence_score, is_private, publish_ready, created_by, detection_version
                     )
-                    VALUES (%s, %s, %s, %s, 'needs_review', 'pending', %s, %s, %s, %s, %s, %s, TRUE, FALSE, 'system', 'v0')
+                    VALUES (%s, %s, %s, %s, 'needs_review', 'pending', %s, %s, %s, %s, %s, %s, %s, TRUE, FALSE, 'system', 'v0')
                     ON CONFLICT (trip_slug) DO NOTHING
                     RETURNING id
                     """,
@@ -743,6 +968,7 @@ def detect_trips(*, since_ts: datetime | None = None, overlap_hours: int = 6) ->
                         local_start.date(),
                         local_end.date(),
                         _destination_title(destination_profile),
+                        summary,
                         score,
                     ),
                 )
@@ -833,19 +1059,26 @@ def detect_garmin_trips(
                 else:
                     trip_type = "day_trip"
 
+                score = min(100, int(45 + min(trip.max_distance_km, 800) / 8))
+                slug = f"garmin-detected-{trip.start_time.date()}-{idx}"
+                fallback_destination = _destination_title(destination_profile)
+                primary_destination_name, title_destination, cleaned_activity_names = _best_activity_destination(
+                    trip.activity_names,
+                    fallback_destination,
+                )
                 title = _generate_trip_name(
                     destination_profile,
                     trip_type,
                     local_start,
                     local_end,
+                    preferred_destination=title_destination,
                 )
-                score = min(100, int(45 + min(trip.max_distance_km, 800) / 8))
-                slug = f"garmin-detected-{trip.start_time.date()}-{idx}"
-                summary = ", ".join(dict.fromkeys(name.strip() for name in trip.activity_names if name.strip()))
-                if summary:
-                    summary = f"Built from Garmin activities: {summary[:220]}"
-                else:
-                    summary = "Built from Garmin activities outside the local St. Louis area."
+                summary = _generate_trip_summary(
+                    source="garmin",
+                    destination=primary_destination_name or fallback_destination,
+                    trip_type=trip_type,
+                    activity_names=cleaned_activity_names,
+                )
 
                 cur.execute(
                     """
@@ -868,7 +1101,7 @@ def detect_garmin_trips(
                         trip.end_time,
                         local_start.date(),
                         local_end.date(),
-                        _destination_title(destination_profile),
+                        primary_destination_name or fallback_destination,
                         score,
                         summary,
                     ),

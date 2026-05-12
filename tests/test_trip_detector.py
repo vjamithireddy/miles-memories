@@ -6,8 +6,10 @@ from unittest.mock import patch
 
 from trip_engine.detector import (
     _apply_destination_override,
+    _best_activity_destination,
     _cluster_nonlocal_garmin_activities,
     _generate_trip_name,
+    _generate_trip_summary,
     _haversine_km,
     _is_stale_cached_place,
     _resolve_destination_profile,
@@ -19,10 +21,10 @@ from trip_engine.detector import (
 
 class FakeCursor:
     def __init__(self) -> None:
-        self.fetchone_results = [(1,), None]
         self.inserted_trip_params = []
         self.override_rows = []
         self._last_fetchall = []
+        self._last_fetchone = None
         self.place_row = None
         self.insert_place_params = []
 
@@ -30,21 +32,28 @@ class FakeCursor:
         compact = " ".join(query.split())
         if "INSERT INTO trips" in compact:
             self.inserted_trip_params.append(params)
+            self._last_fetchone = (1,)
+        elif "SELECT MAX(end_time) FROM trips" in compact:
+            self._last_fetchone = None
         elif "SELECT place_name, place_type, source, city FROM places" in compact:
-            self.fetchone_results.insert(0, self.place_row)
+            self._last_fetchone = self.place_row
         elif "INSERT INTO places" in compact:
             self.insert_place_params.append(params)
+            self._last_fetchone = None
         elif "FROM destination_overrides" in compact:
             self._last_fetchall = self.override_rows
+            self._last_fetchone = None
         elif "SELECT id, event_timestamp FROM location_events" in compact:
             self._last_fetchall = [(10, datetime(2026, 1, 1, 16, 0, tzinfo=timezone.utc))]
+            self._last_fetchone = None
         else:
             self._last_fetchall = []
+            self._last_fetchone = None
 
     def fetchone(self):
-        if self.fetchone_results:
-            return self.fetchone_results.pop(0)
-        return None
+        row = self._last_fetchone
+        self._last_fetchone = None
+        return row
 
     def fetchall(self):
         return self._last_fetchall
@@ -178,6 +187,58 @@ class DetectorTests(unittest.TestCase):
         )
 
         self.assertEqual(trip_name, "Trip on 2026-03-07")
+
+    def test_best_activity_destination_prefers_national_park_over_county(self) -> None:
+        destination, title_destination, cleaned_names = _best_activity_destination(
+            [
+                "Storm king trail - Olympic National Parks",
+                "Sol duc falls trail",
+                "Rialto beach - Hole in the wall trail",
+            ],
+            "Clallam County",
+        )
+
+        self.assertEqual(destination, "Olympic - NPS")
+        self.assertEqual(title_destination, "Olympic - NPS")
+        self.assertIn("Sol duc falls trail", cleaned_names)
+
+    def test_best_activity_destination_prefers_city_over_generic_county(self) -> None:
+        destination, title_destination, _ = _best_activity_destination(
+            [
+                "Tampa Walking",
+                "Hillsborough County Walking",
+            ],
+            "Hillsborough County",
+        )
+
+        self.assertEqual(destination, "Tampa")
+        self.assertEqual(title_destination, "Tampa")
+
+    def test_generate_garmin_trip_summary_uses_destination_and_highlights(self) -> None:
+        summary = _generate_trip_summary(
+            source="garmin",
+            destination="Olympic - NPS",
+            trip_type="day_trip",
+            activity_names=[
+                "Storm king trail - Olympic National Parks",
+                "Sol duc falls trail",
+                "Rialto beach - Hole in the wall trail",
+            ],
+        )
+
+        self.assertEqual(
+            summary,
+            "Detected from non-local Garmin activities around Olympic - NPS. Highlights: Storm king trail - Olympic National Parks, Sol duc falls trail, Rialto beach - Hole in the wall trail.",
+        )
+
+    def test_generate_timeline_trip_summary_uses_destination(self) -> None:
+        summary = _generate_trip_summary(
+            source="timeline",
+            destination="Minneapolis",
+            trip_type="overnight_trip",
+        )
+
+        self.assertEqual(summary, "Detected from Google Timeline travel around Minneapolis.")
 
     def test_resolve_destination_profile_refetches_stale_unknown_cache(self) -> None:
         cursor = FakeCursor()

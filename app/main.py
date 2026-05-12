@@ -264,6 +264,34 @@ def _site_shell_css(*, max_width: str, main_padding: str, main_gap: str = "18px"
     """
 
 
+def _render_empty_state_card(title: str, body: str, *, class_name: str = "trip-card empty-state") -> str:
+    return f"""
+      <article class="{class_name}">
+        <h3>{escape(title)}</h3>
+        <p>{escape(body)}</p>
+      </article>
+    """
+
+
+def _render_section_head(
+    *,
+    eyebrow: str,
+    title: str,
+    right_html: str = "",
+    supporting_html: str = "",
+) -> str:
+    return f"""
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">{escape(eyebrow)}</span>
+          <h2>{escape(title)}</h2>
+          {supporting_html}
+        </div>
+        {right_html}
+      </div>
+    """
+
+
 def _tab_strip_flex_css(
     container_selector: str,
     *,
@@ -362,12 +390,10 @@ def _render_public_homepage(
         latest_dt = latest_trip.get("published_at") or latest_trip.get("end_time") or latest_trip.get("start_time")
         latest_label = _format_local_datetime(latest_dt) if latest_dt else "Recently updated"
 
-    trips_markup = _render_public_trip_cards(trips) if trips else """
-      <article class="trip-card empty-state">
-        <h3>No public trips yet</h3>
-        <p>Publish a reviewed trip from the admin workflow and it will appear here automatically.</p>
-      </article>
-    """
+    trips_markup = _render_public_trip_cards(trips) if trips else _render_empty_state_card(
+        "No public trips yet",
+        "Publish a reviewed trip from the admin workflow and it will appear here automatically.",
+    )
 
     intro = intro or {}
     hero_note = "Travel stories from my own data."
@@ -918,13 +944,11 @@ def _render_public_homepage(
     </div>
 
     <section class="panel parks home-section-panel" data-home-section-panel="parks">
-      <div class="section-head">
-        <div>
-          <span class="eyebrow">National Parks</span>
-          <h2>My national park checklist</h2>
-        </div>
-        <p>{parks_counts.get("visited", 0)} visited · {parks_counts.get("planned", 0)} planned · {parks_counts.get("total", 0)} total</p>
-      </div>
+      {_render_section_head(
+        eyebrow="National Parks",
+        title="My national park checklist",
+        right_html=f"<p>{parks_counts.get('visited', 0)} visited · {parks_counts.get('planned', 0)} planned · {parks_counts.get('total', 0)} total</p>",
+      )}
       <div class="parks-controls">
         <div class="parks-controls-top">
           <div class="parks-tabs" data-parks-tabs>
@@ -960,18 +984,18 @@ def _render_public_homepage(
     </section>
 
     <section class="panel home-section-panel" data-home-section-panel="trips">
-      <div class="section-head">
-        <div>
-          <span class="eyebrow">Published Archive</span>
-          <h2>Published trips</h2>
-        </div>
+      {_render_section_head(
+        eyebrow="Published Archive",
+        title="Published trips",
+        right_html=f'''
         <div class="section-actions">
           <div class="published-search">
             <input type="search" placeholder="Search trips..." value="{escape(search_query)}" data-published-search>
           </div>
           <p data-published-count>{published_total} visible trip{"s" if published_total != 1 else ""}</p>
         </div>
-      </div>
+        ''',
+      )}
       {f'<div class=\"archive-link\"><a class=\"button\" href=\"/trips?page=1\">View all trips</a></div>' if show_archive_link else ''}
       <div class="published-grid">
         {trips_markup}
@@ -3903,12 +3927,10 @@ def _render_admin_trip_cards(trips: List[dict]) -> str:
             </article>
             """
         )
-    return "".join(cards) if cards else """
-      <article class="trip-card empty-state">
-        <h3>No trips match these filters.</h3>
-        <p>Adjust the filters or run trip detection after importing location and Garmin data.</p>
-      </article>
-    """
+    return "".join(cards) if cards else _render_empty_state_card(
+        "No trips match these filters.",
+        "Adjust the filters or run trip detection after importing location and Garmin data.",
+    )
 
 
 def _render_admin_page(
