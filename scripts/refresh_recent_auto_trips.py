@@ -14,6 +14,7 @@ from trip_engine.detector import (
     _generate_trip_summary,
     _get_local_zone,
     _haversine_km,
+    _is_generic_activity_destination,
     _is_downranked_destination_name,
     _resolve_destination_profile,
 )
@@ -108,9 +109,34 @@ def _should_update_destination(current: str | None, proposed: str | None) -> boo
         return True
     if "," in proposed:
         return False
-    if _is_downranked_destination_name(current):
+    if _is_downranked_destination_name(current) or _is_generic_activity_destination(current):
         return True
     return False
+
+
+def _trip_context_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    normalized = normalized.removesuffix(" Day Trip")
+    normalized = normalized.removesuffix(" Weekend")
+    normalized = normalized.removesuffix(" Overnight")
+    normalized = normalized.removesuffix(" Trip")
+    return normalized.strip(" -,") or value.strip()
+
+
+def _summary_destination(
+    *,
+    current_title: str | None,
+    replaceable_title: bool,
+    proposed_destination: str | None,
+    current_destination: str | None,
+) -> str | None:
+    if not replaceable_title:
+        title_context = _trip_context_name(current_title)
+        if title_context:
+            return title_context
+    return proposed_destination or current_destination
 
 
 def main() -> None:
@@ -172,6 +198,13 @@ def main() -> None:
         next_destination = current_destination
         next_title = trip.get("trip_name")
         next_summary = trip.get("summary_text")
+        replaceable_title = _is_replaceable_trip_name(
+            trip.get("trip_name"),
+            current_destination=current_destination,
+            trip_type=trip_type,
+            start_time=local_start,
+            end_time=local_end,
+        )
 
         if trip.get("detection_version") == "garmin_v1":
             activity_names = _fetch_trip_activity_names(trip_id)
@@ -188,19 +221,18 @@ def main() -> None:
             )
             proposed_summary = _generate_trip_summary(
                 source="garmin",
-                destination=primary_destination or current_destination,
+                destination=_summary_destination(
+                    current_title=trip.get("trip_name"),
+                    replaceable_title=replaceable_title,
+                    proposed_destination=primary_destination,
+                    current_destination=current_destination,
+                ),
                 trip_type=trip_type,
                 activity_names=cleaned_activity_names,
             )
             if _should_update_destination(current_destination, primary_destination):
                 next_destination = primary_destination
-            if _is_replaceable_trip_name(
-                trip.get("trip_name"),
-                current_destination=current_destination,
-                trip_type=trip_type,
-                start_time=local_start,
-                end_time=local_end,
-            ):
+            if replaceable_title:
                 next_title = proposed_title
             if _is_replaceable_summary(trip.get("summary_text")):
                 next_summary = proposed_summary
@@ -215,18 +247,17 @@ def main() -> None:
             )
             proposed_summary = _generate_trip_summary(
                 source="timeline",
-                destination=proposed_destination,
+                destination=_summary_destination(
+                    current_title=trip.get("trip_name"),
+                    replaceable_title=replaceable_title,
+                    proposed_destination=proposed_destination,
+                    current_destination=current_destination,
+                ),
                 trip_type=trip_type,
             )
             if _should_update_destination(current_destination, proposed_destination):
                 next_destination = proposed_destination
-            if _is_replaceable_trip_name(
-                trip.get("trip_name"),
-                current_destination=current_destination,
-                trip_type=trip_type,
-                start_time=local_start,
-                end_time=local_end,
-            ):
+            if replaceable_title:
                 next_title = proposed_title
             if _is_replaceable_summary(trip.get("summary_text")):
                 next_summary = proposed_summary

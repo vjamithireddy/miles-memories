@@ -233,6 +233,8 @@ def _is_downranked_destination_name(value: Optional[str]) -> bool:
     text = value.strip().lower()
     if not text:
         return False
+    if re.match(r"^(?:i|us|sr|mo|il|co|wa|ca|tx|mn|in|ut|az|nv)[- ]?\d", text):
+        return True
     return any(re.search(rf"\b{re.escape(keyword)}\b", text) for keyword in DOWNRANKED_DESTINATION_KEYWORDS)
 
 

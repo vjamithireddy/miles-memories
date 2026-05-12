@@ -147,6 +147,21 @@ class DetectorTests(unittest.TestCase):
 
         self.assertEqual(trip_name, "Chesterfield Weekend")
 
+    def test_generate_trip_name_downranks_interstate_in_favor_of_locality(self) -> None:
+        trip_name = _generate_trip_name(
+            {
+                "name": "I 35E",
+                "locality": "Minneapolis",
+                "category": "road",
+                "classification": None,
+            },
+            "overnight_trip",
+            datetime(2026, 3, 7, 9, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 8, 10, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(trip_name, "Minneapolis Weekend")
+
     def test_generate_trip_name_downranks_lot_in_favor_of_locality(self) -> None:
         trip_name = _generate_trip_name(
             {
