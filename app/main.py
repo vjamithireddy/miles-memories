@@ -144,8 +144,8 @@ def _render_public_trip_cards(trips: List[dict]) -> str:
             <article class="trip-card">
               <a class="trip-card-link" href="{trip_href}" aria-label="Open {title}">
               <div class="trip-card-top">
-                <span class="trip-chip">{trip_type}</span>
-                <span class="trip-chip muted">{timing}</span>
+                <span class="trip-chip trip-type-chip">{trip_type}</span>
+                <span class="trip-chip muted trip-date-chip">{timing}</span>
               </div>
               <h3>{title}</h3>
               <p class="trip-destination">{destination}</p>
@@ -769,11 +769,25 @@ def _render_public_homepage(
     }}
 
     .trip-card-top {{
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
       gap: 8px;
-      justify-content: space-between;
       align-items: center;
+    }}
+    .trip-card-top .trip-chip {{
+      min-width: 0;
+    }}
+    .trip-type-chip {{
+      justify-self: start;
+    }}
+    .trip-date-chip {{
+      justify-self: end;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.8rem;
+      padding-inline: 10px;
     }}
 
     .trip-destination {{
@@ -901,6 +915,13 @@ def _render_public_homepage(
       }}
       .parks-controls {{
         gap: 12px;
+      }}
+      .trip-card-top {{
+        gap: 6px;
+      }}
+      .trip-date-chip {{
+        font-size: 0.76rem;
+        padding-inline: 9px;
       }}
       .home-section-tabs {{
         display: flex;
